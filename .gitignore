@@ -1,0 +1,45 @@
+# =========================
+# Python
+# =========================
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Pytest
+.pytest_cache/
+
+# Ruff
+.ruff_cache/
+
+# Packaging / installation artifacts
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# =========================
+# OS / IDE
+# =========================
+
+.DS_Store
+Thumbs.db
+
+# VS Code
+.vscode/
+
+# PyCharm
+.idea/
+
+# =========================
+# Frontend
+# =========================
+
+node_modules/
+dist/
