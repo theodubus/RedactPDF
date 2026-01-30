@@ -3,8 +3,10 @@ name = "redactpdf-backend"
 version = "0.1.0"
 requires-python = ">=3.10"
 dependencies = [
-  "fastapi>=0.110",
-  "uvicorn>=0.27",
+  "fastapi",
+  "uvicorn",
+  "pymupdf",
+  "python-multipart",
 ]
 
 [project.optional-dependencies]
@@ -17,6 +19,12 @@ dev = [
 ]
 
 [tool.pytest.ini_options]
+markers = [
+    "unit: tests unitaires purs (rapides)",
+    "integration: tests avec PDF, I/O, libs externes",
+    "e2e: tests bout-en-bout (API + UI)",
+    "slow: tests lents (>1s ou lourds)",
+]
 testpaths = ["tests"]
 pythonpath = ["."]
 addopts = "-q"
