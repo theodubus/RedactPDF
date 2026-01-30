@@ -76,3 +76,25 @@ def test_redact_rectangles_removes_secret_and_preserves_other_text() -> None:
 
     assert SECRET not in out_text, "Secret should be removed from extracted text"
     assert keep_token in out_text, "Non-targeted text should remain extractible"
+
+
+@pytest.mark.integration
+def test_redact_rectangles_wrong_rect_does_not_remove_secret() -> None:
+    pdf_in = SECRET_FIXTURE.read_bytes()
+
+    # Rectangle volontairement à côté (décalage horizontal)
+    rect = find_secret_rect_with_pymupdf(pdf_in)
+    rect["x0"] += 200
+    rect["x1"] += 200
+
+    payload = {"rects": [rect], "options": {"apply_images": False, "apply_graphics": False}}
+
+    resp = CLIENT.post(
+        "/redact/rectangles",
+        files={"file": ("input.pdf", pdf_in, "application/pdf")},
+        data={"payload": json.dumps(payload)},
+    )
+    assert resp.status_code == 200
+
+    out_text = extract_text_with_pypdf(resp.content)
+    assert SECRET in out_text, "Secret should still be present if we redact the wrong area"
