@@ -49,6 +49,14 @@ def find_secret_rect_with_pymupdf(pdf_bytes: bytes) -> dict:
         doc.close()
 
 
+def make_payload(rects: list[dict], patterns: list[str]) -> dict:
+    return {
+        "rects": rects,
+        "options": {"apply_images": False, "apply_graphics": False},
+        "audit": {"patterns": patterns, "regex": False, "case_sensitive": True},
+    }
+
+
 @pytest.mark.integration
 def test_redact_rectangles_removes_secret_and_preserves_other_text() -> None:
     pdf_in = SECRET_FIXTURE.read_bytes()
@@ -58,10 +66,7 @@ def test_redact_rectangles_removes_secret_and_preserves_other_text() -> None:
     keep_token = pick_non_secret_token(original_text)
 
     rect = find_secret_rect_with_pymupdf(pdf_in)
-    payload = {
-        "rects": [rect],
-        "options": {"apply_images": False, "apply_graphics": False},
-    }
+    payload = make_payload([rect], patterns=[SECRET])
 
     resp = CLIENT.post(
         "/redact/rectangles",
@@ -71,8 +76,66 @@ def test_redact_rectangles_removes_secret_and_preserves_other_text() -> None:
     assert resp.status_code == 200
     assert resp.headers["content-type"].startswith("application/pdf")
 
+    # Audit OK attendu
+    assert resp.headers.get("x-redaction-audit-status") == "pass"
+    assert resp.headers.get("x-redaction-audit-matches") == "0"
+
     pdf_out = resp.content
     out_text = extract_text_with_pypdf(pdf_out)
 
     assert SECRET not in out_text, "Secret should be removed from extracted text"
     assert keep_token in out_text, "Non-targeted text should remain extractible"
+
+
+@pytest.mark.integration
+def test_redact_rectangles_wrong_rect_triggers_audit_fail() -> None:
+    pdf_in = SECRET_FIXTURE.read_bytes()
+
+    # Rectangle volontairement à côté (décalage horizontal)
+    rect = find_secret_rect_with_pymupdf(pdf_in)
+    rect["x0"] += 200
+    rect["x1"] += 200
+
+    payload = make_payload([rect], patterns=[SECRET])
+
+    resp = CLIENT.post(
+        "/redact/rectangles",
+        files={"file": ("input.pdf", pdf_in, "application/pdf")},
+        data={"payload": json.dumps(payload)},
+    )
+
+    # Avec l'audit, ce cas doit échouer : on refuse de livrer un PDF "censuré" si fuite
+    assert resp.status_code == 400
+    assert resp.headers["content-type"].startswith("application/json")
+
+    report = resp.json()
+    assert report["status"] == "fail"
+    assert report["total_matches"] >= 1
+    assert SECRET in report["patterns"]
+
+    # Le secret doit apparaître dans au moins un match (champ "match" ou "snippet")
+    assert any(
+        (SECRET in m.get("match", "")) or (SECRET in m.get("snippet", ""))
+        for m in report.get("matches", [])
+    ), "Audit report should include evidence that the secret remains"
+
+
+@pytest.mark.integration
+def test_redaction_does_not_modify_original_fixture_on_disk() -> None:
+    # Non-régression : l'original sur disque ne doit jamais être modifié
+    before_bytes = SECRET_FIXTURE.read_bytes()
+    assert SECRET in extract_text_with_pypdf(before_bytes)
+
+    rect = find_secret_rect_with_pymupdf(before_bytes)
+    payload = make_payload([rect], patterns=[SECRET])
+
+    resp = CLIENT.post(
+        "/redact/rectangles",
+        files={"file": ("input.pdf", before_bytes, "application/pdf")},
+        data={"payload": json.dumps(payload)},
+    )
+    assert resp.status_code == 200
+
+    after_bytes = SECRET_FIXTURE.read_bytes()
+    assert before_bytes == after_bytes, "Fixture PDF on disk must remain byte-identical"
+    assert SECRET in extract_text_with_pypdf(after_bytes), "Original must still contain the secret"
