@@ -43,3 +43,5 @@ Thumbs.db
 
 node_modules/
 dist/
+payload.json
+redacted.pdf
