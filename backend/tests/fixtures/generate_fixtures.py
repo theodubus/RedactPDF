@@ -25,7 +25,6 @@ ROOT_DIR = Path(__file__).resolve().parent
 GENERATED_DIR = ROOT_DIR / "generated"
 
 
-
 @dataclass(frozen=True)
 class FixtureSpec:
     filename: str
@@ -50,7 +49,7 @@ def _sha256(path: Path) -> str:
 
 def write_001_secret_text(path: Path) -> None:
     c = _new_canvas(path)
-    w, h = A4
+    _, h = A4
     c.setFont("Helvetica", 14)
     c.drawString(25 * mm, h - 30 * mm, "Fixture 001 — secret text")
     c.setFont("Helvetica", 12)
@@ -62,7 +61,7 @@ def write_001_secret_text(path: Path) -> None:
 
 def write_002_email_phone_one_line(path: Path) -> None:
     c = _new_canvas(path)
-    w, h = A4
+    _, h = A4
     c.setFont("Helvetica", 14)
     c.drawString(25 * mm, h - 30 * mm, "Fixture 002 — email + phone (one line)")
     c.setFont("Helvetica", 12)
@@ -74,7 +73,7 @@ def write_002_email_phone_one_line(path: Path) -> None:
 
 def write_003_phone_two_lines(path: Path) -> None:
     c = _new_canvas(path)
-    w, h = A4
+    _, h = A4
     c.setFont("Helvetica", 14)
     c.drawString(25 * mm, h - 30 * mm, "Fixture 003 — phone split across lines")
     c.setFont("Helvetica", 12)
@@ -94,7 +93,6 @@ def write_004_bitmap_image(path: Path) -> None:
     c.setFont("Helvetica", 12)
     label = "Texte : IMAGE_TEST — la zone image doit pouvoir être redigée."
     c.drawString(25 * mm, h - 50 * mm, label)
-
 
     # Create a deterministic bitmap in memory (no external file, no base64).
     im = Image.new("RGB", (64, 64), (255, 0, 0))  # solid red square
@@ -167,6 +165,25 @@ def write_006_two_columns_text(path: Path) -> None:
     c.save()
 
 
+def write_007_whole_word_cat_catch(path: Path) -> None:
+    """
+    Fixture used to test whole_word behavior:
+    - query "CAT" with whole_word=True must not redact the "CAT" substring inside "CATCH".
+    """
+    c = _new_canvas(path)
+    _, h = A4
+    c.setFont("Helvetica", 14)
+    c.drawString(25 * mm, h - 30 * mm, "Fixture 007 — whole word CAT vs CATCH")
+
+    c.setFont("Helvetica", 12)
+    c.drawString(25 * mm, h - 55 * mm, "Standalone token: CAT")
+    c.drawString(25 * mm, h - 75 * mm, "Substring token: CATCH")
+    c.drawString(25 * mm, h - 95 * mm, "Texte non sensible : OK.")
+
+    c.showPage()
+    c.save()
+
+
 SPECS: list[FixtureSpec] = [
     FixtureSpec(
         filename="001_secret_text.pdf",
@@ -197,6 +214,11 @@ SPECS: list[FixtureSpec] = [
         filename="006_two_columns_text.pdf",
         writer=write_006_two_columns_text,
         description="Two columns layout",
+    ),
+    FixtureSpec(
+        filename="007_whole_word_cat_catch.pdf",
+        writer=write_007_whole_word_cat_catch,
+        description='Whole word test fixture ("CAT" vs "CATCH")',
     ),
 ]
 
