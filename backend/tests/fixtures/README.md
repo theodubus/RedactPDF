@@ -15,6 +15,7 @@ The fixtures cover common and problematic cases for PDF redaction:
 - embedded bitmap image
 - vector graphics (shapes)
 - multi-column layout
+- whole-word behavior (`CAT` must not match inside `CATCH`)
 
 They serve as a **contract**: tests rely on their exact content and structure.
 
@@ -26,7 +27,7 @@ To regenerate them:
 
 ```bash
 python -m backend.tests.fixtures.generate_fixtures
-```
+````
 
 ## Important rule
 
@@ -35,3 +36,4 @@ and commit the updated PDFs.
 
 This is enforced by tests: if the generator changes without regenerating
 the PDFs, the test suite will fail.
+

@@ -11,6 +11,7 @@ from starlette.responses import Response
 
 from app.audit import AuditOptions, audit_pdf_text
 from app.redaction import RedactionRect, redact_pdf_by_rectangles
+from app.search import SearchOptions, find_redaction_rectangles
 
 app = FastAPI()
 
@@ -124,6 +125,122 @@ async def redact_rectangles(
     b64 = base64.urlsafe_b64encode(report_json).decode("ascii")
 
     # Limite conservative pour éviter des soucis proxies/serveurs
+    if len(b64) <= 6000:
+        headers["X-Redaction-Audit-Report-B64"] = b64
+    else:
+        headers["X-Redaction-Audit-Report-Truncated"] = "1"
+
+    return Response(content=out_pdf, media_type="application/pdf", headers=headers)
+
+
+class SearchOptionsModel(BaseModel):
+    case_sensitive: bool = False
+    whole_word: bool = False
+
+
+class ScopeModel(BaseModel):
+    # None => toutes les pages
+    pages: list[int] | None = None
+
+    @field_validator("pages")
+    @classmethod
+    def validate_pages(cls, v: list[int] | None) -> list[int] | None:
+        if v is None:
+            return None
+        if len(v) == 0:
+            return None
+        if any(p < 0 for p in v):
+            raise ValueError("scope.pages must contain only non-negative page indices")
+        return v
+
+
+class SearchPayload(BaseModel):
+    query: str
+    options: SearchOptionsModel = SearchOptionsModel()
+    scope: ScopeModel = ScopeModel()
+    audit: AuditModel
+
+    @field_validator("query")
+    @classmethod
+    def validate_query(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("query must be non-empty")
+        return v.strip()
+
+
+@app.post("/redact/search")
+async def redact_search(
+    file: Annotated[UploadFile, File(...)],
+    payload: Annotated[str, Form(...)],
+) -> Response:
+    # 1) Parser payload JSON
+    try:
+        data = SearchPayload.model_validate_json(payload)
+    except ValidationError as e:
+        raise HTTPException(status_code=422, detail=e.errors()) from e
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid payload JSON") from None
+
+    # 2) Lire PDF
+    pdf_bytes = await file.read()
+    if not pdf_bytes:
+        raise HTTPException(status_code=400, detail="Empty PDF upload")
+
+    # 3) Trouver occurrences -> rectangles
+    try:
+        found_rects = find_redaction_rectangles(
+            pdf_bytes,
+            SearchOptions(
+                query=data.query,
+                case_sensitive=data.options.case_sensitive,
+                whole_word=data.options.whole_word,
+                pages=data.scope.pages,
+            ),
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Search failed") from e
+
+    # 4) Appliquer redactions
+    # (si aucune occurrence trouvée, on exporte quand même, puis audit tranche)
+    try:
+        out_pdf = redact_pdf_by_rectangles(pdf_bytes, found_rects)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Redaction failed") from e
+
+    # 5) Audit post-export (obligatoire)
+    try:
+        report = audit_pdf_text(
+            out_pdf,
+            AuditOptions(
+                patterns=data.audit.patterns,
+                regex=data.audit.regex,
+                case_sensitive=data.audit.case_sensitive,
+            ),
+        )
+    except ValueError as e:
+        return JSONResponse(
+            status_code=400,
+            content={"status": "error", "error": str(e)},
+        )
+
+    if report["status"] != "pass":
+        return JSONResponse(status_code=400, content=report)
+
+    # 6) Succès : PDF + headers
+    headers: dict[str, Any] = {
+        "Content-Disposition": 'attachment; filename="redacted.pdf"',
+        "X-Redaction-Audit-Status": "pass",
+        "X-Redaction-Audit-Matches": "0",
+        "X-Redaction-Search-Occurrences": str(len(found_rects)),
+    }
+
+    report_json = json.dumps(report, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    b64 = base64.urlsafe_b64encode(report_json).decode("ascii")
+
     if len(b64) <= 6000:
         headers["X-Redaction-Audit-Report-B64"] = b64
     else:
