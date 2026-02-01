@@ -16,6 +16,7 @@ The fixtures cover common and problematic cases for PDF redaction:
 - vector graphics (shapes)
 - multi-column layout
 - whole-word behavior (`CAT` must not match inside `CATCH`)
+- credit card numbers (valid vs invalid; Luhn filtering)
 
 They serve as a **contract**: tests rely on their exact content and structure.
 
@@ -31,9 +32,8 @@ python -m backend.tests.fixtures.generate_fixtures
 
 ## Important rule
 
-If you modify generate_fixtures.py, you must regenerate the fixtures
+If you modify `generate_fixtures.py`, you must regenerate the fixtures
 and commit the updated PDFs.
 
 This is enforced by tests: if the generator changes without regenerating
 the PDFs, the test suite will fail.
-
