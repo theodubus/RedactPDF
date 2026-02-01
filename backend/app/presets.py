@@ -7,8 +7,8 @@ from dataclasses import dataclass
 
 import phonenumbers
 
+from app.multiline_regex_engine import iter_regex_hits
 from app.redaction import RedactionRect
-from app.regex_engine import RegexHit, iter_regex_hits_by_line
 
 
 # For numbers without a leading '+' we need a region hint.
@@ -27,6 +27,7 @@ class PresetDefinition:
     description: str
     pattern: str
     post_filter: Callable[[str], bool] | None = None
+    multiline: bool = False
 
 
 def _luhn_is_valid(number: str) -> bool:
@@ -91,7 +92,7 @@ def _phone_post_filter(match_text: str) -> bool:
 
     Limitations:
     - Numbers without '+' depend on DEFAULT_REGION; this is unavoidable for generic parsing.
-    - Mono-line only in v1; multi-line handled in a later step.
+    - Multi-line matching is supported (v2) but still relies on text extractability.
     """
     normalized = _normalize_phone_candidate(match_text)
 
@@ -116,7 +117,9 @@ def _phone_post_filter(match_text: str) -> bool:
         return False
 
 
-# Presets v1: conservative and tested; mono-line matching by design.
+# Presets:
+# - email & credit_card remain mono-line (less risk of false positives).
+# - phone uses multiline by default to handle the "06 12 34 / 56 78" case.
 _PRESETS: dict[str, PresetDefinition] = {
     "email": PresetDefinition(
         key="email",
@@ -125,10 +128,9 @@ _PRESETS: dict[str, PresetDefinition] = {
             "Matches common email addresses. Limitations: may miss exotic cases; "
             "relies on text being extractable (OCR not handled)."
         ),
-        # Case-insensitive behavior is handled by the regex engine (IGNORECASE),
-        # so we keep a plain pattern here.
         pattern=r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b",
         post_filter=None,
+        multiline=False,
     ),
     "phone": PresetDefinition(
         key="phone",
@@ -136,22 +138,24 @@ _PRESETS: dict[str, PresetDefinition] = {
         description=(
             "Heuristically extracts phone-like candidates (international/national forms, "
             "common separators) and validates them using libphonenumber (phonenumbers). "
-            "Limitations: mono-line only in v1; numbers without '+' require a default region "
+            "Multi-line matching is enabled by default to catch numbers split across lines. "
+            "Numbers without '+' require a default region "
             f"(current DEFAULT_REGION={DEFAULT_REGION}). OCR not handled."
         ),
-        # Broad candidate extraction; strong filtering happens in post_filter.
         pattern=r"\b(?:\+|00)?\s*(?:\d[\s().\-]?){6,20}\d\b",
         post_filter=_phone_post_filter,
+        multiline=True,
     ),
     "credit_card": PresetDefinition(
         key="credit_card",
         label="Credit card (Luhn-filtered)",
         description=(
             "Matches 13..19-digit sequences with spaces/hyphens and validates with Luhn. "
-            "Limitations: may still match some non-card identifiers; mono-line only in v1."
+            "Limitations: may still match some non-card identifiers; mono-line only."
         ),
         pattern=r"\b(?:\d[ -]*?){13,19}\b",
         post_filter=_credit_card_post_filter,
+        multiline=False,
     ),
 }
 
@@ -188,14 +192,18 @@ def find_redaction_rectangles_for_presets(
     pages: Sequence[int] | None = None,
 ) -> list[RedactionRect]:
     """
-    Presets v1 engine (mono-line):
-    - Run a generic mono-line regex engine (words -> lines -> line_text -> finditer -> union bbox)
-    - Apply optional post-filters per preset to reduce false positives
+    Presets engine (regex -> rectangles) with optional post-filters.
+
+    - Uses the unified regex engine that supports single-line and (optionally) multi-line
+      matching across adjacent lines.
+    - Presets are intentionally case-insensitive.
+    - Post-filters reduce false positives:
+        - phone: validated with phonenumbers
+        - credit_card: validated with Luhn
 
     Notes:
-    - Phone preset: broad regex + phonenumbers validation (strong false-positive reduction).
-    - Credit card preset: Luhn filtering (strong false-positive reduction).
-    - Multi-line matching is not supported yet in v1.
+    - Multi-line is enabled only for presets that opt into it (phone by default).
+    - For multi-line matches, the engine may return multiple rectangles (one per involved line).
     """
     if not pdf_bytes:
         raise ValueError("Empty PDF bytes.")
@@ -206,21 +214,22 @@ def find_redaction_rectangles_for_presets(
     out: list[RedactionRect] = []
 
     for pdef in preset_defs:
-        # Presets are intentionally case-insensitive in v1. This is consistent with previous
-        # behavior (email IGNORECASE; phone/card not impacted).
-        hits: list[RegexHit] = iter_regex_hits_by_line(
+        # Presets are intentionally case-insensitive for usability and consistency.
+        hits = iter_regex_hits(
             pdf_bytes,
             [pdef.pattern],
             case_sensitive=False,
             pages=pages,
+            multiline=pdef.multiline,
         )
 
         if pdef.post_filter is None:
-            out.extend([h.rect for h in hits])
+            for h in hits:
+                out.extend(list(h.rects))
             continue
 
         for h in hits:
             if pdef.post_filter(h.match):
-                out.append(h.rect)
+                out.extend(list(h.rects))
 
     return _dedupe_rects(out)

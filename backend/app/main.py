@@ -10,9 +10,9 @@ from pydantic import BaseModel, Field, ValidationError, field_validator
 from starlette.responses import Response
 
 from app.audit import AuditOptions, audit_pdf_text
+from app.multiline_regex_engine import find_redaction_rectangles_by_regex
 from app.presets import available_presets, find_redaction_rectangles_for_presets
 from app.redaction import RedactionRect, redact_pdf_by_rectangles
-from app.regex_engine import find_redaction_rectangles_by_regex
 from app.search import SearchOptions, find_redaction_rectangles
 
 app = FastAPI()
@@ -351,25 +351,37 @@ async def redact_presets(
 
 
 class RegexPayload(BaseModel):
-    # Accept either a single string or a list of strings.
-    patterns: str | list[str]
+    """
+    Regex endpoint payload.
+
+    - Accepts either a string or a list of strings for patterns, normalized to list[str].
+    - multiline enables matching across two adjacent lines (line N, and line N+1) using
+      joiners ("\\n" and " ") in the engine.
+    """
+
+    patterns: list[str]
     case_sensitive: bool = False
+    multiline: bool = False
     scope: ScopeModel = ScopeModel()
     options: OptionsModel = OptionsModel()
     audit: AuditModel
 
-    @field_validator("patterns")
+    @field_validator("patterns", mode="before")
     @classmethod
-    def validate_patterns(cls, v: str | list[str]) -> str | list[str]:
+    def coerce_patterns(cls, v: Any) -> list[str]:
         if isinstance(v, str):
-            if not v.strip():
+            cleaned = v.strip()
+            if not cleaned:
                 raise ValueError("patterns must be a non-empty string or a non-empty list")
-            return v.strip()
+            return [cleaned]
 
-        cleaned = [p.strip() for p in v if p and p.strip()]
-        if not cleaned:
-            raise ValueError("patterns must be a non-empty string or a non-empty list")
-        return cleaned
+        if isinstance(v, list):
+            cleaned_list = [str(p).strip() for p in v if p and str(p).strip()]
+            if not cleaned_list:
+                raise ValueError("patterns must be a non-empty string or a non-empty list")
+            return cleaned_list
+
+        raise ValueError("patterns must be a non-empty string or a non-empty list")
 
 
 @app.post("/redact/regex")
@@ -397,6 +409,7 @@ async def redact_regex(
             data.patterns,
             case_sensitive=data.case_sensitive,
             pages=data.scope.pages,
+            multiline=data.multiline,
         )
     except ValueError as e:
         # regex invalide, pages invalides, patterns vides (normalement déjà validés), etc.

@@ -2,29 +2,20 @@ from __future__ import annotations
 
 import json
 import re
-from io import BytesIO
 from pathlib import Path
 
 import pymupdf
 import pytest
 from fastapi.testclient import TestClient
-from pypdf import PdfReader
 
 from app.main import app
+from tests.utils_pdf import extract_text
 
 CLIENT = TestClient(app)
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures" / "generated"
 SECRET_FIXTURE = FIXTURES_DIR / "001_secret_text.pdf"
 SECRET = "SECRET_ABC123"
-
-
-def extract_text_with_pypdf(pdf_bytes: bytes) -> str:
-    reader = PdfReader(BytesIO(pdf_bytes))
-    parts: list[str] = []
-    for page in reader.pages:
-        parts.append(page.extract_text() or "")
-    return "\n".join(parts)
 
 
 def pick_non_secret_token(text: str) -> str:
@@ -60,7 +51,7 @@ def make_payload(rects: list[dict], patterns: list[str]) -> dict:
 @pytest.mark.integration
 def test_redact_rectangles_removes_secret_and_preserves_other_text() -> None:
     pdf_in = SECRET_FIXTURE.read_bytes()
-    original_text = extract_text_with_pypdf(pdf_in)
+    original_text = extract_text(pdf_in)
     assert SECRET in original_text
 
     keep_token = pick_non_secret_token(original_text)
@@ -81,7 +72,7 @@ def test_redact_rectangles_removes_secret_and_preserves_other_text() -> None:
     assert resp.headers.get("x-redaction-audit-matches") == "0"
 
     pdf_out = resp.content
-    out_text = extract_text_with_pypdf(pdf_out)
+    out_text = extract_text(pdf_out)
 
     assert SECRET not in out_text, "Secret should be removed from extracted text"
     assert keep_token in out_text, "Non-targeted text should remain extractible"
@@ -124,7 +115,7 @@ def test_redact_rectangles_wrong_rect_triggers_audit_fail() -> None:
 def test_redaction_does_not_modify_original_fixture_on_disk() -> None:
     # Non-régression : l'original sur disque ne doit jamais être modifié
     before_bytes = SECRET_FIXTURE.read_bytes()
-    assert SECRET in extract_text_with_pypdf(before_bytes)
+    assert SECRET in extract_text(before_bytes)
 
     rect = find_secret_rect_with_pymupdf(before_bytes)
     payload = make_payload([rect], patterns=[SECRET])
@@ -138,4 +129,4 @@ def test_redaction_does_not_modify_original_fixture_on_disk() -> None:
 
     after_bytes = SECRET_FIXTURE.read_bytes()
     assert before_bytes == after_bytes, "Fixture PDF on disk must remain byte-identical"
-    assert SECRET in extract_text_with_pypdf(after_bytes), "Original must still contain the secret"
+    assert SECRET in extract_text(after_bytes), "Original must still contain the secret"
