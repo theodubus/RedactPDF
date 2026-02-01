@@ -184,6 +184,27 @@ def write_007_whole_word_cat_catch(path: Path) -> None:
     c.save()
 
 
+def write_008_credit_card_luhn(path: Path) -> None:
+    """
+    Fixture used to test credit card preset (Luhn filtering).
+    Contains:
+    - a valid PAN (Luhn OK): 4111 1111 1111 1111
+    - an invalid PAN (Luhn KO): 4111 1111 1111 1112
+    """
+    c = _new_canvas(path)
+    _, h = A4
+    c.setFont("Helvetica", 14)
+    c.drawString(25 * mm, h - 30 * mm, "Fixture 008 — credit card Luhn validation")
+
+    c.setFont("Helvetica", 12)
+    c.drawString(25 * mm, h - 55 * mm, "Valid PAN (should be redacted): 4111 1111 1111 1111")
+    c.drawString(25 * mm, h - 75 * mm, "Invalid PAN (must remain): 4111 1111 1111 1112")
+    c.drawString(25 * mm, h - 95 * mm, "Texte non sensible : OK.")
+
+    c.showPage()
+    c.save()
+
+
 SPECS: list[FixtureSpec] = [
     FixtureSpec(
         filename="001_secret_text.pdf",
@@ -219,6 +240,11 @@ SPECS: list[FixtureSpec] = [
         filename="007_whole_word_cat_catch.pdf",
         writer=write_007_whole_word_cat_catch,
         description='Whole word test fixture ("CAT" vs "CATCH")',
+    ),
+    FixtureSpec(
+        filename="008_credit_card_luhn.pdf",
+        writer=write_008_credit_card_luhn,
+        description="Credit card fixture (valid vs invalid PAN, Luhn filtering)",
     ),
 ]
 
