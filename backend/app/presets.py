@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import os
 import re
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
 import phonenumbers
-import pymupdf  # PyMuPDF
 
 from app.redaction import RedactionRect
+from app.regex_engine import RegexHit, iter_regex_hits_by_line
 
 
 # For numbers without a leading '+' we need a region hint.
@@ -17,13 +17,15 @@ def _default_region() -> str:
     return os.getenv("REDACT_DEFAULT_REGION", "FR").upper()
 
 
+DEFAULT_REGION = _default_region()
+
+
 @dataclass(frozen=True)
 class PresetDefinition:
     key: str
     label: str
     description: str
     pattern: str
-    flags: int = 0
     post_filter: Callable[[str], bool] | None = None
 
 
@@ -64,6 +66,7 @@ def _normalize_phone_candidate(s: str) -> str:
     - keep leading '+', strip other non-digits
     """
     s = s.strip()
+
     # Remove extension part (keep base number)
     s = _EXT_RX.sub("", s).strip()
 
@@ -92,7 +95,6 @@ def _phone_post_filter(match_text: str) -> bool:
     """
     normalized = _normalize_phone_candidate(match_text)
 
-    # quick length filter to avoid many false positives
     digits_only = normalized[1:] if normalized.startswith("+") else normalized
     if not digits_only.isdigit():
         return False
@@ -103,10 +105,8 @@ def _phone_post_filter(match_text: str) -> bool:
         if normalized.startswith("+"):
             num = phonenumbers.parse(normalized, None)
         else:
-            # Parse national formats using default region hint
-            num = phonenumbers.parse(normalized, _default_region())
+            num = phonenumbers.parse(normalized, DEFAULT_REGION)
 
-        # Strong filtering: both possible and valid
         if not phonenumbers.is_possible_number(num):
             return False
         if not phonenumbers.is_valid_number(num):
@@ -115,7 +115,6 @@ def _phone_post_filter(match_text: str) -> bool:
     except phonenumbers.NumberParseException:
         return False
 
-DEFAULT_REGION = _default_region()
 
 # Presets v1: conservative and tested; mono-line matching by design.
 _PRESETS: dict[str, PresetDefinition] = {
@@ -126,8 +125,10 @@ _PRESETS: dict[str, PresetDefinition] = {
             "Matches common email addresses. Limitations: may miss exotic cases; "
             "relies on text being extractable (OCR not handled)."
         ),
-        pattern=r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b",
-        flags=re.IGNORECASE,
+        # Case-insensitive behavior is handled by the regex engine (IGNORECASE),
+        # so we keep a plain pattern here.
+        pattern=r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b",
+        post_filter=None,
     ),
     "phone": PresetDefinition(
         key="phone",
@@ -138,14 +139,8 @@ _PRESETS: dict[str, PresetDefinition] = {
             "Limitations: mono-line only in v1; numbers without '+' require a default region "
             f"(current DEFAULT_REGION={DEFAULT_REGION}). OCR not handled."
         ),
-        # Candidate extraction regex (tolerant):
-        # - optional leading +country or 00country
-        # - allows parentheses and separators
-        # - requires enough digits overall (via post_filter length + libphonenumber)
-        #
-        # Note: We keep it broad and rely on post_filter for robustness.
+        # Broad candidate extraction; strong filtering happens in post_filter.
         pattern=r"\b(?:\+|00)?\s*(?:\d[\s().\-]?){6,20}\d\b",
-        flags=0,
         post_filter=_phone_post_filter,
     ),
     "credit_card": PresetDefinition(
@@ -156,7 +151,6 @@ _PRESETS: dict[str, PresetDefinition] = {
             "Limitations: may still match some non-card identifiers; mono-line only in v1."
         ),
         pattern=r"\b(?:\d[ -]*?){13,19}\b",
-        flags=0,
         post_filter=_credit_card_post_filter,
     ),
 }
@@ -175,65 +169,16 @@ def _get_preset(preset: str) -> PresetDefinition:
         ) from exc
 
 
-@dataclass(frozen=True)
-class _WordSpan:
-    rect: pymupdf.Rect
-    text: str
-    start: int
-    end: int  # exclusive
-
-
-def _group_words_by_line(
-    page: pymupdf.Page,
-) -> list[list[tuple[float, float, float, float, str, int, int, int]]]:
-    """
-    Return words grouped by (block_no, line_no) in stable order.
-    Each word tuple is (x0, y0, x1, y1, word, block_no, line_no, word_no).
-    """
-    words = page.get_text("words")
-    words_sorted = sorted(words, key=lambda w: (int(w[5]), int(w[6]), int(w[7])))
-    grouped: dict[tuple[int, int], list[tuple[float, float, float, float, str, int, int, int]]] = {}
-
-    for w in words_sorted:
-        key = (int(w[5]), int(w[6]))
-        grouped.setdefault(key, []).append(w)
-
-    return [grouped[k] for k in sorted(grouped.keys())]
-
-
-def _build_line_text_and_spans(
-    line_words: list[tuple[float, float, float, float, str, int, int, int]],
-) -> tuple[str, list[_WordSpan]]:
-    """
-    Join words with single spaces and track each word's character span.
-    This is a heuristic mapping; it's sufficient for v1 mono-line presets.
-    """
-    parts: list[str] = []
-    spans: list[_WordSpan] = []
-    cursor = 0
-
-    for idx, (x0, y0, x1, y1, word, *_rest) in enumerate(line_words):
-        if idx > 0:
-            parts.append(" ")
-            cursor += 1
-
-        parts.append(word)
-        start = cursor
-        cursor += len(word)
-        end = cursor
-        spans.append(_WordSpan(rect=pymupdf.Rect(x0, y0, x1, y1), text=word, start=start, end=end))
-
-    return "".join(parts), spans
-
-
-def _rect_union(spans: Iterable[_WordSpan]) -> pymupdf.Rect:
-    spans_list = list(spans)
-    if not spans_list:
-        raise ValueError("Cannot build union rect from empty spans.")
-    union = pymupdf.Rect(spans_list[0].rect)
-    for s in spans_list[1:]:
-        union |= s.rect
-    return union
+def _dedupe_rects(rects: list[RedactionRect]) -> list[RedactionRect]:
+    seen: set[tuple[int, float, float, float, float]] = set()
+    out: list[RedactionRect] = []
+    for r in rects:
+        k = (r.page, round(r.x0, 2), round(r.y0, 2), round(r.x1, 2), round(r.y1, 2))
+        if k in seen:
+            continue
+        seen.add(k)
+        out.append(r)
+    return out
 
 
 def find_redaction_rectangles_for_presets(
@@ -244,14 +189,12 @@ def find_redaction_rectangles_for_presets(
 ) -> list[RedactionRect]:
     """
     Presets v1 engine (mono-line):
-    - Extract words + bboxes
-    - Group into lines
-    - Rebuild each line as text
-    - Apply preset regex to the line
-    - Map match ranges back to word bboxes -> redaction rectangles
+    - Run a generic mono-line regex engine (words -> lines -> line_text -> finditer -> union bbox)
+    - Apply optional post-filters per preset to reduce false positives
 
     Notes:
     - Phone preset: broad regex + phonenumbers validation (strong false-positive reduction).
+    - Credit card preset: Luhn filtering (strong false-positive reduction).
     - Multi-line matching is not supported yet in v1.
     """
     if not pdf_bytes:
@@ -260,49 +203,24 @@ def find_redaction_rectangles_for_presets(
         raise ValueError("At least one preset must be provided.")
 
     preset_defs = [_get_preset(p) for p in presets]
-    compiled = [(re.compile(p.pattern, p.flags), p.post_filter) for p in preset_defs]
+    out: list[RedactionRect] = []
 
-    doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")
-    try:
-        if pages is None:
-            page_indexes = list(range(doc.page_count))
-        else:
-            page_indexes = list(pages)
-            for i in page_indexes:
-                if i < 0 or i >= doc.page_count:
-                    raise ValueError(f"Invalid page index: {i}")
+    for pdef in preset_defs:
+        # Presets are intentionally case-insensitive in v1. This is consistent with previous
+        # behavior (email IGNORECASE; phone/card not impacted).
+        hits: list[RegexHit] = iter_regex_hits_by_line(
+            pdf_bytes,
+            [pdef.pattern],
+            case_sensitive=False,
+            pages=pages,
+        )
 
-        out: list[RedactionRect] = []
+        if pdef.post_filter is None:
+            out.extend([h.rect for h in hits])
+            continue
 
-        for page_idx in page_indexes:
-            page = doc.load_page(page_idx)
-            lines = _group_words_by_line(page)
+        for h in hits:
+            if pdef.post_filter(h.match):
+                out.append(h.rect)
 
-            for line_words in lines:
-                line_text, spans = _build_line_text_and_spans(line_words)
-
-                for rx, post_filter in compiled:
-                    for m in rx.finditer(line_text):
-                        match_text = m.group(0)
-                        if post_filter is not None and not post_filter(match_text):
-                            continue
-
-                        start, end = m.start(), m.end()
-                        hit_spans = [s for s in spans if not (s.end <= start or s.start >= end)]
-                        if not hit_spans:
-                            continue
-
-                        union = _rect_union(hit_spans)
-                        out.append(
-                            RedactionRect(
-                                page=page_idx,
-                                x0=float(union.x0),
-                                y0=float(union.y0),
-                                x1=float(union.x1),
-                                y1=float(union.y1),
-                            )
-                        )
-
-        return out
-    finally:
-        doc.close()
+    return _dedupe_rects(out)
