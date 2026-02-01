@@ -205,6 +205,54 @@ def write_008_credit_card_luhn(path: Path) -> None:
     c.save()
 
 
+def write_009_cross_column_phone_trap(path: Path) -> None:
+    """
+    Fixture used to ensure multiline heuristics do NOT combine text across columns.
+
+    Layout:
+    - Left column:  "06 12 34"
+    - Right column: "56 78" (same baseline)
+    A naive approach that concatenates adjacent lines globally might reconstruct "06 12 34 56 78".
+    The multiline engine must avoid pairing lines across columns
+    (e.g., by requiring horizontal overlap).
+    """
+    c = _new_canvas(path)
+    _, h = A4
+    c.setFont("Helvetica", 14)
+    c.drawString(25 * mm, h - 30 * mm, "Fixture 009 — cross-column phone trap")
+
+    c.setFont("Helvetica", 11)
+    left_x = 25 * mm
+    right_x = 120 * mm
+
+    # Put the trap tokens on the same baseline to maximize the risk for naive merge.
+    y = h - 70 * mm
+
+    c.drawString(left_x, y + 10 * mm, "Colonne gauche :")
+    c.drawString(right_x, y + 10 * mm, "Colonne droite :")
+
+    # Trap content: split phone across columns, same y
+    c.setFont("Helvetica", 12)
+    c.drawString(left_x, y, "06 12 34")
+    c.drawString(right_x, y, "56 78")
+
+    # Add filler text around to stabilize extraction blocks
+    c.setFont("Helvetica", 10)
+    c.drawString(left_x, y - 15 * mm, "Texte gauche: Alpha 111 / Bravo 222 / Charlie 333")
+    c.drawString(right_x, y - 15 * mm, "Texte droite: Delta 444 / Echo 555 / Foxtrot 666")
+
+    c.setFont("Helvetica", 10)
+    c.drawString(
+        25 * mm,
+        20 * mm,
+        "Note: this fixture must NOT produce a multiline " \
+        "phone match when columns are handled correctly.",
+    )
+
+    c.showPage()
+    c.save()
+
+
 SPECS: list[FixtureSpec] = [
     FixtureSpec(
         filename="001_secret_text.pdf",
@@ -245,6 +293,11 @@ SPECS: list[FixtureSpec] = [
         filename="008_credit_card_luhn.pdf",
         writer=write_008_credit_card_luhn,
         description="Credit card fixture (valid vs invalid PAN, Luhn filtering)",
+    ),
+    FixtureSpec(
+        filename="009_cross_column_phone_trap.pdf",
+        writer=write_009_cross_column_phone_trap,
+        description="Cross-column phone trap (must not multiline-match across columns)",
     ),
 ]
 

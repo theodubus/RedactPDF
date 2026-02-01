@@ -1,25 +1,19 @@
 from __future__ import annotations
 
-import io
 import json
 import re
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-from pypdf import PdfReader
 
 from app.main import app
+from tests.utils_pdf import extract_text
 
 client = TestClient(app)
 
 EMAIL_RX = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
 PHONE_RX = re.compile(r"(?:\+?\d[\d\s().-]{6,}\d)")
-
-
-def _read_pdf_text(pdf_bytes: bytes) -> str:
-    reader = PdfReader(io.BytesIO(pdf_bytes))
-    return "\n".join(page.extract_text() or "" for page in reader.pages)
 
 
 def _load_fixture(name: str) -> bytes:
@@ -36,7 +30,7 @@ def _post_regex(pdf_bytes: bytes, payload: dict) -> TestClient.Response:
 @pytest.mark.integration
 def test_regex_email_removes_email_keeps_phone() -> None:
     pdf_in = _load_fixture("002_email_phone_one_line.pdf")
-    text_in = _read_pdf_text(pdf_in)
+    text_in = extract_text(pdf_in)
 
     email_m = EMAIL_RX.search(text_in)
     assert email_m is not None, "Expected an email in fixture 002."
@@ -63,7 +57,7 @@ def test_regex_email_removes_email_keeps_phone() -> None:
     # If you add this header in the endpoint, enforce it:
     assert int(resp.headers.get("X-Redaction-Regex-Occurrences", "0")) > 0
 
-    text_out = _read_pdf_text(resp.content)
+    text_out = extract_text(resp.content)
     assert email not in text_out
     assert phone in text_out
 
@@ -71,7 +65,7 @@ def test_regex_email_removes_email_keeps_phone() -> None:
 @pytest.mark.integration
 def test_regex_phone_removes_phone_keeps_email() -> None:
     pdf_in = _load_fixture("002_email_phone_one_line.pdf")
-    text_in = _read_pdf_text(pdf_in)
+    text_in = extract_text(pdf_in)
 
     email_m = EMAIL_RX.search(text_in)
     assert email_m is not None, "Expected an email in fixture 002."
@@ -97,7 +91,7 @@ def test_regex_phone_removes_phone_keeps_email() -> None:
     assert int(resp.headers.get("X-Redaction-Audit-Matches", "999")) == 0
     assert int(resp.headers.get("X-Redaction-Regex-Occurrences", "0")) > 0
 
-    text_out = _read_pdf_text(resp.content)
+    text_out = extract_text(resp.content)
     assert phone not in text_out
     assert email in text_out
 
@@ -125,7 +119,7 @@ def test_regex_invalid_pattern_returns_400() -> None:
 @pytest.mark.integration
 def test_regex_no_match_occurrences_zero_and_content_preserved() -> None:
     pdf_in = _load_fixture("002_email_phone_one_line.pdf")
-    text_in = _read_pdf_text(pdf_in)
+    text_in = extract_text(pdf_in)
 
     no_match_pattern = r"THIS_WILL_NOT_MATCH_123456"
 
@@ -146,6 +140,6 @@ def test_regex_no_match_occurrences_zero_and_content_preserved() -> None:
     if "X-Redaction-Regex-Occurrences" in resp.headers:
         assert int(resp.headers["X-Redaction-Regex-Occurrences"]) == 0
 
-    text_out = _read_pdf_text(resp.content)
+    text_out = extract_text(resp.content)
     # Byte-identical PDF is not guaranteed; text preservation is the meaningful invariant here.
     assert text_out == text_in

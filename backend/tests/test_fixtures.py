@@ -3,9 +3,8 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
-from pypdf import PdfReader  # type: ignore
-
 from tests.fixtures.generate_fixtures import GENERATED_DIR, SECRET, SPECS, generate_all
+from tests.utils_pdf import extract_text
 
 
 def _sha256(path: Path) -> str:
@@ -22,9 +21,8 @@ def test_fixtures_exist_and_non_empty() -> None:
 
 
 def test_sanity_extract_text_contains_secret() -> None:
-    pdf_path = GENERATED_DIR / "001_secret_text.pdf"
-    reader = PdfReader(str(pdf_path))
-    text = "\n".join((page.extract_text() or "") for page in reader.pages)
+    pdf_bytes = (GENERATED_DIR / "001_secret_text.pdf").read_bytes()
+    text = extract_text(pdf_bytes)
     assert SECRET in text
 
 

@@ -1,4 +1,3 @@
-# backend/tests/test_redact_search.py
 from __future__ import annotations
 
 import json
@@ -7,54 +6,18 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-from pypdf import PdfReader
 
 from app.main import app
+from tests.utils_pdf import extract_text
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures" / "generated"
-
-
-def _extract_text(pdf_bytes: bytes) -> str:
-    reader = PdfReader(_BytesIO(pdf_bytes))
-    text_parts: list[str] = []
-    for page in reader.pages:
-        text_parts.append(page.extract_text() or "")
-    return "\n".join(text_parts)
-
-
-class _BytesIO:
-    # tiny wrapper to avoid importing io.BytesIO in every file
-    def __init__(self, b: bytes) -> None:
-        self._b = b
-        self._i = 0
-
-    def read(self, n: int = -1) -> bytes:
-        if n == -1:
-            n = len(self._b) - self._i
-        chunk = self._b[self._i : self._i + n]
-        self._i += len(chunk)
-        return chunk
-
-    def seek(self, pos: int, whence: int = 0) -> int:
-        if whence == 0:
-            self._i = pos
-        elif whence == 1:
-            self._i += pos
-        elif whence == 2:
-            self._i = len(self._b) + pos
-        else:
-            raise ValueError("invalid whence")
-        return self._i
-
-    def tell(self) -> int:
-        return self._i
 
 
 @pytest.mark.integration
 def test_redact_search_exact_email() -> None:
     pdf_path = FIXTURES_DIR / "002_email_phone_one_line.pdf"
     pdf_bytes = pdf_path.read_bytes()
-    original_text = _extract_text(pdf_bytes)
+    original_text = extract_text(pdf_bytes)
 
     m = re.search(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", original_text)
     assert m, "No email found in fixture 002_email_phone_one_line.pdf"
@@ -78,7 +41,7 @@ def test_redact_search_exact_email() -> None:
     assert resp.headers.get("X-Redaction-Audit-Status") == "pass"
     assert resp.headers.get("X-Redaction-Audit-Matches") == "0"
 
-    redacted_text = _extract_text(resp.content)
+    redacted_text = extract_text(resp.content)
     assert email not in redacted_text
 
 
@@ -93,7 +56,7 @@ def test_whole_word_does_not_match_substring_in_word() -> None:
     """
     pdf_path = FIXTURES_DIR / "007_whole_word_cat_catch.pdf"
     pdf_bytes = pdf_path.read_bytes()
-    original_text = _extract_text(pdf_bytes)
+    original_text = extract_text(pdf_bytes)
 
     assert "CAT" in original_text
     assert "CATCH" in original_text
@@ -116,7 +79,7 @@ def test_whole_word_does_not_match_substring_in_word() -> None:
     assert resp.headers.get("X-Redaction-Audit-Status") == "pass"
     assert resp.headers.get("X-Redaction-Audit-Matches") == "0"
 
-    redacted_text = _extract_text(resp.content)
+    redacted_text = extract_text(resp.content)
 
     # Ensure standalone CAT is gone (whole word)
     assert re.search(r"\bCAT\b", redacted_text) is None
