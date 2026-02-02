@@ -10,6 +10,7 @@ import pymupdf
 @dataclass(frozen=True)
 class RedactionRect:
     """Rectangle de redaction en coordonnées PyMuPDF (points), page indexée à partir de 0."""
+
     page: int
     x0: float
     y0: float
@@ -17,14 +18,24 @@ class RedactionRect:
     y1: float
 
 
-def redact_pdf_by_rectangles(pdf_bytes: bytes, rects: Iterable[RedactionRect]) -> bytes:
+def redact_pdf_by_rectangles(
+    pdf_bytes: bytes,
+    rects: Iterable[RedactionRect],
+    *,
+    apply_images: bool = False,
+    apply_graphics: bool = False,
+) -> bytes:
     """
     Applique des redactions à partir d'une liste de rectangles.
 
-    Pour cette étape :
+    Par défaut, ce comportement reste conservateur :
     - images OFF
     - vector graphics OFF
-    - text removal ON (défaut)
+    - text removal ON
+
+    Si activé :
+    - apply_images=True  -> suppression des images chevauchant les zones redigées
+    - apply_graphics=True -> suppression des dessins vectoriels chevauchant les zones redigées
 
     Retourne le PDF redigé (bytes).
     """
@@ -35,13 +46,20 @@ def redact_pdf_by_rectangles(pdf_bytes: bytes, rects: Iterable[RedactionRect]) -
             if r.page < 0 or r.page >= doc.page_count:
                 raise ValueError(f"Invalid page index: {r.page} (page_count={doc.page_count})")
 
-            rect = pymupdf.Rect(r.x0, r.y0, r.x1, r.y1)
+            rect = pymupdf.Rect(r.x0, r.y0, r.x1, r.y1).normalize()
             if rect.is_empty:
                 raise ValueError(f"Empty rectangle: {rect}")
 
-            # Normaliser au cas où (x0 > x1 / y0 > y1)
-            rect = rect.normalize()
             by_page.setdefault(r.page, []).append(rect)
+
+        images_mode = (
+            pymupdf.PDF_REDACT_IMAGE_REMOVE if apply_images else pymupdf.PDF_REDACT_IMAGE_NONE
+        )
+        graphics_mode = (
+            pymupdf.PDF_REDACT_LINE_ART_REMOVE_IF_TOUCHED
+            if apply_graphics
+            else pymupdf.PDF_REDACT_LINE_ART_NONE
+        )
 
         # Ajouter annotations puis appliquer par page
         for page_no, rect_list in by_page.items():
@@ -51,16 +69,14 @@ def redact_pdf_by_rectangles(pdf_bytes: bytes, rects: Iterable[RedactionRect]) -
                 # (Le retrait réel du contenu est fait par apply_redactions.)
                 page.add_redact_annot(rect, fill=(0, 0, 0))
 
-            # IMPORTANT : désactiver explicitement images/vectors pour cette étape
             page.apply_redactions(
-                images=pymupdf.PDF_REDACT_IMAGE_NONE,
-                graphics=pymupdf.PDF_REDACT_LINE_ART_NONE,
+                images=images_mode,
+                graphics=graphics_mode,
                 # text = PDF_REDACT_TEXT_REMOVE est le défaut ; on le laisse tel quel.
             )
 
         out = BytesIO()
         # garbage élevé aide à purger les objets devenus inutiles après redaction.
-        # :contentReference[oaicite:1]{index=1}
         doc.save(out, garbage=4, deflate=True)
         return out.getvalue()
     finally:
