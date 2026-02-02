@@ -6,6 +6,8 @@ from io import BytesIO
 
 import pymupdf
 
+from app.sanitize import sanitize_document
+
 
 @dataclass(frozen=True)
 class RedactionRect:
@@ -24,6 +26,9 @@ def redact_pdf_by_rectangles(
     *,
     apply_images: bool = False,
     apply_graphics: bool = False,
+    sanitize_metadata: bool = False,
+    remove_annotations: bool = False,
+    remove_attachments: bool = False,
 ) -> bytes:
     """
     Applique des redactions à partir d'une liste de rectangles.
@@ -32,10 +37,14 @@ def redact_pdf_by_rectangles(
     - images OFF
     - vector graphics OFF
     - text removal ON
+    - sanitize OFF
 
     Si activé :
-    - apply_images=True  -> suppression des images chevauchant les zones redigées
-    - apply_graphics=True -> suppression des dessins vectoriels chevauchant les zones redigées
+    - apply_images=True        -> suppression des images chevauchant les zones redigées
+    - apply_graphics=True      -> suppression des dessins vectoriels chevauchant les zones redigées
+    - sanitize_metadata=True   -> nettoyage des métadonnées (Info dict + XMP si possible)
+    - remove_annotations=True  -> suppression des annotations/liens/widgets
+    - remove_attachments=True  -> suppression des fichiers embarqués (embedded files)
 
     Retourne le PDF redigé (bytes).
     """
@@ -75,8 +84,17 @@ def redact_pdf_by_rectangles(
                 # text = PDF_REDACT_TEXT_REMOVE est le défaut ; on le laisse tel quel.
             )
 
+        # Nettoyage "anti-fuite hors visuel" juste avant l'export.
+        # IMPORTANT : la suppression physique est finalisée par doc.save(... garbage>0 ...).
+        sanitize_document(
+            doc,
+            sanitize_metadata=sanitize_metadata,
+            remove_annotations=remove_annotations,
+            remove_attachments=remove_attachments,
+        )
+
         out = BytesIO()
-        # garbage élevé aide à purger les objets devenus inutiles après redaction.
+        # garbage élevé aide à purger les objets devenus inutiles après redaction + sanitation.
         doc.save(out, garbage=4, deflate=True)
         return out.getvalue()
     finally:
