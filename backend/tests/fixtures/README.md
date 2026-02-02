@@ -18,6 +18,7 @@ The fixtures cover common and problematic cases for PDF redaction:
 - whole-word behavior (`CAT` must not match inside `CATCH`)
 - credit card numbers (valid vs invalid; Luhn filtering)
 - cross-column trap: phone split across columns (must **not** be matched as multiline)
+- metadata + annotation: non-empty PDF metadata and a link annotation (used for sanitize tests)
 
 They serve as a **contract**: tests rely on their exact content and structure.
 
@@ -29,7 +30,7 @@ To regenerate them:
 
 ```bash
 python -m backend.tests.fixtures.generate_fixtures
-````
+```
 
 ## Important rule
 

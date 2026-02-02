@@ -35,6 +35,11 @@ class OptionsModel(BaseModel):
     apply_images: bool = False
     apply_graphics: bool = False
 
+    # Étape 09 : sanitation "anti-fuites hors visuel"
+    sanitize_metadata: bool = False
+    remove_annotations: bool = False
+    remove_attachments: bool = False
+
 
 class AuditModel(BaseModel):
     patterns: list[str] = Field(..., description="List of strings/regex to ban")
@@ -92,6 +97,9 @@ async def redact_rectangles(
             rects,
             apply_images=data.options.apply_images,
             apply_graphics=data.options.apply_graphics,
+            sanitize_metadata=data.options.sanitize_metadata,
+            remove_annotations=data.options.remove_annotations,
+            remove_attachments=data.options.remove_attachments,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
@@ -160,7 +168,7 @@ class SearchPayload(BaseModel):
     query: str
     options: SearchOptionsModel = Field(default_factory=SearchOptionsModel)
     scope: ScopeModel = Field(default_factory=ScopeModel)
-    # Nouveau : options de redaction (images/graphics), rétro-compatible
+    # Nouveau : options de redaction (images/graphics + sanitize), rétro-compatible
     apply: OptionsModel = Field(default_factory=OptionsModel)
     audit: AuditModel
 
@@ -213,6 +221,9 @@ async def redact_search(
             found_rects,
             apply_images=data.apply.apply_images,
             apply_graphics=data.apply.apply_graphics,
+            sanitize_metadata=data.apply.sanitize_metadata,
+            remove_annotations=data.apply.remove_annotations,
+            remove_attachments=data.apply.remove_attachments,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
@@ -316,6 +327,9 @@ async def redact_presets(
             found_rects,
             apply_images=data.options.apply_images,
             apply_graphics=data.options.apply_graphics,
+            sanitize_metadata=data.options.sanitize_metadata,
+            remove_annotations=data.options.remove_annotations,
+            remove_attachments=data.options.remove_attachments,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
@@ -433,6 +447,9 @@ async def redact_regex(
             found_rects,
             apply_images=data.options.apply_images,
             apply_graphics=data.options.apply_graphics,
+            sanitize_metadata=data.options.sanitize_metadata,
+            remove_annotations=data.options.remove_annotations,
+            remove_attachments=data.options.remove_attachments,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e

@@ -245,9 +245,65 @@ def write_009_cross_column_phone_trap(path: Path) -> None:
     c.drawString(
         25 * mm,
         20 * mm,
-        "Note: this fixture must NOT produce a multiline " \
+        "Note: this fixture must NOT produce a multiline "
         "phone match when columns are handled correctly.",
     )
+
+    c.showPage()
+    c.save()
+
+
+def write_010_metadata_and_annotation(path: Path) -> None:
+    """
+    Fixture used to test sanitation of metadata and annotations.
+
+    Contains:
+    - non-empty document metadata (title/author/subject/keywords)
+    - a clickable link annotation (linkURL)
+    """
+    c = _new_canvas(path)
+
+    # Override metadata with non-empty, easily asserted values
+    c.setTitle("fixture-010-metadata-and-annotation")
+    c.setAuthor("author-010")
+    c.setSubject("subject-010")
+    # Keywords are part of PDF Info in many producers; ReportLab exposes setKeywords.
+    if hasattr(c, "setKeywords"):
+        c.setKeywords("keywords-010 redaction sanitize")
+
+    _, h = A4
+    c.setFont("Helvetica", 14)
+    c.drawString(25 * mm, h - 30 * mm, "Fixture 010 — metadata + annotation")
+
+    c.setFont("Helvetica", 12)
+    c.drawString(25 * mm, h - 55 * mm, "This file contains metadata and a link annotation.")
+
+    # Create a visible clickable text and attach a link annotation to it.
+    link_text = "Click here (link annotation)"
+    x = 25 * mm
+    y = h - 80 * mm
+    c.setFillColorRGB(0, 0, 1)  # blue text (visual cue)
+    c.drawString(x, y, link_text)
+    c.setFillColorRGB(0, 0, 0)
+
+    # Approximate bounding box for the link area.
+    # Deterministic because the text and font are stable.
+    text_width = c.stringWidth(link_text, "Helvetica", 12)
+    rect = (x, y - 2, x + text_width, y + 12)
+
+    # Add link annotation; keep it deterministic.
+    c.linkURL(
+        url="https://example.com/sanitize-test",
+        rect=rect,
+        relative=0,
+        thickness=0,
+        color=None,
+        dashArray=None,
+        highlight=None,
+    )
+
+    c.setFont("Helvetica", 10)
+    c.drawString(25 * mm, 20 * mm, "Note: used to test sanitize_metadata/remove_annotations.")
 
     c.showPage()
     c.save()
@@ -298,6 +354,11 @@ SPECS: list[FixtureSpec] = [
         filename="009_cross_column_phone_trap.pdf",
         writer=write_009_cross_column_phone_trap,
         description="Cross-column phone trap (must not multiline-match across columns)",
+    ),
+    FixtureSpec(
+        filename="010_metadata_and_annotation.pdf",
+        writer=write_010_metadata_and_annotation,
+        description="Metadata + link annotation (sanitize_metadata/remove_annotations)",
     ),
 ]
 
