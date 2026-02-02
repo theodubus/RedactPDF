@@ -52,7 +52,7 @@ class AuditModel(BaseModel):
 
 class RectanglesPayload(BaseModel):
     rects: list[RectModel]
-    options: OptionsModel = OptionsModel()
+    options: OptionsModel = Field(default_factory=OptionsModel)
     audit: AuditModel
 
 
@@ -67,7 +67,6 @@ async def redact_rectangles(
     except ValidationError as e:
         raise HTTPException(status_code=422, detail=e.errors()) from e
     except Exception:
-        # payload pas JSON ou autre erreur de parsing
         raise HTTPException(status_code=400, detail="Invalid payload JSON") from None
 
     # 2) Lire PDF
@@ -76,7 +75,6 @@ async def redact_rectangles(
         raise HTTPException(status_code=400, detail="Empty PDF upload")
 
     # 3) Appliquer redactions
-    # NOTE: options images/vectors sont ignorées dans cette étape (forcées OFF côté service)
     rects = [
         RedactionRect(
             page=r.page,
@@ -89,7 +87,12 @@ async def redact_rectangles(
     ]
 
     try:
-        out_pdf = redact_pdf_by_rectangles(pdf_bytes, rects)
+        out_pdf = redact_pdf_by_rectangles(
+            pdf_bytes,
+            rects,
+            apply_images=data.options.apply_images,
+            apply_graphics=data.options.apply_graphics,
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
@@ -106,7 +109,6 @@ async def redact_rectangles(
             ),
         )
     except ValueError as e:
-        # regex invalide, patterns vides, etc.
         return JSONResponse(
             status_code=400,
             content={"status": "error", "error": str(e)},
@@ -122,11 +124,9 @@ async def redact_rectangles(
         "X-Redaction-Audit-Matches": "0",
     }
 
-    # Optionnel : inclure un report encodé (attention aux limites de taille de header)
     report_json = json.dumps(report, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     b64 = base64.urlsafe_b64encode(report_json).decode("ascii")
 
-    # Limite conservative pour éviter des soucis proxies/serveurs
     if len(b64) <= 6000:
         headers["X-Redaction-Audit-Report-B64"] = b64
     else:
@@ -158,8 +158,10 @@ class ScopeModel(BaseModel):
 
 class SearchPayload(BaseModel):
     query: str
-    options: SearchOptionsModel = SearchOptionsModel()
-    scope: ScopeModel = ScopeModel()
+    options: SearchOptionsModel = Field(default_factory=SearchOptionsModel)
+    scope: ScopeModel = Field(default_factory=ScopeModel)
+    # Nouveau : options de redaction (images/graphics), rétro-compatible
+    apply: OptionsModel = Field(default_factory=OptionsModel)
     audit: AuditModel
 
     @field_validator("query")
@@ -205,9 +207,13 @@ async def redact_search(
         raise HTTPException(status_code=500, detail="Search failed") from e
 
     # 4) Appliquer redactions
-    # (si aucune occurrence trouvée, on exporte quand même, puis audit tranche)
     try:
-        out_pdf = redact_pdf_by_rectangles(pdf_bytes, found_rects)
+        out_pdf = redact_pdf_by_rectangles(
+            pdf_bytes,
+            found_rects,
+            apply_images=data.apply.apply_images,
+            apply_graphics=data.apply.apply_graphics,
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
@@ -253,8 +259,8 @@ async def redact_search(
 
 class PresetsPayload(BaseModel):
     presets: list[str]
-    scope: ScopeModel = ScopeModel()
-    options: OptionsModel = OptionsModel()
+    scope: ScopeModel = Field(default_factory=ScopeModel)
+    options: OptionsModel = Field(default_factory=OptionsModel)
     audit: AuditModel
 
     @field_validator("presets")
@@ -304,9 +310,13 @@ async def redact_presets(
         raise HTTPException(status_code=500, detail="Presets search failed") from e
 
     # 4) Appliquer redactions
-    # NOTE: options images/vectors ignorées pour l'instant (comme les autres endpoints)
     try:
-        out_pdf = redact_pdf_by_rectangles(pdf_bytes, found_rects)
+        out_pdf = redact_pdf_by_rectangles(
+            pdf_bytes,
+            found_rects,
+            apply_images=data.options.apply_images,
+            apply_graphics=data.options.apply_graphics,
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
@@ -362,8 +372,8 @@ class RegexPayload(BaseModel):
     patterns: list[str]
     case_sensitive: bool = False
     multiline: bool = False
-    scope: ScopeModel = ScopeModel()
-    options: OptionsModel = OptionsModel()
+    scope: ScopeModel = Field(default_factory=ScopeModel)
+    options: OptionsModel = Field(default_factory=OptionsModel)
     audit: AuditModel
 
     @field_validator("patterns", mode="before")
@@ -412,15 +422,18 @@ async def redact_regex(
             multiline=data.multiline,
         )
     except ValueError as e:
-        # regex invalide, pages invalides, patterns vides (normalement déjà validés), etc.
         raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
         raise HTTPException(status_code=500, detail="Regex search failed") from e
 
     # 4) Appliquer redactions
-    # NOTE: options images/vectors ignorées pour l'instant (comme les autres endpoints)
     try:
-        out_pdf = redact_pdf_by_rectangles(pdf_bytes, found_rects)
+        out_pdf = redact_pdf_by_rectangles(
+            pdf_bytes,
+            found_rects,
+            apply_images=data.options.apply_images,
+            apply_graphics=data.options.apply_graphics,
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
