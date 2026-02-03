@@ -1,0 +1,43 @@
+{
+  "app.title": "PDF Redaction Tool",
+  "app.subtitle": "Robust redaction (real removal) with post-export audit",
+  "lang.fr": "FR",
+  "lang.en": "EN",
+
+  "form.section.file": "PDF document",
+  "form.file.choose": "Choose a PDF file",
+  "form.file.selected": "Selected file",
+  "form.file.invalidType": "Please select a PDF file.",
+  "form.file.required": "Please select a file.",
+
+  "form.section.search": "Search (exact)",
+  "form.search.query": "Word / phrase to redact",
+  "form.search.query.placeholder": "e.g., SECRET_ABC123",
+  "form.search.caseSensitive": "Case sensitive",
+  "form.search.wholeWord": "Whole word",
+
+  "form.section.presets": "Presets",
+  "form.presets.email": "Emails",
+  "form.presets.phone": "Phone numbers",
+  "form.presets.creditCard": "Credit cards",
+
+  "form.nothingToDo": "Please enter a search query and/or select at least one preset.",
+  "form.submit": "Redact & Export",
+  "form.submitting": "Processing…",
+  "form.hint": "The source file is never modified. Export is blocked if the audit detects a leak.",
+
+  "result.success.title": "Success",
+  "result.success.download": "Download redacted PDF",
+  "result.success.auditStatus": "Audit",
+  "result.success.occurrencesSearch": "Occurrences (search)",
+  "result.success.occurrencesPresets": "Occurrences (presets)",
+  "result.success.occurrencesTotal": "Occurrences (total)",
+
+  "result.error.title": "Failed: audit error",
+  "result.error.http": "HTTP status",
+  "result.error.details": "Report details",
+  "result.error.noJson": "Unexpected error (non-JSON response).",
+
+  "debug.show": "Show",
+  "debug.hide": "Hide"
+}
