@@ -1,0 +1,43 @@
+{
+  "app.title": "Outil de censure PDF",
+  "app.subtitle": "Redaction robuste (suppression réelle) avec audit post-export",
+  "lang.fr": "FR",
+  "lang.en": "EN",
+
+  "form.section.file": "Document PDF",
+  "form.file.choose": "Choisir un fichier PDF",
+  "form.file.selected": "Fichier sélectionné",
+  "form.file.invalidType": "Veuillez sélectionner un fichier PDF.",
+  "form.file.required": "Veuillez sélectionner un fichier.",
+
+  "form.section.search": "Recherche (exacte)",
+  "form.search.query": "Mot / phrase à censurer",
+  "form.search.query.placeholder": "Ex: SECRET_ABC123",
+  "form.search.caseSensitive": "Sensible à la casse",
+  "form.search.wholeWord": "Mot entier",
+
+  "form.section.presets": "Presets",
+  "form.presets.email": "Emails",
+  "form.presets.phone": "Numéros de téléphone",
+  "form.presets.creditCard": "Cartes bancaires",
+
+  "form.nothingToDo": "Veuillez renseigner une recherche et/ou sélectionner au moins un preset.",
+  "form.submit": "Redact & Export",
+  "form.submitting": "Traitement en cours…",
+  "form.hint": "Le fichier source n’est jamais modifié. L’export est bloqué si l’audit détecte une fuite.",
+
+  "result.success.title": "Succès",
+  "result.success.download": "Télécharger le PDF redigé",
+  "result.success.auditStatus": "Audit",
+  "result.success.occurrencesSearch": "Occurrences (recherche)",
+  "result.success.occurrencesPresets": "Occurrences (presets)",
+  "result.success.occurrencesTotal": "Occurrences (total)",
+
+  "result.error.title": "Échec : audit en erreur",
+  "result.error.http": "Code HTTP",
+  "result.error.details": "Détails du report",
+  "result.error.noJson": "Erreur inattendue (réponse non JSON).",
+
+  "debug.show": "Afficher",
+  "debug.hide": "Masquer"
+}

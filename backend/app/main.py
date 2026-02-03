@@ -4,6 +4,7 @@ import base64
 import json
 from typing import Annotated, Any
 
+import pymupdf
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, ValidationError, field_validator
@@ -272,7 +273,8 @@ class PresetsPayload(BaseModel):
     presets: list[str]
     scope: ScopeModel = Field(default_factory=ScopeModel)
     options: OptionsModel = Field(default_factory=OptionsModel)
-    audit: AuditModel
+    # Audit devient optionnel pour /redact/presets (le backend fait un audit interne cohérent)
+    audit: AuditModel | None = None
 
     @field_validator("presets")
     @classmethod
@@ -288,6 +290,64 @@ class PresetsPayload(BaseModel):
                 f"Unknown preset(s): {', '.join(unknown)}. Available: {', '.join(sorted(allowed))}"
             )
         return cleaned
+
+
+def _build_presets_internal_audit_report(
+    out_pdf: bytes,
+    *,
+    presets: list[str],
+    pages: list[int] | None,
+) -> dict[str, Any]:
+    """
+    Audit interne cohérent avec les presets :
+    - relance la détection presets sur le PDF exporté
+    - si des occurrences restent, on renvoie un report JSON (style proche de audit_pdf_text)
+    """
+    leaks_by_preset: dict[str, list[RedactionRect]] = {}
+    total = 0
+    matched_pages: set[int] = set()
+
+    # Détecter les fuites par preset (permet d'attribuer la fuite à un preset)
+    for p in presets:
+        rects = find_redaction_rectangles_for_presets(out_pdf, [p], pages=pages)
+        leaks_by_preset[p] = rects
+        total += len(rects)
+        matched_pages.update(r.page for r in rects)
+
+    # Construire des snippets à partir des zones détectées
+    matches: list[dict[str, Any]] = []
+    if total > 0:
+        doc = pymupdf.open(stream=out_pdf, filetype="pdf")
+        try:
+            for preset_key, rects in leaks_by_preset.items():
+                for r in rects:
+                    page = doc[r.page]
+                    rect = pymupdf.Rect(r.x0, r.y0, r.x1, r.y1)
+                    snippet = page.get_textbox(rect) or ""
+                    snippet = snippet.strip()
+
+                    matches.append(
+                        {
+                            "preset": preset_key,
+                            "page": r.page,
+                            "rect": {"x0": r.x0, "y0": r.y0, "x1": r.x1, "y1": r.y1},
+                            "snippet": snippet,
+                        }
+                    )
+        finally:
+            doc.close()
+
+    return {
+        "status": "fail",
+        "total_matches": total,
+        "matched_pages": sorted(matched_pages),
+        "options": {
+            "mode": "presets_internal",
+            "pages": pages,
+        },
+        "presets": presets,
+        "matches": matches,
+    }
 
 
 @app.post("/redact/presets")
@@ -308,7 +368,7 @@ async def redact_presets(
     if not pdf_bytes:
         raise HTTPException(status_code=400, detail="Empty PDF upload")
 
-    # 3) Trouver occurrences via presets -> rectangles
+    # 3) Trouver occurrences via presets -> rectangles (sur l'entrée)
     try:
         found_rects = find_redaction_rectangles_for_presets(
             pdf_bytes,
@@ -336,26 +396,16 @@ async def redact_presets(
     except Exception as e:
         raise HTTPException(status_code=500, detail="Redaction failed") from e
 
-    # 5) Audit post-export (obligatoire)
-    try:
-        report = audit_pdf_text(
-            out_pdf,
-            AuditOptions(
-                patterns=data.audit.patterns,
-                regex=data.audit.regex,
-                case_sensitive=data.audit.case_sensitive,
-            ),
-        )
-    except ValueError as e:
-        return JSONResponse(
-            status_code=400,
-            content={"status": "error", "error": str(e)},
-        )
-
-    if report["status"] != "pass":
+    # 5) Audit post-export (obligatoire) : audit interne cohérent avec les presets
+    report = _build_presets_internal_audit_report(
+        out_pdf,
+        presets=data.presets,
+        pages=data.scope.pages,
+    )
+    if report["total_matches"] != 0:
         return JSONResponse(status_code=400, content=report)
 
-    # 6) Succès : PDF + headers
+    # 6) Succès : PDF + headers (audit "pass")
     headers: dict[str, Any] = {
         "Content-Disposition": 'attachment; filename="redacted.pdf"',
         "X-Redaction-Audit-Status": "pass",
@@ -363,7 +413,17 @@ async def redact_presets(
         "X-Redaction-Presets-Occurrences": str(len(found_rects)),
     }
 
-    report_json = json.dumps(report, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    # On conserve le mécanisme report b64 pour homogénéité (report "pass" minimal)
+    pass_report = {
+        "status": "pass",
+        "total_matches": 0,
+        "matched_pages": [],
+        "options": {"mode": "presets_internal", "pages": data.scope.pages},
+        "presets": data.presets,
+        "matches": [],
+    }
+
+    report_json = json.dumps(pass_report, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     b64 = base64.urlsafe_b64encode(report_json).decode("ascii")
 
     if len(b64) <= 6000:
