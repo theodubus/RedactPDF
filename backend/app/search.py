@@ -6,6 +6,8 @@ from dataclasses import dataclass
 
 import pymupdf
 
+from app.audit import build_whole_word_pattern
+from app.multiline_regex_engine import find_redaction_rectangles_by_regex
 from app.redaction import RedactionRect
 
 
@@ -24,19 +26,35 @@ def find_redaction_rectangles(pdf_bytes: bytes, opts: SearchOptions) -> list[Red
     for occurrences of opts.query.
 
     Strategy:
-    - whole_word=True: use page.get_text("words") and match word(s) exactly
-      (supports case-sensitive reliably, including non-ASCII).
-    - whole_word=False: use page.search_for(query) (fast, multi-line, but
-      case-insensitive for ASCII), then filter by exact-case using get_textbox()
+    - whole_word=True: build a boundary-aware regex and reuse the regex engine
+      (more robust than relying on page.get_text("words") tokenization, which may
+      include punctuation like "DUPONT," or embed substrings inside emails).
+    - whole_word=False: use page.search_for(query) (fast, can wrap across lines,
+      but case-insensitive for ASCII), then filter by exact-case using get_textbox()
       if case_sensitive=True.
 
     Notes:
     - Page.search_for() is case-insensitive for ASCII and does not support regex.
       See PyMuPDF docs.
+    - The boundary rule for whole_word uses \\w (letters/digits/_). Punctuation
+      such as ',', '.', '@' acts as a boundary, which is desirable for names next
+      to punctuation and substrings inside emails.
     """
     query = (opts.query or "").strip()
     if not query:
         raise ValueError("query must be non-empty")
+
+    if opts.whole_word:
+        pattern = build_whole_word_pattern(query)
+        # Reuse the existing regex->rectangles engine (single-line mode).
+        # This avoids fragile dependence on PyMuPDF "words" tokenization.
+        return find_redaction_rectangles_by_regex(
+            pdf_bytes=pdf_bytes,
+            patterns=[pattern],
+            case_sensitive=opts.case_sensitive,
+            pages=opts.pages,
+            multiline=False,
+        )
 
     doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")
     try:
@@ -45,25 +63,7 @@ def find_redaction_rectangles(pdf_bytes: bytes, opts: SearchOptions) -> list[Red
 
         for pno in page_numbers:
             page = doc.load_page(pno)
-            if opts.whole_word:
-                rects.extend(
-                    _find_whole_word(
-                        page,
-                        pno,
-                        query,
-                        opts.case_sensitive,
-                        opts.sort_words,
-                    )
-                )
-            else:
-                rects.extend(
-                    _find_substring_like(
-                        page,
-                        pno,
-                        query,
-                        opts.case_sensitive,
-                    )
-                )
+            rects.extend(_find_substring_like(page, pno, query, opts.case_sensitive))
 
         return rects
     finally:
@@ -115,71 +115,8 @@ def _find_substring_like(
     return out
 
 
-def _find_whole_word(
-    page: pymupdf.Page,
-    pno: int,
-    query: str,
-    case_sensitive: bool,
-    sort_words: bool,
-) -> list[RedactionRect]:
-    words = page.get_text("words", sort=sort_words)
-    tokens = query.split()
-
-    if len(tokens) == 1:
-        token = tokens[0]
-        out: list[RedactionRect] = []
-        for w in words:
-            x0, y0, x1, y1, text = w[0], w[1], w[2], w[3], w[4]
-            if _eq(text, token, case_sensitive):
-                out.append(
-                    RedactionRect(
-                        page=pno,
-                        x0=float(x0),
-                        y0=float(y0),
-                        x1=float(x1),
-                        y1=float(y1),
-                    )
-                )
-        return out
-
-    # Multi-word phrase match: look for consecutive words matching tokens.
-    # This is intentionally simple (sufficient for "exact search" step).
-    norm_tokens = [t if case_sensitive else t.lower() for t in tokens]
-    norm_words = [w[4] if case_sensitive else str(w[4]).lower() for w in words]
-
-    out: list[RedactionRect] = []
-    n = len(norm_tokens)
-    i = 0
-    while i <= len(words) - n:
-        if norm_words[i : i + n] == norm_tokens:
-            xs0 = [float(words[j][0]) for j in range(i, i + n)]
-            ys0 = [float(words[j][1]) for j in range(i, i + n)]
-            xs1 = [float(words[j][2]) for j in range(i, i + n)]
-            ys1 = [float(words[j][3]) for j in range(i, i + n)]
-            out.append(
-                RedactionRect(
-                    page=pno,
-                    x0=min(xs0),
-                    y0=min(ys0),
-                    x1=max(xs1),
-                    y1=max(ys1),
-                )
-            )
-            i += n
-        else:
-            i += 1
-
-    return out
-
-
 def _rect_to_model(pno: int, r: pymupdf.Rect) -> RedactionRect:
     return RedactionRect(page=pno, x0=float(r.x0), y0=float(r.y0), x1=float(r.x1), y1=float(r.y1))
-
-
-def _eq(a: str, b: str, case_sensitive: bool) -> bool:
-    if case_sensitive:
-        return a == b
-    return a.lower() == b.lower()
 
 
 def _collapse_ws(s: str) -> str:

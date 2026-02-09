@@ -20,6 +20,50 @@ class RedactionRect:
     y1: float
 
 
+def _tighten_rect_vertical(rect: pymupdf.Rect) -> pymupdf.Rect:
+    """
+    Rétrécit agressivement un rectangle en hauteur pour éviter d'impacter la ligne du dessous.
+
+    Idée:
+    - Les rectangles issus d'extraction peuvent inclure une "line box" trop haute.
+    - On conserve le centre vertical et on limite la hauteur à une fraction de la hauteur initiale.
+
+    Politique:
+    - target_height = clamp(h * 0.60, min=3.0 pt, max=12.0 pt)
+    - recentrage vertical sur le milieu du rect
+    - si ça devient dégénéré, on retombe sur un inset simple
+    """
+    h = float(rect.y1 - rect.y0)
+    if h <= 0:
+        return rect
+
+    target = h * 0.60
+    if target < 3.0:
+        target = 3.0
+    if target > 12.0:
+        target = 12.0
+
+    if target >= h:
+        # Rien à faire : trop petit ou déjà serré
+        return rect
+
+    cy = (float(rect.y0) + float(rect.y1)) / 2.0
+    y0 = cy - target / 2.0
+    y1 = cy + target / 2.0
+    if y1 <= y0:
+        return rect
+
+    tightened = pymupdf.Rect(rect.x0, y0, rect.x1, y1)
+
+    # Filet de sécurité : si jamais on a trop resserré sur des polices à grande hauteur,
+    # on applique un petit inset au lieu de casser.
+    if tightened.is_empty:
+        return rect
+
+    return tightened
+
+
+
 def redact_pdf_by_rectangles(
     pdf_bytes: bytes,
     rects: Iterable[RedactionRect],
@@ -58,6 +102,9 @@ def redact_pdf_by_rectangles(
             rect = pymupdf.Rect(r.x0, r.y0, r.x1, r.y1).normalize()
             if rect.is_empty:
                 raise ValueError(f"Empty rectangle: {rect}")
+
+            # Option A: amélioration de précision (inset vertical léger)
+            rect = _tighten_rect_vertical(rect)
 
             by_page.setdefault(r.page, []).append(rect)
 
