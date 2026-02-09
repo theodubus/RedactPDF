@@ -164,17 +164,16 @@ export function EditRuleModal(props: {
           />
         </div>
 
-        {/* Buttons same size */}
-        <div style={{ display: "flex", gap: 12, marginTop: 16 }}>
-          <button type="button" className="buttonSecondary" onClick={onClose} style={{ flex: 1 }}>
+        <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
+          <button type="button" className="buttonSecondary buttonStretch" onClick={onClose}>
             {t("modal.cancel")}
           </button>
+
           <button
             type="button"
-            className="button"
+            className="button buttonStretch"
             onClick={save}
             disabled={!canSave}
-            style={{ flex: 1 }}
           >
             {t("modal.save")}
           </button>

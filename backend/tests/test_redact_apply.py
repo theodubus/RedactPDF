@@ -377,3 +377,89 @@ def test_redact_apply_regex_boundaries_keep_catch_intact() -> None:
 
     # "CATCH" doit rester présent
     assert "CATCH" in redacted_text
+
+
+@pytest.mark.integration
+def test_redact_apply_regex_ignore_accents_pattern_ascii_matches_accented_and_plain() -> None:
+    pdf_path = FIXTURES_DIR / "012_ignore_accents.pdf"
+    pdf_bytes = pdf_path.read_bytes()
+
+    original_text = extract_text(pdf_bytes)
+    assert "Leo" in original_text
+    assert "Léo" in original_text or "LÉO" in original_text or "léo" in original_text.lower()
+
+    payload = {
+        "rects": [],
+        "searches": [],
+        "regexes": [
+            {
+                "patterns": ["leo"],
+                "case_sensitive": False,
+                "multiline": False,
+                "ignore_accents": True,
+                "scope": {"pages": None},
+            }
+        ],
+        "presets": None,
+        "options": {},
+        "audit": None,
+    }
+
+    client = TestClient(app)
+    resp = client.post(
+        "/redact/apply",
+        files={"file": ("accents.pdf", pdf_bytes, "application/pdf")},
+        data={"payload": json.dumps(payload)},
+    )
+
+    assert resp.status_code == 200
+    assert resp.headers.get("X-Redaction-Audit-Status") == "pass"
+
+    redacted_text = extract_text(resp.content)
+    assert "leo" not in redacted_text.casefold()
+    assert "léo" not in redacted_text.casefold()
+
+    # garde-fou: du texte non sensible doit rester
+    assert "rien" in redacted_text
+
+
+@pytest.mark.integration
+def test_redact_apply_regex_ignore_accents_pattern_accented_matches_plain_and_accented() -> None:
+    pdf_path = FIXTURES_DIR / "012_ignore_accents.pdf"
+    pdf_bytes = pdf_path.read_bytes()
+
+    original_text = extract_text(pdf_bytes)
+    assert "Leo" in original_text
+    assert "Léo" in original_text or "LÉO" in original_text or "léo" in original_text.lower()
+
+    payload = {
+        "rects": [],
+        "searches": [],
+        "regexes": [
+            {
+                "patterns": ["léo"],
+                "case_sensitive": False,
+                "multiline": False,
+                "ignore_accents": True,
+                "scope": {"pages": None},
+            }
+        ],
+        "presets": None,
+        "options": {},
+        "audit": None,
+    }
+
+    client = TestClient(app)
+    resp = client.post(
+        "/redact/apply",
+        files={"file": ("accents.pdf", pdf_bytes, "application/pdf")},
+        data={"payload": json.dumps(payload)},
+    )
+
+    assert resp.status_code == 200
+    assert resp.headers.get("X-Redaction-Audit-Status") == "pass"
+
+    redacted_text = extract_text(resp.content)
+    assert "leo" not in redacted_text.casefold()
+    assert "léo" not in redacted_text.casefold()
+    assert "rien" in redacted_text

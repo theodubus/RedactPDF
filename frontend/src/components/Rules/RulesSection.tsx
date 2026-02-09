@@ -4,6 +4,7 @@ import { newId } from "../../utils/redactionUtils";
 
 import { RuleKindToggle } from "./RuleKindToggle";
 import { RuleOptionsRow } from "./RuleOptionsRow";
+import { RuleAddBar } from "./RuleAddBar";
 import { RulesList } from "./RulesList";
 import { EditRuleModal } from "./EditRuleModal";
 
@@ -121,72 +122,74 @@ export function RulesSection(props: {
     <section className="section">
       <div className="sectionTitle">{t("form.section.rules")}</div>
 
-      {/* Type de recherche + toggle */}
-      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-        <div className="muted" style={{ fontWeight: 600 }}>
+      {/* Type de recherche */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "150px 1fr",
+          alignItems: "center",
+          columnGap: 12,
+          rowGap: 0,
+          marginTop: 6,
+        }}
+      >
+        <div className="muted" style={{ fontWeight: 600, lineHeight: "32px" }}>
           {t("rules.label.searchType")}:
         </div>
-        <RuleKindToggle t={t} value={draftKind} onChange={onSetDraftKind} />
-      </div>
 
-      {/* Options au-dessus de l’input */}
-      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginTop: 10 }}>
-        <div className="muted" style={{ fontWeight: 600 }}>
+        <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+          <RuleKindToggle t={t} value={draftKind} onChange={onSetDraftKind} />
+        </div>
+
+        {/* Options */}
+        <div className="muted" style={{ fontWeight: 600, lineHeight: "32px" }}>
           {t("rules.label.options")}:
         </div>
 
-        <RuleOptionsRow
-          kind={draftKind}
-          caseSensitive={draftCaseSensitive}
-          setCaseSensitive={(v: boolean) => {
-            onUserChange();
-            setDraftCaseSensitive(v);
-          }}
-          multiline={draftMultiline}
-          setMultiline={(v: boolean) => {
-            onUserChange();
-            setDraftMultiline(v);
-          }}
-          allowSubwords={draftAllowSubwords}
-          setAllowSubwords={(v: boolean) => {
-            onUserChange();
-            setDraftAllowSubwords(v);
-          }}
-          ignoreAccents={draftIgnoreAccents}
-          setIgnoreAccents={(v: boolean) => {
-            onUserChange();
-            setDraftIgnoreAccents(v);
-          }}
-        />
+        <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+          <RuleOptionsRow
+            kind={draftKind}
+            caseSensitive={draftCaseSensitive}
+            setCaseSensitive={(v: boolean) => {
+              onUserChange();
+              setDraftCaseSensitive(v);
+            }}
+            multiline={draftMultiline}
+            setMultiline={(v: boolean) => {
+              onUserChange();
+              setDraftMultiline(v);
+            }}
+            allowSubwords={draftAllowSubwords}
+            setAllowSubwords={(v: boolean) => {
+              onUserChange();
+              setDraftAllowSubwords(v);
+            }}
+            ignoreAccents={draftIgnoreAccents}
+            setIgnoreAccents={(v: boolean) => {
+              onUserChange();
+              setDraftIgnoreAccents(v);
+            }}
+          />
+        </div>
       </div>
 
+      {/* petit espace avant l’input */}
+      <div style={{ height: 8 }} />
+
+
       {/* Input + Ajouter sur la même ligne */}
-      <div className="row" style={{ gap: 8, alignItems: "center", marginTop: 10 }}>
-        <input
-          className="input"
-          value={draftValue}
-          onChange={(e) => {
-            onUserChange();
-            setDraftValue(e.target.value);
-          }}
-          onKeyDown={onDraftKeyDown}
-          placeholder={inputPlaceholder}
-          aria-label={t("rules.input.aria")}
-        />
-        <button
-          className="buttonSecondary"
-          type="button"
-          onClick={addRule}
-          style={{
-            padding: "8px 10px",
-            fontSize: 13,
-            lineHeight: "14px",
-            whiteSpace: "nowrap",
-          }}
-        >
-          {t("rules.add")}
-        </button>
-      </div>
+      <RuleAddBar
+        t={t}
+        kind={draftKind}
+        value={draftValue}
+        onChangeValue={(v: string) => {
+          onUserChange();
+          setDraftValue(v);
+        }}
+        placeholder={inputPlaceholder}
+        onAdd={addRule}
+        onKeyDown={onDraftKeyDown}
+      />
 
       <RulesList
         t={t}

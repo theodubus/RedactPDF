@@ -186,3 +186,28 @@
 }
 
 .muted { color: #666; font-size: 13px; }
+
+.buttonInline {
+  width: auto;
+  margin-top: 0;
+  flex: 0 0 auto;
+}
+
+.buttonStretch {
+  flex: 1;
+  margin-top: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 44px;
+}
+
+
+.buttonInline {
+  width: auto;
+  margin-top: 0;
+  height: 48px;
+  padding-inline: 14px;
+  font-size: 13px;
+  white-space: nowrap;
+}

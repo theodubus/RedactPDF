@@ -88,10 +88,10 @@ export async function redactApply(params: {
         patterns: [pat],
         case_sensitive: r.caseSensitive,
         multiline: r.multiline,
-        // UI-only: ignoreAccents n'est pas envoyé ici ; il s'applique au search/audit,
-        // et pour regex on reste "pattern-driven" (pas de champ backend).
+        ignore_accents: r.ignoreAccents,
         scope: { pages: null as null },
       };
+
     })
     .filter((rx) => rx.patterns[0].length > 0);
 

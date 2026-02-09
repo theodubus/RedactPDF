@@ -1,4 +1,3 @@
-import React from "react";
 import type { RuleKind } from "../../types/uiRules";
 
 export function RuleAddBar(props: {
@@ -13,7 +12,15 @@ export function RuleAddBar(props: {
   const { t, value, onChangeValue, placeholder, onAdd, onKeyDown } = props;
 
   return (
-    <div className="row" style={{ gap: 8, alignItems: "center" }}>
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        width: "100%",
+        flexWrap: "nowrap",
+      }}
+    >
       <input
         className="input"
         value={value}
@@ -21,15 +28,19 @@ export function RuleAddBar(props: {
         onKeyDown={onKeyDown}
         placeholder={placeholder}
         aria-label={t("rules.input.aria")}
+        style={{ flex: "1 1 auto", minWidth: 0, height: 48 }}
       />
+
       <button
-        className="buttonSecondary"
+        className="buttonSecondary buttonInline"
         type="button"
         onClick={onAdd}
         style={{
-          padding: "8px 10px",
+          flex: "0 0 auto",
+          width: "auto",
+          height: 48,
+          paddingInline: 14,
           fontSize: 13,
-          lineHeight: "14px",
           whiteSpace: "nowrap",
         }}
       >
