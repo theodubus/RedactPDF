@@ -1,11 +1,18 @@
-export type AuditReport = unknown; // le report est structuré côté backend ; on l’affiche tel quel (JSON)
+export type AuditReport = unknown;
 
 export type RedactSuccess = {
   pdfBlob: Blob;
   headers: {
     auditStatus?: string;
     auditMatches?: string;
+
+    // Endpoints historiques
     occurrences?: string;
+
+    // Apply (si exposé côté backend)
+    occurrencesSearch?: string;
+    occurrencesPresets?: string;
+    occurrencesTotal?: string;
   };
 };
 
@@ -17,7 +24,92 @@ function getHeader(headers: Headers, name: string): string | undefined {
 async function parseErrorJson(resp: Response): Promise<AuditReport | null> {
   const ct = resp.headers.get("content-type") || "";
   if (!ct.includes("application/json")) return null;
-  return await resp.json();
+  try {
+    return await resp.json();
+  } catch {
+    return null;
+  }
+}
+
+export async function redactApply(params: {
+  file: File;
+  query: string;
+  caseSensitive: boolean;
+  wholeWord: boolean;
+  presets: Array<"email" | "phone" | "credit_card">;
+}): Promise<RedactSuccess> {
+  const form = new FormData();
+  form.append("file", params.file);
+
+  const trimmed = params.query.trim();
+  const hasSearch = trimmed.length > 0;
+  const hasPresets = params.presets.length > 0;
+
+  const payload = {
+    rects: [],
+    search: hasSearch
+      ? {
+          query: trimmed,
+          options: {
+            case_sensitive: params.caseSensitive,
+            whole_word: params.wholeWord,
+          },
+          scope: { pages: null },
+        }
+      : null,
+    presets: hasPresets
+      ? {
+          presets: params.presets,
+          scope: { pages: null },
+        }
+      : null,
+    options: {},
+
+    // Champ conservé pour compat (si votre modèle le requiert).
+    // Si pas de search, on met un pattern improbable.
+    audit: {
+      patterns: [hasSearch ? trimmed : "__NO_MATCH__"],
+      regex: false,
+      case_sensitive: params.caseSensitive,
+    },
+  };
+
+  form.append("payload", JSON.stringify(payload));
+
+  const resp = await fetch("/api/redact/apply", { method: "POST", body: form });
+
+  if (!resp.ok) {
+    const report = await parseErrorJson(resp);
+    const err = new Error("AUDIT_FAILED");
+    (err as any).status = resp.status;
+    (err as any).report = report;
+    throw err;
+  }
+
+  const blob = await resp.blob();
+
+  const occSearch =
+    getHeader(resp.headers, "X-Redaction-Search-Occurrences") ??
+    getHeader(resp.headers, "X-Redaction-Apply-Occurrences-Search");
+
+  const occPresets =
+    getHeader(resp.headers, "X-Redaction-Presets-Occurrences") ??
+    getHeader(resp.headers, "X-Redaction-Apply-Occurrences-Presets");
+
+  const occTotal =
+    getHeader(resp.headers, "X-Redaction-Apply-Occurrences") ??
+    getHeader(resp.headers, "X-Redaction-Apply-Occurrences-Total");
+
+  return {
+    pdfBlob: blob,
+    headers: {
+      auditStatus: getHeader(resp.headers, "X-Redaction-Audit-Status"),
+      auditMatches: getHeader(resp.headers, "X-Redaction-Audit-Matches"),
+      occurrencesSearch: occSearch,
+      occurrencesPresets: occPresets,
+      occurrencesTotal: occTotal,
+    },
+  };
 }
 
 export async function redactSearch(params: {
@@ -29,14 +121,6 @@ export async function redactSearch(params: {
   const form = new FormData();
   form.append("file", params.file);
 
-  // ✅ Aligné sur backend SearchPayload :
-  // {
-  //   query: str,
-  //   options: { case_sensitive, whole_word },
-  //   scope: { pages: null | number[] },
-  //   apply: OptionsModel (default_factory côté backend),
-  //   audit: { patterns, regex, case_sensitive }
-  // }
   const payload = {
     query: params.query,
     options: {
@@ -44,7 +128,7 @@ export async function redactSearch(params: {
       whole_word: params.wholeWord,
     },
     scope: { pages: null },
-    apply: {}, // facultatif (default_factory côté backend), conservé pour cohérence
+    apply: {},
     audit: {
       patterns: [params.query],
       regex: false,
@@ -82,12 +166,6 @@ export async function redactPresets(params: {
   const form = new FormData();
   form.append("file", params.file);
 
-  // Payload backend (d’après votre implémentation) :
-  // { presets: [...], options: OptionsModel, audit: AuditModel }
-  //
-  // Pour l’audit côté UI, on fournit des regex "larges".
-  // Le backend fait ses propres filtres robustes (phonenumbers, Luhn) lors de la détection,
-  // mais l’audit est une vérification post-export : mieux vaut rester conservateur.
   const presetAuditRegex: Record<"email" | "phone" | "credit_card", string> = {
     email: "[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}",
     phone: "(?:\\+?\\d[\\d .()-]{6,}\\d)",
@@ -98,7 +176,7 @@ export async function redactPresets(params: {
 
   const payload = {
     presets: params.presets,
-    options: {}, // default_factory côté backend
+    options: {},
     audit: {
       patterns,
       regex: true,

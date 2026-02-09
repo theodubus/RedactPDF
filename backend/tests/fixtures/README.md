@@ -19,6 +19,7 @@ The fixtures cover common and problematic cases for PDF redaction:
 - credit card numbers (valid vs invalid; Luhn filtering)
 - cross-column trap: phone split across columns (must **not** be matched as multiline)
 - metadata + annotation: non-empty PDF metadata and a link annotation (used for sanitize tests)
+- apply combined: name with punctuation + email containing the name
 
 They serve as a **contract**: tests rely on their exact content and structure.
 

@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { useI18n } from "./i18n";
-import { redactPresets, redactSearch } from "./api";
+import { redactApply } from "./api";
 
 type PresetKey = "email" | "phone" | "credit_card";
 
@@ -39,7 +39,7 @@ export default function App() {
   const [caseSensitive, setCaseSensitive] = useState(false);
   const [wholeWord, setWholeWord] = useState(true);
 
-  // Presets (✅ Emails décoché par défaut)
+  // Presets (emails décoché par défaut)
   const [presets, setPresets] = useState<Record<PresetKey, boolean>>({
     email: false,
     phone: false,
@@ -56,7 +56,6 @@ export default function App() {
     auditStatus?: string;
     auditMatches?: string;
 
-    // Occurrences par étape
     occurrencesSearch: number;
     occurrencesPresets: number;
     occurrencesTotal: number;
@@ -116,67 +115,32 @@ export default function App() {
     setSubmitting(true);
 
     try {
-      // On enchaîne sur le PDF courant (File) et on conserve le dernier Blob pour le download
-      let currentFile: File = file;
-      let lastBlob: Blob | undefined;
-
-      let occurrencesSearch = 0;
-      let occurrencesPresets = 0;
-
-      let lastAuditStatus: string | undefined;
-      let lastAuditMatches: string | undefined;
-
-      // 1) Search (si query renseignée)
-      if (hasSearch) {
-        const r = await redactSearch({
-          file: currentFile,
-          query: trimmed,
-          caseSensitive,
-          wholeWord,
-        });
-
-        lastBlob = r.pdfBlob;
-        lastAuditStatus = r.headers.auditStatus;
-        lastAuditMatches = r.headers.auditMatches;
-
-        occurrencesSearch = Number(r.headers.occurrences ?? "0") || 0;
-
-        // Convertir le résultat en File pour éventuellement enchaîner presets
-        currentFile = new File([r.pdfBlob], "tmp-redacted.pdf", { type: "application/pdf" });
-      }
-
-      // 2) Presets (si au moins un coché)
-      if (hasPresets) {
-        const r = await redactPresets({
-          file: currentFile,
-          presets: selectedPresets,
-        });
-
-        lastBlob = r.pdfBlob;
-        lastAuditStatus = r.headers.auditStatus;
-        lastAuditMatches = r.headers.auditMatches;
-
-        occurrencesPresets = Number(r.headers.occurrences ?? "0") || 0;
-
-        currentFile = new File([r.pdfBlob], "tmp-redacted.pdf", { type: "application/pdf" });
-      }
-
-      const occurrencesTotal = occurrencesSearch + occurrencesPresets;
-
-      // Affichage succès + bouton download
-      setSuccessInfo({
-        auditStatus: lastAuditStatus,
-        auditMatches: lastAuditMatches,
-        occurrencesSearch,
-        occurrencesPresets,
-        occurrencesTotal,
-        lastBlob,
+      const r = await redactApply({
+        file,
+        query: trimmed,
+        caseSensitive,
+        wholeWord,
+        presets: selectedPresets,
       });
 
-      // Auto-download conservé (comme demandé)
-      if (lastBlob) {
-        downloadBlob(lastBlob, "redacted.pdf");
-      }
+      const occSearch = Number(r.headers.occurrencesSearch ?? "0") || 0;
+      const occPresets = Number(r.headers.occurrencesPresets ?? "0") || 0;
+
+      // Total : priorité à un header total si présent, sinon somme.
+      const occTotal =
+        (r.headers.occurrencesTotal ? Number(r.headers.occurrencesTotal) : NaN) ||
+        occSearch + occPresets;
+
+      setSuccessInfo({
+        auditStatus: r.headers.auditStatus,
+        auditMatches: r.headers.auditMatches,
+        occurrencesSearch: occSearch,
+        occurrencesPresets: occPresets,
+        occurrencesTotal: occTotal,
+        lastBlob: r.pdfBlob,
+      });
+
+      downloadBlob(r.pdfBlob, "redacted.pdf");
     } catch (err) {
       setErrorInfo({
         status: (err as any)?.status,

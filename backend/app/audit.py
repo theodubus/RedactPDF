@@ -19,16 +19,166 @@ class AuditOptions:
 def _make_snippet(text: str, start: int, end: int, radius: int = 30) -> str:
     left = max(0, start - radius)
     right = min(len(text), end + radius)
-    snippet = text[left:right].replace("\n", "\\n")
-    return snippet
+    return text[left:right].replace("\n", "\\n")
 
 
-def audit_pdf_text(pdf_bytes: bytes, opts: AuditOptions) -> dict[str, Any]:
+def build_whole_word_pattern(query: str) -> str:
     """
-    Audit post-redaction : extrait le texte page par page et vérifie l'absence
-    de patterns (regex ou chaîne).
-    Retourne un report structuré.
+    Build a boundary-aware regex for a query:
+      - punctuation like ',', '.', '@' are boundaries (based on \\w)
+      - multi-token queries allow flexible whitespace (\\s+)
+
+    Examples:
+      "Dupont" -> (?<!\\w)Dupont(?!\\w)
+      "Jean Dupont" -> (?<!\\w)Jean\\s+Dupont(?!\\w)
     """
+    q = (query or "").strip()
+    tokens = [t for t in q.split() if t]
+    if not tokens:
+        raise ValueError("query must be non-empty")
+
+    if len(tokens) == 1:
+        core = re.escape(tokens[0])
+    else:
+        core = r"\s+".join(re.escape(t) for t in tokens)
+
+    return rf"(?<!\w){core}(?!\w)"
+
+
+def build_audit_for_search(*, query: str, case_sensitive: bool, whole_word: bool) -> AuditOptions:
+    """
+    Build AuditOptions coherent with /redact/search semantics:
+
+    - whole_word=False: substring audit on the raw query
+    - whole_word=True: regex audit using the same boundary rule as the search implementation
+    """
+    q = (query or "").strip()
+    if not q:
+        raise ValueError("query must be non-empty")
+
+    if whole_word:
+        pat = build_whole_word_pattern(q)
+        return AuditOptions(patterns=[pat], regex=True, case_sensitive=case_sensitive)
+
+    return AuditOptions(patterns=[q], regex=False, case_sensitive=case_sensitive)
+
+
+def audit_text(
+    text: str,
+    opts: AuditOptions,
+    *,
+    page_number: int
+) -> tuple[list[dict[str, Any]], int]:
+    """
+    Audit a single page text and return (matches, match_count) for that page.
+
+    - Applies per-page cap: opts.max_matches_per_page
+    - Does NOT apply global cap (opts.max_total_matches) here;
+    global cap is handled by audit_pdf_text().
+    """
+    if not opts.patterns:
+        raise ValueError("audit.patterns must be non-empty")
+
+    matches: list[dict[str, Any]] = []
+    if not text:
+        return matches, 0
+
+    # Regex mode
+    if opts.regex:
+        flags = 0
+        if not opts.case_sensitive:
+            flags |= re.IGNORECASE
+
+        compiled: list[tuple[str, re.Pattern[str]]] = []
+        for pat in opts.patterns:
+            cleaned = (pat or "").strip()
+            if not cleaned:
+                continue
+            try:
+                compiled.append((cleaned, re.compile(cleaned, flags)))
+            except re.error as e:
+                raise ValueError(f"invalid regex pattern: {cleaned}") from e
+
+        per_page = 0
+        for pat, rx in compiled:
+            for m in rx.finditer(text):
+                start, end = m.span()
+                matches.append(
+                    {
+                        "pattern": pat,
+                        "page": page_number,
+                        "match": m.group(0),
+                        "start": start,
+                        "end": end,
+                        "snippet": _make_snippet(text, start, end),
+                    }
+                )
+                per_page += 1
+                if per_page >= opts.max_matches_per_page:
+                    return matches, per_page
+        return matches, per_page
+
+    # Substring mode
+    hay = text if opts.case_sensitive else text.casefold()
+
+    per_page = 0
+    for pat in opts.patterns:
+        needle_raw = (pat or "").strip()
+        if not needle_raw:
+            continue
+        needle = needle_raw if opts.case_sensitive else needle_raw.casefold()
+
+        start = 0
+        while True:
+            idx = hay.find(needle, start)
+            if idx == -1:
+                break
+            end = idx + len(needle)
+
+            matches.append(
+                {
+                    "pattern": needle_raw,
+                    "page": page_number,
+                    "match": text[idx:end],
+                    "start": idx,
+                    "end": end,
+                    "snippet": _make_snippet(text, idx, end),
+                }
+            )
+
+            per_page += 1
+            if per_page >= opts.max_matches_per_page:
+                return matches, per_page
+
+            start = end  # non-overlapping
+
+    return matches, per_page
+
+
+def audit_pdf_text(
+    pdf_bytes: bytes,
+    opts: AuditOptions
+) -> dict[str, Any]:
+    """
+    Audit post-redaction:
+    - extracts text page by page with PyMuPDF
+    - searches for patterns (regex or substring)
+    - enforces:
+        - global cap: opts.max_total_matches
+        - per-page cap: opts.max_matches_per_page (handled in audit_text)
+
+    Report format matches what your API already expects:
+      {
+        "status": "pass"|"fail",
+        "total_matches": int,
+        "matched_pages": [int...],   # 1-based page numbers
+        "options": {...},
+        "patterns": [...],
+        "matches": [...]
+      }
+    """
+    if not pdf_bytes:
+        raise ValueError("Empty PDF bytes")
     if not opts.patterns:
         raise ValueError("audit.patterns must be non-empty")
 
@@ -36,95 +186,38 @@ def audit_pdf_text(pdf_bytes: bytes, opts: AuditOptions) -> dict[str, Any]:
     matched_pages: set[int] = set()
     total_matches = 0
 
-    # Préparer les patterns
-    compiled: list[tuple[str, re.Pattern[str]]] = []
-    if opts.regex:
-        flags = 0
-        if not opts.case_sensitive:
-            flags |= re.IGNORECASE
-        for pat in opts.patterns:
-            try:
-                compiled.append((pat, re.compile(pat, flags)))
-            except re.error as e:
-                raise ValueError(f"invalid regex pattern: {pat}") from e
-
     doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")
     try:
         for page_index in range(doc.page_count):
+            page_number = page_index + 1
             page = doc.load_page(page_index)
             text = page.get_text("text") or ""
-
             if not text:
                 continue
 
-            if opts.regex:
-                for pat, rx in compiled:
-                    for m in rx.finditer(text):
-                        start, end = m.span()
-                        matches.append(
-                            {
-                                "pattern": pat,
-                                "page": page_index + 1,  # 1-based for humans
-                                "match": m.group(0),
-                                "start": start,
-                                "end": end,
-                                "snippet": _make_snippet(text, start, end),
-                            }
-                        )
-                        matched_pages.add(page_index + 1)
-                        total_matches += 1
-                        if total_matches >= opts.max_total_matches:
-                            break
-                    if total_matches >= opts.max_total_matches:
-                        break
-            else:
-                # simple substring search
-                hay = text if opts.case_sensitive else text.lower()
-                for pat in opts.patterns:
-                    needle = pat if opts.case_sensitive else pat.lower()
-                    if not needle:
-                        continue
+            page_matches, page_count = audit_text(text, opts, page_number=page_number)
+            if page_count:
+                matched_pages.add(page_number)
 
-                    start = 0
-                    per_page = 0
-                    while True:
-                        idx = hay.find(needle, start)
-                        if idx == -1:
-                            break
-                        end = idx + len(needle)
-                        matches.append(
-                            {
-                                "pattern": pat,
-                                "page": page_index + 1,
-                                "match": text[idx:end],
-                                "start": idx,
-                                "end": end,
-                                "snippet": _make_snippet(text, idx, end),
-                            }
-                        )
-                        matched_pages.add(page_index + 1)
-                        total_matches += 1
-                        per_page += 1
+            # Respect global cap
+            remaining = opts.max_total_matches - total_matches
+            if remaining <= 0:
+                break
 
-                        if total_matches >= opts.max_total_matches:
-                            break
-                        if per_page >= opts.max_matches_per_page:
-                            break
+            if len(page_matches) > remaining:
+                page_matches = page_matches[:remaining]
+                page_count = len(page_matches)
 
-                        start = end  # continue after the match
-
-                    if total_matches >= opts.max_total_matches:
-                        break
+            matches.extend(page_matches)
+            total_matches += page_count
 
             if total_matches >= opts.max_total_matches:
                 break
-
     finally:
         doc.close()
 
-    status = "pass" if total_matches == 0 else "fail"
-    report: dict[str, Any] = {
-        "status": status,
+    return {
+        "status": "pass" if total_matches == 0 else "fail",
         "total_matches": total_matches,
         "matched_pages": sorted(matched_pages),
         "options": {
@@ -136,4 +229,3 @@ def audit_pdf_text(pdf_bytes: bytes, opts: AuditOptions) -> dict[str, Any]:
         "patterns": opts.patterns,
         "matches": matches,
     }
-    return report

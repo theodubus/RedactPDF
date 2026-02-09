@@ -10,8 +10,17 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, ValidationError, field_validator
 from starlette.responses import Response
 
-from app.audit import AuditOptions, audit_pdf_text
+from app.audit import AuditOptions, audit_pdf_text, build_audit_for_search
 from app.multiline_regex_engine import find_redaction_rectangles_by_regex
+from app.pipeline import (
+    PresetsRequest,
+    RedactionOptions,
+    RegexRequest,
+    SearchRequest,
+    apply_plan,
+    audit_plan,
+    plan_redactions,
+)
 from app.presets import available_presets, find_redaction_rectangles_for_presets
 from app.redaction import RedactionRect, redact_pdf_by_rectangles
 from app.search import SearchOptions, find_redaction_rectangles
@@ -22,6 +31,25 @@ app = FastAPI()
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+# ----------------------------
+# Shared helpers
+# ----------------------------
+
+
+def _add_report_headers(headers: dict[str, Any], report: dict[str, Any]) -> None:
+    report_json = json.dumps(report, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    b64 = base64.urlsafe_b64encode(report_json).decode("ascii")
+    if len(b64) <= 6000:
+        headers["X-Redaction-Audit-Report-B64"] = b64
+    else:
+        headers["X-Redaction-Audit-Report-Truncated"] = "1"
+
+
+# ----------------------------
+# Models
+# ----------------------------
 
 
 class RectModel(BaseModel):
@@ -62,88 +90,6 @@ class RectanglesPayload(BaseModel):
     audit: AuditModel
 
 
-@app.post("/redact/rectangles")
-async def redact_rectangles(
-    file: Annotated[UploadFile, File(...)],
-    payload: Annotated[str, Form(...)],
-) -> Response:
-    # 1) Parser payload JSON
-    try:
-        data = RectanglesPayload.model_validate_json(payload)
-    except ValidationError as e:
-        raise HTTPException(status_code=422, detail=e.errors()) from e
-    except Exception:
-        raise HTTPException(status_code=400, detail="Invalid payload JSON") from None
-
-    # 2) Lire PDF
-    pdf_bytes = await file.read()
-    if not pdf_bytes:
-        raise HTTPException(status_code=400, detail="Empty PDF upload")
-
-    # 3) Appliquer redactions
-    rects = [
-        RedactionRect(
-            page=r.page,
-            x0=r.x0,
-            y0=r.y0,
-            x1=r.x1,
-            y1=r.y1,
-        )
-        for r in data.rects
-    ]
-
-    try:
-        out_pdf = redact_pdf_by_rectangles(
-            pdf_bytes,
-            rects,
-            apply_images=data.options.apply_images,
-            apply_graphics=data.options.apply_graphics,
-            sanitize_metadata=data.options.sanitize_metadata,
-            remove_annotations=data.options.remove_annotations,
-            remove_attachments=data.options.remove_attachments,
-        )
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
-    except Exception as e:
-        raise HTTPException(status_code=500, detail="Redaction failed") from e
-
-    # 4) Audit post-export (pilier de sécurité)
-    try:
-        report = audit_pdf_text(
-            out_pdf,
-            AuditOptions(
-                patterns=data.audit.patterns,
-                regex=data.audit.regex,
-                case_sensitive=data.audit.case_sensitive,
-            ),
-        )
-    except ValueError as e:
-        return JSONResponse(
-            status_code=400,
-            content={"status": "error", "error": str(e)},
-        )
-
-    if report["status"] != "pass":
-        return JSONResponse(status_code=400, content=report)
-
-    # 5) Succès : renvoyer PDF + headers d'audit
-    headers: dict[str, Any] = {
-        "Content-Disposition": 'attachment; filename="redacted.pdf"',
-        "X-Redaction-Audit-Status": "pass",
-        "X-Redaction-Audit-Matches": "0",
-    }
-
-    report_json = json.dumps(report, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
-    b64 = base64.urlsafe_b64encode(report_json).decode("ascii")
-
-    if len(b64) <= 6000:
-        headers["X-Redaction-Audit-Report-B64"] = b64
-    else:
-        headers["X-Redaction-Audit-Report-Truncated"] = "1"
-
-    return Response(content=out_pdf, media_type="application/pdf", headers=headers)
-
-
 class SearchOptionsModel(BaseModel):
     case_sensitive: bool = False
     whole_word: bool = False
@@ -156,9 +102,7 @@ class ScopeModel(BaseModel):
     @field_validator("pages")
     @classmethod
     def validate_pages(cls, v: list[int] | None) -> list[int] | None:
-        if v is None:
-            return None
-        if len(v) == 0:
+        if v is None or len(v) == 0:
             return None
         if any(p < 0 for p in v):
             raise ValueError("scope.pages must contain only non-negative page indices")
@@ -169,7 +113,7 @@ class SearchPayload(BaseModel):
     query: str
     options: SearchOptionsModel = Field(default_factory=SearchOptionsModel)
     scope: ScopeModel = Field(default_factory=ScopeModel)
-    # Nouveau : options de redaction (images/graphics + sanitize), rétro-compatible
+    # options de redaction (images/graphics + sanitize)
     apply: OptionsModel = Field(default_factory=OptionsModel)
     audit: AuditModel
 
@@ -181,99 +125,11 @@ class SearchPayload(BaseModel):
         return v.strip()
 
 
-@app.post("/redact/search")
-async def redact_search(
-    file: Annotated[UploadFile, File(...)],
-    payload: Annotated[str, Form(...)],
-) -> Response:
-    # 1) Parser payload JSON
-    try:
-        data = SearchPayload.model_validate_json(payload)
-    except ValidationError as e:
-        raise HTTPException(status_code=422, detail=e.errors()) from e
-    except Exception:
-        raise HTTPException(status_code=400, detail="Invalid payload JSON") from None
-
-    # 2) Lire PDF
-    pdf_bytes = await file.read()
-    if not pdf_bytes:
-        raise HTTPException(status_code=400, detail="Empty PDF upload")
-
-    # 3) Trouver occurrences -> rectangles
-    try:
-        found_rects = find_redaction_rectangles(
-            pdf_bytes,
-            SearchOptions(
-                query=data.query,
-                case_sensitive=data.options.case_sensitive,
-                whole_word=data.options.whole_word,
-                pages=data.scope.pages,
-            ),
-        )
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
-    except Exception as e:
-        raise HTTPException(status_code=500, detail="Search failed") from e
-
-    # 4) Appliquer redactions
-    try:
-        out_pdf = redact_pdf_by_rectangles(
-            pdf_bytes,
-            found_rects,
-            apply_images=data.apply.apply_images,
-            apply_graphics=data.apply.apply_graphics,
-            sanitize_metadata=data.apply.sanitize_metadata,
-            remove_annotations=data.apply.remove_annotations,
-            remove_attachments=data.apply.remove_attachments,
-        )
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
-    except Exception as e:
-        raise HTTPException(status_code=500, detail="Redaction failed") from e
-
-    # 5) Audit post-export (obligatoire)
-    try:
-        report = audit_pdf_text(
-            out_pdf,
-            AuditOptions(
-                patterns=data.audit.patterns,
-                regex=data.audit.regex,
-                case_sensitive=data.audit.case_sensitive,
-            ),
-        )
-    except ValueError as e:
-        return JSONResponse(
-            status_code=400,
-            content={"status": "error", "error": str(e)},
-        )
-
-    if report["status"] != "pass":
-        return JSONResponse(status_code=400, content=report)
-
-    # 6) Succès : PDF + headers
-    headers: dict[str, Any] = {
-        "Content-Disposition": 'attachment; filename="redacted.pdf"',
-        "X-Redaction-Audit-Status": "pass",
-        "X-Redaction-Audit-Matches": "0",
-        "X-Redaction-Search-Occurrences": str(len(found_rects)),
-    }
-
-    report_json = json.dumps(report, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
-    b64 = base64.urlsafe_b64encode(report_json).decode("ascii")
-
-    if len(b64) <= 6000:
-        headers["X-Redaction-Audit-Report-B64"] = b64
-    else:
-        headers["X-Redaction-Audit-Report-Truncated"] = "1"
-
-    return Response(content=out_pdf, media_type="application/pdf", headers=headers)
-
-
 class PresetsPayload(BaseModel):
     presets: list[str]
     scope: ScopeModel = Field(default_factory=ScopeModel)
     options: OptionsModel = Field(default_factory=OptionsModel)
-    # Audit devient optionnel pour /redact/presets (le backend fait un audit interne cohérent)
+    # audit optionnel : le backend fait un audit interne cohérent presets
     audit: AuditModel | None = None
 
     @field_validator("presets")
@@ -292,157 +148,7 @@ class PresetsPayload(BaseModel):
         return cleaned
 
 
-def _build_presets_internal_audit_report(
-    out_pdf: bytes,
-    *,
-    presets: list[str],
-    pages: list[int] | None,
-) -> dict[str, Any]:
-    """
-    Audit interne cohérent avec les presets :
-    - relance la détection presets sur le PDF exporté
-    - si des occurrences restent, on renvoie un report JSON (style proche de audit_pdf_text)
-    """
-    leaks_by_preset: dict[str, list[RedactionRect]] = {}
-    total = 0
-    matched_pages: set[int] = set()
-
-    # Détecter les fuites par preset (permet d'attribuer la fuite à un preset)
-    for p in presets:
-        rects = find_redaction_rectangles_for_presets(out_pdf, [p], pages=pages)
-        leaks_by_preset[p] = rects
-        total += len(rects)
-        matched_pages.update(r.page for r in rects)
-
-    # Construire des snippets à partir des zones détectées
-    matches: list[dict[str, Any]] = []
-    if total > 0:
-        doc = pymupdf.open(stream=out_pdf, filetype="pdf")
-        try:
-            for preset_key, rects in leaks_by_preset.items():
-                for r in rects:
-                    page = doc[r.page]
-                    rect = pymupdf.Rect(r.x0, r.y0, r.x1, r.y1)
-                    snippet = page.get_textbox(rect) or ""
-                    snippet = snippet.strip()
-
-                    matches.append(
-                        {
-                            "preset": preset_key,
-                            "page": r.page,
-                            "rect": {"x0": r.x0, "y0": r.y0, "x1": r.x1, "y1": r.y1},
-                            "snippet": snippet,
-                        }
-                    )
-        finally:
-            doc.close()
-
-    return {
-        "status": "fail",
-        "total_matches": total,
-        "matched_pages": sorted(matched_pages),
-        "options": {
-            "mode": "presets_internal",
-            "pages": pages,
-        },
-        "presets": presets,
-        "matches": matches,
-    }
-
-
-@app.post("/redact/presets")
-async def redact_presets(
-    file: Annotated[UploadFile, File(...)],
-    payload: Annotated[str, Form(...)],
-) -> Response:
-    # 1) Parser payload JSON
-    try:
-        data = PresetsPayload.model_validate_json(payload)
-    except ValidationError as e:
-        raise HTTPException(status_code=422, detail=e.errors()) from e
-    except Exception:
-        raise HTTPException(status_code=400, detail="Invalid payload JSON") from None
-
-    # 2) Lire PDF
-    pdf_bytes = await file.read()
-    if not pdf_bytes:
-        raise HTTPException(status_code=400, detail="Empty PDF upload")
-
-    # 3) Trouver occurrences via presets -> rectangles (sur l'entrée)
-    try:
-        found_rects = find_redaction_rectangles_for_presets(
-            pdf_bytes,
-            data.presets,
-            pages=data.scope.pages,
-        )
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
-    except Exception as e:
-        raise HTTPException(status_code=500, detail="Presets search failed") from e
-
-    # 4) Appliquer redactions
-    try:
-        out_pdf = redact_pdf_by_rectangles(
-            pdf_bytes,
-            found_rects,
-            apply_images=data.options.apply_images,
-            apply_graphics=data.options.apply_graphics,
-            sanitize_metadata=data.options.sanitize_metadata,
-            remove_annotations=data.options.remove_annotations,
-            remove_attachments=data.options.remove_attachments,
-        )
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
-    except Exception as e:
-        raise HTTPException(status_code=500, detail="Redaction failed") from e
-
-    # 5) Audit post-export (obligatoire) : audit interne cohérent avec les presets
-    report = _build_presets_internal_audit_report(
-        out_pdf,
-        presets=data.presets,
-        pages=data.scope.pages,
-    )
-    if report["total_matches"] != 0:
-        return JSONResponse(status_code=400, content=report)
-
-    # 6) Succès : PDF + headers (audit "pass")
-    headers: dict[str, Any] = {
-        "Content-Disposition": 'attachment; filename="redacted.pdf"',
-        "X-Redaction-Audit-Status": "pass",
-        "X-Redaction-Audit-Matches": "0",
-        "X-Redaction-Presets-Occurrences": str(len(found_rects)),
-    }
-
-    # On conserve le mécanisme report b64 pour homogénéité (report "pass" minimal)
-    pass_report = {
-        "status": "pass",
-        "total_matches": 0,
-        "matched_pages": [],
-        "options": {"mode": "presets_internal", "pages": data.scope.pages},
-        "presets": data.presets,
-        "matches": [],
-    }
-
-    report_json = json.dumps(pass_report, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
-    b64 = base64.urlsafe_b64encode(report_json).decode("ascii")
-
-    if len(b64) <= 6000:
-        headers["X-Redaction-Audit-Report-B64"] = b64
-    else:
-        headers["X-Redaction-Audit-Report-Truncated"] = "1"
-
-    return Response(content=out_pdf, media_type="application/pdf", headers=headers)
-
-
 class RegexPayload(BaseModel):
-    """
-    Regex endpoint payload.
-
-    - Accepts either a string or a list of strings for patterns, normalized to list[str].
-    - multiline enables matching across two adjacent lines (line N, and line N+1) using
-      joiners ("\\n" and " ") in the engine.
-    """
-
     patterns: list[str]
     case_sensitive: bool = False
     multiline: bool = False
@@ -468,39 +174,240 @@ class RegexPayload(BaseModel):
         raise ValueError("patterns must be a non-empty string or a non-empty list")
 
 
-@app.post("/redact/regex")
-async def redact_regex(
+# ----------------------------
+# Endpoints
+# ----------------------------
+
+
+@app.post("/redact/rectangles")
+async def redact_rectangles(
     file: Annotated[UploadFile, File(...)],
     payload: Annotated[str, Form(...)],
 ) -> Response:
-    # 1) Parser payload JSON
     try:
-        data = RegexPayload.model_validate_json(payload)
+        data = RectanglesPayload.model_validate_json(payload)
     except ValidationError as e:
         raise HTTPException(status_code=422, detail=e.errors()) from e
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid payload JSON") from None
 
-    # 2) Lire PDF
     pdf_bytes = await file.read()
     if not pdf_bytes:
         raise HTTPException(status_code=400, detail="Empty PDF upload")
 
-    # 3) Trouver occurrences via regex -> rectangles
+    rects = [RedactionRect(page=r.page, x0=r.x0, y0=r.y0, x1=r.x1, y1=r.y1) for r in data.rects]
+
     try:
-        found_rects = find_redaction_rectangles_by_regex(
+        out_pdf = redact_pdf_by_rectangles(
             pdf_bytes,
-            data.patterns,
-            case_sensitive=data.case_sensitive,
-            pages=data.scope.pages,
-            multiline=data.multiline,
+            rects,
+            apply_images=data.options.apply_images,
+            apply_graphics=data.options.apply_graphics,
+            sanitize_metadata=data.options.sanitize_metadata,
+            remove_annotations=data.options.remove_annotations,
+            remove_attachments=data.options.remove_attachments,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
-        raise HTTPException(status_code=500, detail="Regex search failed") from e
+        raise HTTPException(status_code=500, detail="Redaction failed") from e
 
-    # 4) Appliquer redactions
+    try:
+        report = audit_pdf_text(
+            out_pdf,
+            AuditOptions(
+                patterns=data.audit.patterns,
+                regex=data.audit.regex,
+                case_sensitive=data.audit.case_sensitive,
+            ),
+        )
+    except ValueError as e:
+        return JSONResponse(status_code=400, content={"status": "error", "error": str(e)})
+
+    if report["status"] != "pass":
+        return JSONResponse(status_code=400, content=report)
+
+    headers: dict[str, Any] = {
+        "Content-Disposition": 'attachment; filename="redacted.pdf"',
+        "X-Redaction-Audit-Status": "pass",
+        "X-Redaction-Audit-Matches": "0",
+    }
+    _add_report_headers(headers, report)
+    return Response(content=out_pdf, media_type="application/pdf", headers=headers)
+
+
+@app.post("/redact/search")
+async def redact_search(
+    file: Annotated[UploadFile, File(...)],
+    payload: Annotated[str, Form(...)],
+) -> Response:
+    """
+    IMPORTANT:
+    - L'audit "interne" est construit automatiquement à partir de
+      (query, whole_word, case_sensitive) pour éviter les incohérences
+      qui causent des faux échecs.
+    - L'audit fourni par le client est ensuite exécuté en audit additionnel (banlist),
+      sans jamais remplacer l'audit interne.
+    """
+    try:
+        data = SearchPayload.model_validate_json(payload)
+    except ValidationError as e:
+        raise HTTPException(status_code=422, detail=e.errors()) from e
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid payload JSON") from None
+
+    pdf_bytes = await file.read()
+    if not pdf_bytes:
+        raise HTTPException(status_code=400, detail="Empty PDF upload")
+
+    try:
+        found_rects = find_redaction_rectangles(
+            pdf_bytes,
+            SearchOptions(
+                query=data.query,
+                case_sensitive=data.options.case_sensitive,
+                whole_word=data.options.whole_word,
+                pages=data.scope.pages,
+            ),
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Search failed") from e
+
+    try:
+        out_pdf = redact_pdf_by_rectangles(
+            pdf_bytes,
+            found_rects,
+            apply_images=data.apply.apply_images,
+            apply_graphics=data.apply.apply_graphics,
+            sanitize_metadata=data.apply.sanitize_metadata,
+            remove_annotations=data.apply.remove_annotations,
+            remove_attachments=data.apply.remove_attachments,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Redaction failed") from e
+
+    # 1) Audit interne cohérent avec la recherche
+    try:
+        internal_opts = build_audit_for_search(
+            query=data.query,
+            case_sensitive=data.options.case_sensitive,
+            whole_word=data.options.whole_word,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+    try:
+        internal_report = audit_pdf_text(out_pdf, internal_opts)
+    except ValueError as e:
+        return JSONResponse(status_code=400, content={"status": "error", "error": str(e)})
+
+    if internal_report["status"] != "pass":
+        return JSONResponse(status_code=400, content=internal_report)
+
+    # 2) Audit additionnel (banlist) fourni par le client
+    try:
+        client_report = audit_pdf_text(
+            out_pdf,
+            AuditOptions(
+                patterns=data.audit.patterns,
+                regex=data.audit.regex,
+                case_sensitive=data.audit.case_sensitive,
+            ),
+        )
+    except ValueError as e:
+        return JSONResponse(status_code=400, content={"status": "error", "error": str(e)})
+
+    if client_report["status"] != "pass":
+        return JSONResponse(status_code=400, content=client_report)
+
+    headers: dict[str, Any] = {
+        "Content-Disposition": 'attachment; filename="redacted.pdf"',
+        "X-Redaction-Audit-Status": "pass",
+        "X-Redaction-Audit-Matches": "0",
+        "X-Redaction-Search-Occurrences": str(len(found_rects)),
+    }
+    # On expose le report interne (cohérent) en header
+    _add_report_headers(headers, internal_report)
+    return Response(content=out_pdf, media_type="application/pdf", headers=headers)
+
+
+def _build_presets_internal_audit_report(
+    out_pdf: bytes,
+    *,
+    presets: list[str],
+    pages: list[int] | None,
+) -> dict[str, Any]:
+    leaks_by_preset: dict[str, list[RedactionRect]] = {}
+    total = 0
+    matched_pages: set[int] = set()
+
+    for p in presets:
+        rects = find_redaction_rectangles_for_presets(out_pdf, [p], pages=pages)
+        leaks_by_preset[p] = rects
+        total += len(rects)
+        matched_pages.update(r.page for r in rects)
+
+    matches: list[dict[str, Any]] = []
+    if total > 0:
+        doc = pymupdf.open(stream=out_pdf, filetype="pdf")
+        try:
+            for preset_key, rects in leaks_by_preset.items():
+                for r in rects:
+                    page = doc[r.page]
+                    rect = pymupdf.Rect(r.x0, r.y0, r.x1, r.y1)
+                    snippet = (page.get_textbox(rect) or "").strip()
+                    matches.append(
+                        {
+                            "preset": preset_key,
+                            "page": r.page,
+                            "rect": {"x0": r.x0, "y0": r.y0, "x1": r.x1, "y1": r.y1},
+                            "snippet": snippet,
+                        }
+                    )
+        finally:
+            doc.close()
+
+    return {
+        "status": "fail",
+        "total_matches": total,
+        "matched_pages": sorted(matched_pages),
+        "options": {"mode": "presets_internal", "pages": pages},
+        "presets": presets,
+        "matches": matches,
+    }
+
+
+@app.post("/redact/presets")
+async def redact_presets(
+    file: Annotated[UploadFile, File(...)],
+    payload: Annotated[str, Form(...)],
+) -> Response:
+    try:
+        data = PresetsPayload.model_validate_json(payload)
+    except ValidationError as e:
+        raise HTTPException(status_code=422, detail=e.errors()) from e
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid payload JSON") from None
+
+    pdf_bytes = await file.read()
+    if not pdf_bytes:
+        raise HTTPException(status_code=400, detail="Empty PDF upload")
+
+    try:
+        found_rects = find_redaction_rectangles_for_presets(
+            pdf_bytes,
+            data.presets,
+            pages=data.scope.pages,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Presets search failed") from e
+
     try:
         out_pdf = redact_pdf_by_rectangles(
             pdf_bytes,
@@ -516,7 +423,77 @@ async def redact_regex(
     except Exception as e:
         raise HTTPException(status_code=500, detail="Redaction failed") from e
 
-    # 5) Audit post-export (obligatoire)
+    report = _build_presets_internal_audit_report(
+        out_pdf,
+        presets=data.presets,
+        pages=data.scope.pages,
+    )
+    if report["total_matches"] != 0:
+        return JSONResponse(status_code=400, content=report)
+
+    headers: dict[str, Any] = {
+        "Content-Disposition": 'attachment; filename="redacted.pdf"',
+        "X-Redaction-Audit-Status": "pass",
+        "X-Redaction-Audit-Matches": "0",
+        "X-Redaction-Presets-Occurrences": str(len(found_rects)),
+    }
+
+    pass_report = {
+        "status": "pass",
+        "total_matches": 0,
+        "matched_pages": [],
+        "options": {"mode": "presets_internal", "pages": data.scope.pages},
+        "presets": data.presets,
+        "matches": [],
+    }
+    _add_report_headers(headers, pass_report)
+    return Response(content=out_pdf, media_type="application/pdf", headers=headers)
+
+
+@app.post("/redact/regex")
+async def redact_regex(
+    file: Annotated[UploadFile, File(...)],
+    payload: Annotated[str, Form(...)],
+) -> Response:
+    try:
+        data = RegexPayload.model_validate_json(payload)
+    except ValidationError as e:
+        raise HTTPException(status_code=422, detail=e.errors()) from e
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid payload JSON") from None
+
+    pdf_bytes = await file.read()
+    if not pdf_bytes:
+        raise HTTPException(status_code=400, detail="Empty PDF upload")
+
+    try:
+        found_rects = find_redaction_rectangles_by_regex(
+            pdf_bytes,
+            data.patterns,
+            case_sensitive=data.case_sensitive,
+            pages=data.scope.pages,
+            multiline=data.multiline,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Regex search failed") from e
+
+    try:
+        out_pdf = redact_pdf_by_rectangles(
+            pdf_bytes,
+            found_rects,
+            apply_images=data.options.apply_images,
+            apply_graphics=data.options.apply_graphics,
+            sanitize_metadata=data.options.sanitize_metadata,
+            remove_annotations=data.options.remove_annotations,
+            remove_attachments=data.options.remove_attachments,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Redaction failed") from e
+
     try:
         report = audit_pdf_text(
             out_pdf,
@@ -527,28 +504,191 @@ async def redact_regex(
             ),
         )
     except ValueError as e:
-        return JSONResponse(
-            status_code=400,
-            content={"status": "error", "error": str(e)},
-        )
+        return JSONResponse(status_code=400, content={"status": "error", "error": str(e)})
 
     if report["status"] != "pass":
         return JSONResponse(status_code=400, content=report)
 
-    # 6) Succès : PDF + headers
     headers: dict[str, Any] = {
         "Content-Disposition": 'attachment; filename="redacted.pdf"',
         "X-Redaction-Audit-Status": "pass",
         "X-Redaction-Audit-Matches": "0",
         "X-Redaction-Regex-Occurrences": str(len(found_rects)),
     }
+    _add_report_headers(headers, report)
+    return Response(content=out_pdf, media_type="application/pdf", headers=headers)
 
-    report_json = json.dumps(report, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
-    b64 = base64.urlsafe_b64encode(report_json).decode("ascii")
 
-    if len(b64) <= 6000:
-        headers["X-Redaction-Audit-Report-B64"] = b64
-    else:
-        headers["X-Redaction-Audit-Report-Truncated"] = "1"
+# ----------------------------
+# Long-term endpoint: /redact/apply
+# ----------------------------
 
+
+class ApplySearchModel(BaseModel):
+    query: str
+    options: SearchOptionsModel = Field(default_factory=SearchOptionsModel)
+    scope: ScopeModel = Field(default_factory=ScopeModel)
+
+    @field_validator("query")
+    @classmethod
+    def validate_query(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("search.query must be non-empty")
+        return v.strip()
+
+
+class ApplyRegexModel(BaseModel):
+    patterns: list[str]
+    case_sensitive: bool = False
+    multiline: bool = False
+    scope: ScopeModel = Field(default_factory=ScopeModel)
+
+    @field_validator("patterns", mode="before")
+    @classmethod
+    def coerce_patterns(cls, v: Any) -> list[str]:
+        if isinstance(v, str):
+            s = v.strip()
+            if not s:
+                raise ValueError("regex.patterns must be non-empty")
+            return [s]
+        if isinstance(v, list):
+            cleaned = [str(p).strip() for p in v if p and str(p).strip()]
+            if not cleaned:
+                raise ValueError("regex.patterns must be non-empty")
+            return cleaned
+        raise ValueError("regex.patterns must be non-empty")
+
+
+class ApplyPresetsModel(BaseModel):
+    presets: list[str]
+    scope: ScopeModel = Field(default_factory=ScopeModel)
+
+    @field_validator("presets")
+    @classmethod
+    def validate_presets(cls, v: list[str]) -> list[str]:
+        cleaned = [p.strip() for p in v if p and p.strip()]
+        if not cleaned:
+            raise ValueError("presets.presets must contain at least one non-empty preset key")
+
+        allowed = set(available_presets())
+        unknown = [p for p in cleaned if p not in allowed]
+        if unknown:
+            raise ValueError(
+                f"Unknown preset(s): {', '.join(unknown)}. Available: {', '.join(sorted(allowed))}"
+            )
+        return cleaned
+
+
+class ApplyPayload(BaseModel):
+    rects: list[RectModel] = Field(default_factory=list)
+    search: ApplySearchModel | None = None
+    regex: ApplyRegexModel | None = None
+    presets: ApplyPresetsModel | None = None
+    options: OptionsModel = Field(default_factory=OptionsModel)
+    audit: AuditModel | None = None
+
+
+@app.post("/redact/apply")
+async def redact_apply(
+    file: Annotated[UploadFile, File(...)],
+    payload: Annotated[str, Form(...)],
+) -> Response:
+    try:
+        data = ApplyPayload.model_validate_json(payload)
+    except ValidationError as e:
+        raise HTTPException(status_code=422, detail=e.errors()) from e
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid payload JSON") from None
+
+    pdf_bytes = await file.read()
+    if not pdf_bytes:
+        raise HTTPException(status_code=400, detail="Empty PDF upload")
+
+    manual_rects = [
+        RedactionRect(page=r.page, x0=r.x0, y0=r.y0, x1=r.x1, y1=r.y1) for r in data.rects
+    ]
+
+    search_req: SearchRequest | None = None
+    if data.search is not None:
+        search_req = SearchRequest(
+            query=data.search.query,
+            case_sensitive=data.search.options.case_sensitive,
+            whole_word=data.search.options.whole_word,
+            pages=data.search.scope.pages,
+        )
+
+    regex_req: RegexRequest | None = None
+    if data.regex is not None:
+        regex_req = RegexRequest(
+            patterns=data.regex.patterns,
+            case_sensitive=data.regex.case_sensitive,
+            multiline=data.regex.multiline,
+            pages=data.regex.scope.pages,
+        )
+
+    presets_req: PresetsRequest | None = None
+    if data.presets is not None:
+        presets_req = PresetsRequest(
+            presets=data.presets.presets,
+            pages=data.presets.scope.pages,
+        )
+
+    try:
+        plan = plan_redactions(
+            pdf_bytes,
+            manual_rects=manual_rects,
+            search=search_req,
+            regex=regex_req,
+            presets=presets_req,
+        )
+
+        out_pdf = apply_plan(
+            pdf_bytes,
+            plan,
+            options=RedactionOptions(
+                apply_images=data.options.apply_images,
+                apply_graphics=data.options.apply_graphics,
+                sanitize_metadata=data.options.sanitize_metadata,
+                remove_annotations=data.options.remove_annotations,
+                remove_attachments=data.options.remove_attachments,
+            ),
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Redaction failed") from e
+
+    extra_audit: AuditOptions | None = None
+    if data.audit is not None:
+        extra_audit = AuditOptions(
+            patterns=data.audit.patterns,
+            regex=data.audit.regex,
+            case_sensitive=data.audit.case_sensitive,
+        )
+
+    try:
+        composite = audit_plan(
+            out_pdf,
+            search=search_req,
+            regex=regex_req,
+            presets=presets_req,
+            extra_audit=extra_audit,
+        )
+    except ValueError as e:
+        return JSONResponse(status_code=400, content={"status": "error", "error": str(e)})
+
+    if composite.get("status") != "pass":
+        return JSONResponse(status_code=400, content=composite)
+
+    headers: dict[str, Any] = {
+        "Content-Disposition": 'attachment; filename="redacted.pdf"',
+        "X-Redaction-Audit-Status": "pass",
+        "X-Redaction-Audit-Matches": "0",
+        "X-Redaction-Manual-Occurrences": str(len(plan.manual)),
+        "X-Redaction-Search-Occurrences": str(len(plan.search)),
+        "X-Redaction-Regex-Occurrences": str(len(plan.regex)),
+        "X-Redaction-Presets-Occurrences": str(len(plan.presets)),
+        "X-Redaction-Total-Occurrences": str(len(plan.all_rects)),
+    }
+    _add_report_headers(headers, composite)
     return Response(content=out_pdf, media_type="application/pdf", headers=headers)

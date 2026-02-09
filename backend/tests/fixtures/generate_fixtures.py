@@ -309,6 +309,29 @@ def write_010_metadata_and_annotation(path: Path) -> None:
     c.save()
 
 
+def write_011_apply_search_and_email(path: Path) -> None:
+    """
+    Fixture used to test /redact/apply with combined actions:
+    - a name token with punctuation ("DUPONT,") for whole_word robustness
+    - an email containing "dupont" to validate that presets(email) wins
+    even if search also hits inside the email
+    """
+    c = _new_canvas(path)
+    _, h = A4
+
+    c.setFont("Helvetica", 14)
+    c.drawString(25 * mm, h - 30 * mm, "Fixture 011 — apply combined search + email")
+
+    c.setFont("Helvetica", 12)
+    c.drawString(25 * mm, h - 55 * mm, "Nom : DUPONT, Alice")
+    c.drawString(25 * mm, h - 75 * mm, "Email : alice.dupont@example.com")
+    c.drawString(25 * mm, h - 95 * mm, "Texte non sensible : référence ABC-999.")
+
+    c.showPage()
+    c.save()
+
+
+
 SPECS: list[FixtureSpec] = [
     FixtureSpec(
         filename="001_secret_text.pdf",
@@ -360,6 +383,12 @@ SPECS: list[FixtureSpec] = [
         writer=write_010_metadata_and_annotation,
         description="Metadata + link annotation (sanitize_metadata/remove_annotations)",
     ),
+    FixtureSpec(
+        filename="011_apply_search_and_email.pdf",
+        writer=write_011_apply_search_and_email,
+        description="Apply combined: name with punctuation + email containing the name",
+    ),
+
 ]
 
 
