@@ -28,6 +28,12 @@
   "rules.option.caseSensitive": "Sensible à la casse",
   "rules.option.wholeWord": "Mot entier",
   "rules.option.multiline": "Multilignes",
+  "rules.options.label": "Options",
+  "rules.option.subword": "Sous-mot",
+  "rules.option.ignoreAccents": "Ignorer les accents",
+
+  "rules.label.searchType": "Type de recherche",
+  "rules.label.options": "Options",
 
   "modal.edit.title": "Modifier l’élément",
   "modal.edit.kind": "Type",

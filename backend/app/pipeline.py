@@ -27,6 +27,7 @@ class SearchRequest:
     query: str
     case_sensitive: bool = False
     whole_word: bool = False
+    ignore_accents: bool = False
     pages: Sequence[int] | None = None
 
 
@@ -35,6 +36,7 @@ class RegexRequest:
     patterns: list[str]
     case_sensitive: bool = False
     multiline: bool = False
+    ignore_accents: bool = False
     pages: Sequence[int] | None = None
 
 
@@ -91,6 +93,7 @@ def plan_redactions(
                         query=s.query,
                         case_sensitive=s.case_sensitive,
                         whole_word=s.whole_word,
+                        ignore_accents=s.ignore_accents,
                         pages=s.pages,
                     ),
                 )
@@ -105,6 +108,7 @@ def plan_redactions(
                     case_sensitive=r.case_sensitive,
                     pages=r.pages,
                     multiline=r.multiline,
+                    ignore_accents=r.ignore_accents,
                 )
             )
 
@@ -210,6 +214,7 @@ def audit_plan(
                 query=s.query,
                 case_sensitive=s.case_sensitive,
                 whole_word=s.whole_word,
+                ignore_accents=s.ignore_accents,
             )
             report = _audit_pdf_text(out_pdf, s_opts)
             if report["status"] != "pass":
@@ -240,6 +245,7 @@ def audit_plan(
                 patterns=r.patterns,
                 regex=True,
                 case_sensitive=r.case_sensitive,
+                ignore_accents=r.ignore_accents,
             )
             report = _audit_pdf_text(out_pdf, r_opts)
             if report["status"] != "pass":

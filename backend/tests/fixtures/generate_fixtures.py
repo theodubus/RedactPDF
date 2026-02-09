@@ -178,7 +178,7 @@ def write_007_whole_word_cat_catch(path: Path) -> None:
     c.setFont("Helvetica", 12)
     c.drawString(25 * mm, h - 55 * mm, "Standalone token: CAT")
     c.drawString(25 * mm, h - 75 * mm, "Substring token: CATCH")
-    c.drawString(25 * mm, h - 95 * mm, "Texte non sensible : OK.")
+    c.drawString(25 * mm, h - 95 * mm, "Autre: rien")
 
     c.showPage()
     c.save()
@@ -199,7 +199,7 @@ def write_008_credit_card_luhn(path: Path) -> None:
     c.setFont("Helvetica", 12)
     c.drawString(25 * mm, h - 55 * mm, "Valid PAN (should be redacted): 4111 1111 1111 1111")
     c.drawString(25 * mm, h - 75 * mm, "Invalid PAN (must remain): 4111 1111 1111 1112")
-    c.drawString(25 * mm, h - 95 * mm, "Texte non sensible : OK.")
+    c.drawString(25 * mm, h - 95 * mm, "Autre: rien")
 
     c.showPage()
     c.save()
@@ -331,6 +331,26 @@ def write_011_apply_search_and_email(path: Path) -> None:
     c.save()
 
 
+def write_012_ignore_accents(path: Path) -> None:
+    """
+    Fixture used to test ignore_accents search:
+    - Contains both "Léo" and "Leo"
+    - Used by test_redact_apply_search_ignore_accents_...
+    """
+    c = _new_canvas(path)
+    _, h = A4
+
+    c.setFont("Helvetica", 14)
+    c.drawString(25 * mm, h - 30 * mm, "Fixture 012 — ignore accents")
+
+    c.setFont("Helvetica", 12)
+    c.drawString(25 * mm, h - 55 * mm, "Nom: Léo")
+    c.drawString(25 * mm, h - 75 * mm, "Nom: Leo")
+    c.drawString(25 * mm, h - 95 * mm, "Autre: rien")
+
+    c.showPage()
+    c.save()
+
 
 SPECS: list[FixtureSpec] = [
     FixtureSpec(
@@ -388,7 +408,11 @@ SPECS: list[FixtureSpec] = [
         writer=write_011_apply_search_and_email,
         description="Apply combined: name with punctuation + email containing the name",
     ),
-
+    FixtureSpec(
+        filename="012_ignore_accents.pdf",
+        writer=write_012_ignore_accents,
+        description='Ignore accents fixture ("Léo" vs "Leo")',
+    ),
 ]
 
 

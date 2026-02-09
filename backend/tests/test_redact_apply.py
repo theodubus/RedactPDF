@@ -31,7 +31,7 @@ def test_redact_apply_combines_search_and_presets_email() -> None:
         "rects": [],
         "search": {
             "query": "DUPONT",
-            "options": {"case_sensitive": False, "whole_word": True},
+            "options": {"case_sensitive": False, "whole_word": True, "ignore_accents": False},
             "scope": {"pages": None},
         },
         "presets": {
@@ -82,12 +82,12 @@ def test_redact_apply_multiple_searches_and_presets() -> None:
         "searches": [
             {
                 "query": "DUPONT",
-                "options": {"case_sensitive": False, "whole_word": True},
+                "options": {"case_sensitive": False, "whole_word": True, "ignore_accents": False},
                 "scope": {"pages": None},
             },
             {
                 "query": "Texte non sensible",
-                "options": {"case_sensitive": False, "whole_word": False},
+                "options": {"case_sensitive": False, "whole_word": False, "ignore_accents": False},
                 "scope": {"pages": None},
             },
         ],
@@ -179,7 +179,6 @@ def test_redact_apply_multiline_regex_rule() -> None:
     original_text = extract_text(pdf_bytes)
     assert original_text.strip() != ""
 
-    # Pattern qui tolère les retours ligne (via \s)
     phone_pat = r"(?:\+?\d[\d\s().\-]{6,}\d)"
     assert re.search(phone_pat, original_text) is not None
 
@@ -238,3 +237,143 @@ def test_redact_apply_invalid_regex_in_regexes_returns_400() -> None:
     )
 
     assert resp.status_code == 400
+
+
+@pytest.mark.integration
+def test_redact_apply_search_ignore_accents_removes_leo_and_leo_accented() -> None:
+    pdf_path = FIXTURES_DIR / "012_ignore_accents.pdf"
+    pdf_bytes = pdf_path.read_bytes()
+    original_text = extract_text(pdf_bytes)
+    assert "Léo" in original_text or "LÉO" in original_text or "léo" in original_text.lower()
+    assert "Leo" in original_text
+
+    payload = {
+        "rects": [],
+        "searches": [
+            {
+                "query": "leo",
+                "options": {
+                    "case_sensitive": False,
+                    "whole_word": True,
+                    "ignore_accents": True,
+                },
+                "scope": {"pages": None},
+            }
+        ],
+        "options": {},
+        "audit": None,
+    }
+
+    client = TestClient(app)
+    resp = client.post(
+        "/redact/apply",
+        files={"file": ("accents.pdf", pdf_bytes, "application/pdf")},
+        data={"payload": json.dumps(payload)},
+    )
+
+    assert resp.status_code == 200
+    assert resp.headers.get("X-Redaction-Audit-Status") == "pass"
+
+    redacted_text = extract_text(resp.content)
+    # On tolère la casse, on contrôle l'absence des deux variantes
+    assert "leo" not in redacted_text.casefold()
+    assert "léo" not in redacted_text.casefold()
+    assert "Autre: rien" in redacted_text
+
+
+@pytest.mark.integration
+def test_redact_apply_regex_partial_redaction_substring_inside_word() -> None:
+    """
+    Objectif: si le pattern matche un sous-mot (ex CAT dans CATCH),
+    on ne doit pas supprimer tout le mot mais uniquement la partie matchée.
+    """
+    pdf_path = FIXTURES_DIR / "007_whole_word_cat_catch.pdf"
+    pdf_bytes = pdf_path.read_bytes()
+
+    original_text = extract_text(pdf_bytes)
+    assert "CAT" in original_text
+    assert "CATCH" in original_text
+
+    payload = {
+        "rects": [],
+        "regexes": [
+            {
+                "patterns": ["CAT"],  # pas de boundaries => match dans CATCH
+                "case_sensitive": True,
+                "multiline": False,
+                "scope": {"pages": None},
+            }
+        ],
+        "options": {},
+        "audit": None,
+    }
+
+    client = TestClient(app)
+    resp = client.post(
+        "/redact/apply",
+        files={"file": ("cat.pdf", pdf_bytes, "application/pdf")},
+        data={"payload": json.dumps(payload)},
+    )
+
+    assert resp.status_code == 200
+    assert resp.headers.get("X-Redaction-Audit-Status") == "pass"
+
+    redacted_text = extract_text(resp.content)
+
+    # "CAT" (token seul) supprimé
+    assert re.search(r"(?<!\w)CAT(?!\w)", redacted_text) is None
+
+    # "CATCH" ne doit plus exister en entier
+    assert "CATCH" not in redacted_text
+
+    # On s'attend à ce que la fin ("CH") reste (redaction partielle)
+    assert re.search(r"(?<!\w)CH(?!\w)", redacted_text) is not None
+
+
+@pytest.mark.integration
+def test_redact_apply_regex_boundaries_keep_catch_intact() -> None:
+    """
+    Si l'UI désactive 'Sous-mot' pour une regex, le frontend peut entourer le pattern
+    avec des frontières type (?<!\\w) ... (?!\\w).
+    Ici on vérifie que CATCH reste inchangé.
+    """
+    pdf_path = FIXTURES_DIR / "007_whole_word_cat_catch.pdf"
+    pdf_bytes = pdf_path.read_bytes()
+
+    original_text = extract_text(pdf_bytes)
+    assert "CAT" in original_text
+    assert "CATCH" in original_text
+
+    boundary_pat = r"(?<!\w)CAT(?!\w)"
+
+    payload = {
+        "rects": [],
+        "regexes": [
+            {
+                "patterns": [boundary_pat],
+                "case_sensitive": True,
+                "multiline": False,
+                "scope": {"pages": None},
+            }
+        ],
+        "options": {},
+        "audit": None,
+    }
+
+    client = TestClient(app)
+    resp = client.post(
+        "/redact/apply",
+        files={"file": ("cat.pdf", pdf_bytes, "application/pdf")},
+        data={"payload": json.dumps(payload)},
+    )
+
+    assert resp.status_code == 200
+    assert resp.headers.get("X-Redaction-Audit-Status") == "pass"
+
+    redacted_text = extract_text(resp.content)
+
+    # Le token "CAT" seul doit être supprimé
+    assert re.search(r"(?<!\w)CAT(?!\w)", redacted_text) is None
+
+    # "CATCH" doit rester présent
+    assert "CATCH" in redacted_text

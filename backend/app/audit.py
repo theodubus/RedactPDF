@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from dataclasses import dataclass
 from typing import Any
 
@@ -12,14 +13,97 @@ class AuditOptions:
     patterns: list[str]
     regex: bool
     case_sensitive: bool
+    ignore_accents: bool = False
     max_total_matches: int = 200
     max_matches_per_page: int = 50
+
+
+def _fold_keep_len(s: str) -> str:
+    """
+    Accent folding that preserves string length 1:1 (important for index-based spans).
+    For each char, NFKD-decompose and keep the first non-combining codepoint.
+    """
+    out: list[str] = []
+    for ch in s or "":
+        decomp = unicodedata.normalize("NFKD", ch)
+        base = ""
+        for c in decomp:
+            if unicodedata.combining(c):
+                continue
+            base = c
+            break
+        out.append(base if base else ch)
+    return "".join(out)
+
+
+def _fold_regex_pattern_best_effort(pattern: str) -> str:
+    """
+    Best-effort folding of literal characters in a regex pattern, without trying
+    to fully parse regex grammar.
+
+    - Preserves escapes: \"\\d\", \"\\w\", \"\\s\", \"\\b\", etc.
+    - Folds literal letters both outside and inside character classes.
+    - Keeps length stable per folded character (see _fold_keep_len).
+    """
+    p = pattern or ""
+    out: list[str] = []
+
+    escaped = False
+    in_class = False
+
+    for ch in p:
+        if escaped:
+            # keep escape sequence as-is
+            out.append(ch)
+            escaped = False
+            continue
+
+        if ch == "\\":
+            out.append(ch)
+            escaped = True
+            continue
+
+        if ch == "[":
+            in_class = True
+            out.append(ch)
+            continue
+
+        if ch == "]" and in_class:
+            in_class = False
+            out.append(ch)
+            continue
+
+        # Fold only literal characters (best effort).
+        # For meta like '(' ')' '.' '*', folding is no-op anyway.
+        out.append(_fold_keep_len(ch))
+
+    return "".join(out)
 
 
 def _make_snippet(text: str, start: int, end: int, radius: int = 30) -> str:
     left = max(0, start - radius)
     right = min(len(text), end + radius)
     return text[left:right].replace("\n", "\\n")
+
+
+def _strip_accents_keep_len(s: str) -> str:
+    """
+    Best-effort accent folding with length preservation.
+    For each character:
+      - NFKD decomposes accents (e + ◌́)
+      - remove combining marks
+      - if multiple base chars result (rare, ligatures), keep the first char
+    This keeps indices stable enough for audit position reporting.
+    """
+    out: list[str] = []
+    for ch in s:
+        decomp = unicodedata.normalize("NFKD", ch)
+        base = "".join(c for c in decomp if not unicodedata.combining(c))
+        if not base:
+            out.append(ch)
+        else:
+            out.append(base[0])
+    return "".join(out)
 
 
 def build_whole_word_pattern(query: str) -> str:
@@ -45,22 +129,32 @@ def build_whole_word_pattern(query: str) -> str:
     return rf"(?<!\w){core}(?!\w)"
 
 
-def build_audit_for_search(*, query: str, case_sensitive: bool, whole_word: bool) -> AuditOptions:
-    """
-    Build AuditOptions coherent with /redact/search semantics:
-
-    - whole_word=False: substring audit on the raw query
-    - whole_word=True: regex audit using the same boundary rule as the search implementation
-    """
+def build_audit_for_search(
+    *,
+    query: str,
+    case_sensitive: bool,
+    whole_word: bool,
+    ignore_accents: bool = False
+) -> AuditOptions:
     q = (query or "").strip()
     if not q:
         raise ValueError("query must be non-empty")
 
     if whole_word:
         pat = build_whole_word_pattern(q)
-        return AuditOptions(patterns=[pat], regex=True, case_sensitive=case_sensitive)
+        return AuditOptions(
+            patterns=[pat],
+            regex=True,
+            case_sensitive=case_sensitive,
+            ignore_accents=ignore_accents,
+        )
 
-    return AuditOptions(patterns=[q], regex=False, case_sensitive=case_sensitive)
+    return AuditOptions(
+        patterns=[q],
+        regex=False,
+        case_sensitive=case_sensitive,
+        ignore_accents=ignore_accents,
+    )
 
 
 def audit_text(
@@ -69,19 +163,15 @@ def audit_text(
     *,
     page_number: int
 ) -> tuple[list[dict[str, Any]], int]:
-    """
-    Audit a single page text and return (matches, match_count) for that page.
-
-    - Applies per-page cap: opts.max_matches_per_page
-    - Does NOT apply global cap (opts.max_total_matches) here;
-    global cap is handled by audit_pdf_text().
-    """
     if not opts.patterns:
         raise ValueError("audit.patterns must be non-empty")
 
     matches: list[dict[str, Any]] = []
     if not text:
         return matches, 0
+
+    src_text = text
+    folded_text = _fold_keep_len(text) if opts.ignore_accents else text
 
     # Regex mode
     if opts.regex:
@@ -94,23 +184,29 @@ def audit_text(
             cleaned = (pat or "").strip()
             if not cleaned:
                 continue
+
+            cleaned_for_rx = (
+                _fold_regex_pattern_best_effort(cleaned) if opts.ignore_accents else cleaned
+            )
+
             try:
-                compiled.append((cleaned, re.compile(cleaned, flags)))
+                compiled.append((cleaned, re.compile(cleaned_for_rx, flags)))
             except re.error as e:
                 raise ValueError(f"invalid regex pattern: {cleaned}") from e
 
         per_page = 0
-        for pat, rx in compiled:
-            for m in rx.finditer(text):
+        for pat_src, rx in compiled:
+            for m in rx.finditer(folded_text):
                 start, end = m.span()
+                # indexes align with original text due to fold_keep_len
                 matches.append(
                     {
-                        "pattern": pat,
+                        "pattern": pat_src,
                         "page": page_number,
-                        "match": m.group(0),
+                        "match": src_text[start:end],
                         "start": start,
                         "end": end,
-                        "snippet": _make_snippet(text, start, end),
+                        "snippet": _make_snippet(src_text, start, end),
                     }
                 )
                 per_page += 1
@@ -119,30 +215,32 @@ def audit_text(
         return matches, per_page
 
     # Substring mode
-    hay = text if opts.case_sensitive else text.casefold()
+    hay0 = folded_text if opts.case_sensitive else folded_text.casefold()
 
     per_page = 0
     for pat in opts.patterns:
         needle_raw = (pat or "").strip()
         if not needle_raw:
             continue
-        needle = needle_raw if opts.case_sensitive else needle_raw.casefold()
+
+        needle_src = _fold_keep_len(needle_raw) if opts.ignore_accents else needle_raw
+        needle0 = needle_src if opts.case_sensitive else needle_src.casefold()
 
         start = 0
         while True:
-            idx = hay.find(needle, start)
+            idx = hay0.find(needle0, start)
             if idx == -1:
                 break
-            end = idx + len(needle)
+            end = idx + len(needle0)
 
             matches.append(
                 {
                     "pattern": needle_raw,
                     "page": page_number,
-                    "match": text[idx:end],
+                    "match": src_text[idx:end],
                     "start": idx,
                     "end": end,
-                    "snippet": _make_snippet(text, idx, end),
+                    "snippet": _make_snippet(src_text, idx, end),
                 }
             )
 
@@ -155,28 +253,7 @@ def audit_text(
     return matches, per_page
 
 
-def audit_pdf_text(
-    pdf_bytes: bytes,
-    opts: AuditOptions
-) -> dict[str, Any]:
-    """
-    Audit post-redaction:
-    - extracts text page by page with PyMuPDF
-    - searches for patterns (regex or substring)
-    - enforces:
-        - global cap: opts.max_total_matches
-        - per-page cap: opts.max_matches_per_page (handled in audit_text)
-
-    Report format matches what your API already expects:
-      {
-        "status": "pass"|"fail",
-        "total_matches": int,
-        "matched_pages": [int...],   # 1-based page numbers
-        "options": {...},
-        "patterns": [...],
-        "matches": [...]
-      }
-    """
+def audit_pdf_text(pdf_bytes: bytes, opts: AuditOptions) -> dict[str, Any]:
     if not pdf_bytes:
         raise ValueError("Empty PDF bytes")
     if not opts.patterns:
@@ -199,7 +276,6 @@ def audit_pdf_text(
             if page_count:
                 matched_pages.add(page_number)
 
-            # Respect global cap
             remaining = opts.max_total_matches - total_matches
             if remaining <= 0:
                 break
@@ -223,6 +299,7 @@ def audit_pdf_text(
         "options": {
             "regex": opts.regex,
             "case_sensitive": opts.case_sensitive,
+            "ignore_accents": opts.ignore_accents,
             "max_total_matches": opts.max_total_matches,
             "max_matches_per_page": opts.max_matches_per_page,
         },

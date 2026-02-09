@@ -28,6 +28,12 @@
   "rules.option.caseSensitive": "Case sensitive",
   "rules.option.wholeWord": "Whole word",
   "rules.option.multiline": "Multiline",
+  "rules.options.label": "Options",
+  "rules.option.subword": "Subword",
+  "rules.option.ignoreAccents": "Ignore accents",
+
+  "rules.label.searchType": "Search type",
+  "rules.label.options": "Options",
 
   "modal.edit.title": "Edit item",
   "modal.edit.kind": "Type",

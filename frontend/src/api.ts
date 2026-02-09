@@ -7,13 +7,16 @@ export type RuleInput =
       kind: "exact";
       query: string;
       caseSensitive: boolean;
-      wholeWord: boolean;
+      allowSubwords: boolean;  // UI "Sous-mot"
+      ignoreAccents: boolean;
     }
   | {
       kind: "regex";
       pattern: string;
       caseSensitive: boolean;
       multiline: boolean;
+      allowSubwords: boolean;  // UI "Sous-mot"
+      ignoreAccents: boolean;
     };
 
 export type RedactSuccess = {
@@ -44,6 +47,16 @@ async function parseErrorJson(resp: Response): Promise<AuditReport | null> {
   }
 }
 
+
+function wrapWholeWordRegex(pattern: string): string {
+  const p = pattern.trim();
+  if (!p) return p;
+  // Ne wrappe pas deux fois si l'utilisateur l'a déjà fait
+  if (p.startsWith("(?<!\\w)") && p.endsWith("(?!\\w)")) return p;
+  return `(?<!\\w)${p}(?!\\w)`;
+}
+
+
 export async function redactApply(params: {
   file: File;
   rules: RuleInput[];
@@ -58,7 +71,8 @@ export async function redactApply(params: {
       query: r.query.trim(),
       options: {
         case_sensitive: r.caseSensitive,
-        whole_word: r.wholeWord,
+        whole_word: !r.allowSubwords,     // inversion UI
+        ignore_accents: r.ignoreAccents,
       },
       scope: { pages: null as null },
     }))
@@ -66,12 +80,19 @@ export async function redactApply(params: {
 
   const regexes = params.rules
     .filter((r): r is Extract<RuleInput, { kind: "regex" }> => r.kind === "regex")
-    .map((r) => ({
-      patterns: [r.pattern.trim()],
-      case_sensitive: r.caseSensitive,
-      multiline: r.multiline,
-      scope: { pages: null as null },
-    }))
+    .map((r) => {
+      const raw = r.pattern.trim();
+      const pat = r.allowSubwords ? raw : wrapWholeWordRegex(raw);
+
+      return {
+        patterns: [pat],
+        case_sensitive: r.caseSensitive,
+        multiline: r.multiline,
+        // UI-only: ignoreAccents n'est pas envoyé ici ; il s'applique au search/audit,
+        // et pour regex on reste "pattern-driven" (pas de champ backend).
+        scope: { pages: null as null },
+      };
+    })
     .filter((rx) => rx.patterns[0].length > 0);
 
   const hasPresets = params.presets.length > 0;

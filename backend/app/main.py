@@ -93,6 +93,7 @@ class RectanglesPayload(BaseModel):
 class SearchOptionsModel(BaseModel):
     case_sensitive: bool = False
     whole_word: bool = False
+    ignore_accents: bool = False
 
 
 class ScopeModel(BaseModel):
@@ -152,6 +153,7 @@ class RegexPayload(BaseModel):
     patterns: list[str]
     case_sensitive: bool = False
     multiline: bool = False
+    ignore_accents: bool = False
     scope: ScopeModel = Field(default_factory=ScopeModel)
     options: OptionsModel = Field(default_factory=OptionsModel)
     audit: AuditModel
@@ -267,6 +269,7 @@ async def redact_search(
                 query=data.query,
                 case_sensitive=data.options.case_sensitive,
                 whole_word=data.options.whole_word,
+                ignore_accents=data.options.ignore_accents,
                 pages=data.scope.pages,
             ),
         )
@@ -296,6 +299,7 @@ async def redact_search(
             query=data.query,
             case_sensitive=data.options.case_sensitive,
             whole_word=data.options.whole_word,
+            ignore_accents=data.options.ignore_accents,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
@@ -473,6 +477,7 @@ async def redact_regex(
             case_sensitive=data.case_sensitive,
             pages=data.scope.pages,
             multiline=data.multiline,
+            ignore_accents=data.ignore_accents,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
@@ -541,6 +546,7 @@ class ApplyRegexModel(BaseModel):
     patterns: list[str]
     case_sensitive: bool = False
     multiline: bool = False
+    ignore_accents: bool = False
     scope: ScopeModel = Field(default_factory=ScopeModel)
 
     @field_validator("patterns", mode="before")
@@ -630,6 +636,7 @@ async def redact_apply(
                 query=s.query,
                 case_sensitive=s.options.case_sensitive,
                 whole_word=s.options.whole_word,
+                ignore_accents=s.options.ignore_accents,
                 pages=s.scope.pages,
             )
         )
@@ -649,6 +656,7 @@ async def redact_apply(
                 patterns=r.patterns,
                 case_sensitive=r.case_sensitive,
                 multiline=r.multiline,
+                ignore_accents=r.ignore_accents,
                 pages=r.scope.pages,
             )
         )
