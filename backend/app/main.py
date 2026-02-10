@@ -93,6 +93,7 @@ class RectanglesPayload(BaseModel):
 class SearchOptionsModel(BaseModel):
     case_sensitive: bool = False
     whole_word: bool = False
+    ignore_accents: bool = False
 
 
 class ScopeModel(BaseModel):
@@ -152,6 +153,7 @@ class RegexPayload(BaseModel):
     patterns: list[str]
     case_sensitive: bool = False
     multiline: bool = False
+    ignore_accents: bool = False
     scope: ScopeModel = Field(default_factory=ScopeModel)
     options: OptionsModel = Field(default_factory=OptionsModel)
     audit: AuditModel
@@ -267,6 +269,7 @@ async def redact_search(
                 query=data.query,
                 case_sensitive=data.options.case_sensitive,
                 whole_word=data.options.whole_word,
+                ignore_accents=data.options.ignore_accents,
                 pages=data.scope.pages,
             ),
         )
@@ -296,6 +299,7 @@ async def redact_search(
             query=data.query,
             case_sensitive=data.options.case_sensitive,
             whole_word=data.options.whole_word,
+            ignore_accents=data.options.ignore_accents,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
@@ -473,6 +477,7 @@ async def redact_regex(
             case_sensitive=data.case_sensitive,
             pages=data.scope.pages,
             multiline=data.multiline,
+            ignore_accents=data.ignore_accents,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
@@ -541,6 +546,7 @@ class ApplyRegexModel(BaseModel):
     patterns: list[str]
     case_sensitive: bool = False
     multiline: bool = False
+    ignore_accents: bool = False
     scope: ScopeModel = Field(default_factory=ScopeModel)
 
     @field_validator("patterns", mode="before")
@@ -581,8 +587,15 @@ class ApplyPresetsModel(BaseModel):
 
 class ApplyPayload(BaseModel):
     rects: list[RectModel] = Field(default_factory=list)
+
+    # Compat existante (single)
     search: ApplySearchModel | None = None
     regex: ApplyRegexModel | None = None
+
+    # NOUVEAU : multi-règles
+    searches: list[ApplySearchModel] = Field(default_factory=list)
+    regexes: list[ApplyRegexModel] = Field(default_factory=list)
+
     presets: ApplyPresetsModel | None = None
     options: OptionsModel = Field(default_factory=OptionsModel)
     audit: AuditModel | None = None
@@ -608,24 +621,49 @@ async def redact_apply(
         RedactionRect(page=r.page, x0=r.x0, y0=r.y0, x1=r.x1, y1=r.y1) for r in data.rects
     ]
 
-    search_req: SearchRequest | None = None
+    # ----------------------------
+    # Build searches list (compat: data.search + data.searches)
+    # ----------------------------
+    search_models: list[ApplySearchModel] = []
+    search_models.extend(list(data.searches or []))
     if data.search is not None:
-        search_req = SearchRequest(
-            query=data.search.query,
-            case_sensitive=data.search.options.case_sensitive,
-            whole_word=data.search.options.whole_word,
-            pages=data.search.scope.pages,
+        search_models.append(data.search)
+
+    searches_req: list[SearchRequest] = []
+    for s in search_models:
+        searches_req.append(
+            SearchRequest(
+                query=s.query,
+                case_sensitive=s.options.case_sensitive,
+                whole_word=s.options.whole_word,
+                ignore_accents=s.options.ignore_accents,
+                pages=s.scope.pages,
+            )
         )
 
-    regex_req: RegexRequest | None = None
+    # ----------------------------
+    # Build regexes list (compat: data.regex + data.regexes)
+    # ----------------------------
+    regex_models: list[ApplyRegexModel] = []
+    regex_models.extend(list(data.regexes or []))
     if data.regex is not None:
-        regex_req = RegexRequest(
-            patterns=data.regex.patterns,
-            case_sensitive=data.regex.case_sensitive,
-            multiline=data.regex.multiline,
-            pages=data.regex.scope.pages,
+        regex_models.append(data.regex)
+
+    regexes_req: list[RegexRequest] = []
+    for r in regex_models:
+        regexes_req.append(
+            RegexRequest(
+                patterns=r.patterns,
+                case_sensitive=r.case_sensitive,
+                multiline=r.multiline,
+                ignore_accents=r.ignore_accents,
+                pages=r.scope.pages,
+            )
         )
 
+    # ----------------------------
+    # Presets (unchanged)
+    # ----------------------------
     presets_req: PresetsRequest | None = None
     if data.presets is not None:
         presets_req = PresetsRequest(
@@ -637,8 +675,8 @@ async def redact_apply(
         plan = plan_redactions(
             pdf_bytes,
             manual_rects=manual_rects,
-            search=search_req,
-            regex=regex_req,
+            searches=searches_req or None,
+            regexes=regexes_req or None,
             presets=presets_req,
         )
 
@@ -669,8 +707,8 @@ async def redact_apply(
     try:
         composite = audit_plan(
             out_pdf,
-            search=search_req,
-            regex=regex_req,
+            searches=searches_req or None,
+            regexes=regexes_req or None,
             presets=presets_req,
             extra_audit=extra_audit,
         )

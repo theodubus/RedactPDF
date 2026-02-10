@@ -1,65 +1,37 @@
 import React, { useMemo, useState } from "react";
 import { useI18n } from "./i18n";
 import { redactApply } from "./api";
+import type { PresetKey, RuleInput } from "./api";
 
-type PresetKey = "email" | "phone" | "credit_card";
+import { HeaderBar } from "./components/HeaderBar";
+import { FilePickerSection } from "./components/FilePickerSection";
+import { RulesSection } from "./components/Rules/RulesSection";
+import { PresetsSection } from "./components/PresetsSection";
+import { ResultPanel } from "./components/ResultPanel";
 
-function downloadBlob(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-}
-
-function JsonBlock(props: { value: unknown }) {
-  const [open, setOpen] = useState(true);
-  const { t } = useI18n();
-
-  return (
-    <div className="jsonBlock">
-      <button className="link" onClick={() => setOpen((v) => !v)} type="button">
-        {open ? t("debug.hide") : t("debug.show")}
-      </button>
-      {open ? <pre className="pre">{JSON.stringify(props.value, null, 2)}</pre> : null}
-    </div>
-  );
-}
+import type { UiRule } from "./types/uiRules";
+import { downloadBlob } from "./utils/redactionUtils";
 
 export default function App() {
   const { lang, setLang, t } = useI18n();
 
   const [file, setFile] = useState<File | null>(null);
-
-  // Search exact
-  const [query, setQuery] = useState("");
-  const [caseSensitive, setCaseSensitive] = useState(false);
-  const [wholeWord, setWholeWord] = useState(true);
-
-  // Presets (emails décoché par défaut)
+  const [rules, setRules] = useState<UiRule[]>([]);
   const [presets, setPresets] = useState<Record<PresetKey, boolean>>({
     email: false,
     phone: false,
     credit_card: false,
   });
 
-  const selectedPresets = useMemo(() => {
-    return (Object.keys(presets) as PresetKey[]).filter((k) => presets[k]);
-  }, [presets]);
-
   const [submitting, setSubmitting] = useState(false);
 
   const [successInfo, setSuccessInfo] = useState<{
     auditStatus?: string;
     auditMatches?: string;
-
     occurrencesSearch: number;
+    occurrencesRegex: number;
     occurrencesPresets: number;
     occurrencesTotal: number;
-
     lastBlob?: Blob;
   } | null>(null);
 
@@ -69,9 +41,41 @@ export default function App() {
     rawMessage?: string;
   } | null>(null);
 
-  const onPickFile: React.ChangeEventHandler<HTMLInputElement> = (e) => {
+  const clearNotices = () => {
     setSuccessInfo(null);
     setErrorInfo(null);
+  };
+
+  const selectedPresets = useMemo(() => {
+    return (Object.keys(presets) as PresetKey[]).filter((k) => presets[k]);
+  }, [presets]);
+
+  const rulesForApi: RuleInput[] = useMemo(() => {
+    return rules.map((r) => {
+      if (r.kind === "exact") {
+        return {
+          kind: "exact",
+          query: r.value,
+          caseSensitive: r.caseSensitive,
+          allowSubwords: r.allowSubwords,
+          ignoreAccents: r.ignoreAccents,
+        };
+      }
+      return {
+        kind: "regex",
+        pattern: r.value,
+        caseSensitive: r.caseSensitive,
+        multiline: r.multiline,
+        allowSubwords: r.allowSubwords,
+        ignoreAccents: r.ignoreAccents,
+      };
+    });
+  }, [rules]);
+
+  const hasAnythingToDo = rules.length > 0 || selectedPresets.length > 0;
+
+  const onPickFile: React.ChangeEventHandler<HTMLInputElement> = (e) => {
+    clearNotices();
 
     const f = e.target.files?.[0] ?? null;
     if (!f) {
@@ -90,6 +94,7 @@ export default function App() {
   };
 
   const togglePreset = (key: PresetKey) => {
+    clearNotices();
     setPresets((p) => ({ ...p, [key]: !p[key] }));
   };
 
@@ -103,12 +108,8 @@ export default function App() {
       return;
     }
 
-    const trimmed = query.trim();
-    const hasSearch = trimmed.length > 0;
-    const hasPresets = selectedPresets.length > 0;
-
-    if (!hasSearch && !hasPresets) {
-      setErrorInfo({ rawMessage: t("form.nothingToDo") });
+    if (!hasAnythingToDo) {
+      setErrorInfo({ rawMessage: t("form.nothingToDo.rules") });
       return;
     }
 
@@ -117,24 +118,21 @@ export default function App() {
     try {
       const r = await redactApply({
         file,
-        query: trimmed,
-        caseSensitive,
-        wholeWord,
+        rules: rulesForApi,
         presets: selectedPresets,
       });
 
       const occSearch = Number(r.headers.occurrencesSearch ?? "0") || 0;
+      const occRegex = Number(r.headers.occurrencesRegex ?? "0") || 0;
       const occPresets = Number(r.headers.occurrencesPresets ?? "0") || 0;
-
-      // Total : priorité à un header total si présent, sinon somme.
       const occTotal =
-        (r.headers.occurrencesTotal ? Number(r.headers.occurrencesTotal) : NaN) ||
-        occSearch + occPresets;
+        Number(r.headers.occurrencesTotal ?? "0") || occSearch + occRegex + occPresets;
 
       setSuccessInfo({
         auditStatus: r.headers.auditStatus,
         auditMatches: r.headers.auditMatches,
         occurrencesSearch: occSearch,
+        occurrencesRegex: occRegex,
         occurrencesPresets: occPresets,
         occurrencesTotal: occTotal,
         lastBlob: r.pdfBlob,
@@ -154,100 +152,20 @@ export default function App() {
 
   return (
     <div className="page">
-      <header className="header">
-        <div className="headerLeft">
-          <div className="title">{t("app.title")}</div>
-          <div className="subtitle">{t("app.subtitle")}</div>
-        </div>
-
-        <div className="headerRight">
-          <button
-            type="button"
-            className={lang === "fr" ? "pill pillActive" : "pill"}
-            onClick={() => setLang("fr")}
-          >
-            {t("lang.fr")}
-          </button>
-          <button
-            type="button"
-            className={lang === "en" ? "pill pillActive" : "pill"}
-            onClick={() => setLang("en")}
-          >
-            {t("lang.en")}
-          </button>
-        </div>
-      </header>
+      <HeaderBar lang={lang} setLang={setLang} t={t} />
 
       <main className="main">
         <form className="card" onSubmit={handleSubmit}>
-          <section className="section">
-            <div className="sectionTitle">{t("form.section.file")}</div>
-            <label className="fileRow">
-              <input type="file" accept="application/pdf" onChange={onPickFile} />
-              <span className="fileHelp">
-                {file ? `${t("form.file.selected")}: ${file.name}` : t("form.file.choose")}
-              </span>
-            </label>
-          </section>
+          <FilePickerSection t={t} file={file} onPickFile={onPickFile} />
 
-          <section className="section">
-            <div className="sectionTitle">{t("form.section.search")}</div>
-            <input
-              className="input"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder={t("form.search.query.placeholder")}
-              aria-label={t("form.search.query")}
-            />
-            <div className="row">
-              <label className="checkbox">
-                <input
-                  type="checkbox"
-                  checked={caseSensitive}
-                  onChange={(e) => setCaseSensitive(e.target.checked)}
-                />
-                <span>{t("form.search.caseSensitive")}</span>
-              </label>
-              <label className="checkbox">
-                <input
-                  type="checkbox"
-                  checked={wholeWord}
-                  onChange={(e) => setWholeWord(e.target.checked)}
-                />
-                <span>{t("form.search.wholeWord")}</span>
-              </label>
-            </div>
-          </section>
+          <RulesSection
+            t={t}
+            rules={rules}
+            setRules={setRules}
+            onUserChange={clearNotices}
+          />
 
-          <section className="section">
-            <div className="sectionTitle">{t("form.section.presets")}</div>
-            <div className="row">
-              <label className="checkbox">
-                <input
-                  type="checkbox"
-                  checked={presets.email}
-                  onChange={() => togglePreset("email")}
-                />
-                <span>{t("form.presets.email")}</span>
-              </label>
-              <label className="checkbox">
-                <input
-                  type="checkbox"
-                  checked={presets.phone}
-                  onChange={() => togglePreset("phone")}
-                />
-                <span>{t("form.presets.phone")}</span>
-              </label>
-              <label className="checkbox">
-                <input
-                  type="checkbox"
-                  checked={presets.credit_card}
-                  onChange={() => togglePreset("credit_card")}
-                />
-                <span>{t("form.presets.creditCard")}</span>
-              </label>
-            </div>
-          </section>
+          <PresetsSection t={t} presets={presets} togglePreset={togglePreset} />
 
           <div className="hint">{t("form.hint")}</div>
 
@@ -257,71 +175,15 @@ export default function App() {
         </form>
 
         <aside className="card">
-          {successInfo ? (
-            <div>
-              <div className="resultTitle ok">{t("result.success.title")}</div>
-
-              <div className="kv">
-                <div className="k">{t("result.success.auditStatus")}</div>
-                <div className="v">{successInfo.auditStatus ?? "-"}</div>
-              </div>
-
-              <div className="kv">
-                <div className="k">{t("result.success.occurrencesSearch")}</div>
-                <div className="v">{successInfo.occurrencesSearch}</div>
-              </div>
-
-              <div className="kv">
-                <div className="k">{t("result.success.occurrencesPresets")}</div>
-                <div className="v">{successInfo.occurrencesPresets}</div>
-              </div>
-
-              <div className="kv">
-                <div className="k">{t("result.success.occurrencesTotal")}</div>
-                <div className="v">{successInfo.occurrencesTotal}</div>
-              </div>
-
-              {successInfo.lastBlob ? (
-                <button
-                  className="buttonSecondary"
-                  type="button"
-                  onClick={() => downloadBlob(successInfo.lastBlob!, "redacted.pdf")}
-                >
-                  {t("result.success.download")}
-                </button>
-              ) : null}
-            </div>
-          ) : null}
-
-          {errorInfo ? (
-            <div>
-              <div className="resultTitle bad">{t("result.error.title")}</div>
-
-              {errorInfo.status ? (
-                <div className="kv">
-                  <div className="k">{t("result.error.http")}</div>
-                  <div className="v">{errorInfo.status}</div>
-                </div>
-              ) : null}
-
-              {errorInfo.rawMessage && !errorInfo.report ? (
-                <div className="errorBox">{errorInfo.rawMessage}</div>
-              ) : null}
-
-              {errorInfo.report ? (
-                <div>
-                  <div className="smallTitle">{t("result.error.details")}</div>
-                  <JsonBlock value={errorInfo.report} />
-                </div>
-              ) : null}
-
-              {!errorInfo.report && !errorInfo.rawMessage ? (
-                <div className="errorBox">{t("result.error.noJson")}</div>
-              ) : null}
-            </div>
-          ) : (
-            <div className="muted">{t("form.hint")}</div>
-          )}
+          <ResultPanel
+            t={t}
+            hintText={t("form.hint")}
+            successInfo={successInfo}
+            errorInfo={errorInfo}
+            onDownload={() => {
+              if (successInfo?.lastBlob) downloadBlob(successInfo.lastBlob, "redacted.pdf");
+            }}
+          />
         </aside>
       </main>
     </div>

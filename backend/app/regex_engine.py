@@ -1,12 +1,70 @@
+# backend/app/regex_engine.py
 from __future__ import annotations
 
 import re
+import unicodedata
 from collections.abc import Sequence
 from dataclasses import dataclass
 
 import pymupdf  # PyMuPDF
 
 from .redaction import RedactionRect
+
+
+def _fold_keep_len(s: str) -> str:
+    """
+    Accent folding that preserves length 1:1 (critical for span->rect mapping).
+    """
+    out: list[str] = []
+    for ch in s or "":
+        decomp = unicodedata.normalize("NFKD", ch)
+        base = ""
+        for c in decomp:
+            if unicodedata.combining(c):
+                continue
+            base = c
+            break
+        out.append(base if base else ch)
+    return "".join(out)
+
+
+def _fold_regex_pattern_best_effort(pattern: str) -> str:
+    """
+    Best-effort folding of literal characters in a regex pattern.
+
+    - Preserves escapes (\\d, \\w, \\s, etc.)
+    - Folds literal letters outside/inside character classes
+    - Keeps length stable per character
+    """
+    p = pattern or ""
+    out: list[str] = []
+    escaped = False
+    in_class = False
+
+    for ch in p:
+        if escaped:
+            out.append(ch)
+            escaped = False
+            continue
+
+        if ch == "\\":
+            out.append(ch)
+            escaped = True
+            continue
+
+        if ch == "[":
+            in_class = True
+            out.append(ch)
+            continue
+
+        if ch == "]" and in_class:
+            in_class = False
+            out.append(ch)
+            continue
+
+        out.append(_fold_keep_len(ch))
+
+    return "".join(out)
 
 
 @dataclass(frozen=True)
@@ -31,12 +89,18 @@ def _normalize_patterns(patterns: str | Sequence[str]) -> list[str]:
     return pat_list
 
 
-def _compile_patterns(patterns: Sequence[str], *, case_sensitive: bool) -> list[re.Pattern[str]]:
+def _compile_patterns(
+    patterns: Sequence[str],
+    *,
+    case_sensitive: bool,
+    ignore_accents: bool,
+) -> list[re.Pattern[str]]:
     flags = 0 if case_sensitive else re.IGNORECASE
     compiled: list[re.Pattern[str]] = []
     for pat in patterns:
+        src = _fold_regex_pattern_best_effort(pat) if ignore_accents else pat
         try:
-            compiled.append(re.compile(pat, flags))
+            compiled.append(re.compile(src, flags))
         except re.error as e:
             raise ValueError(f"Invalid regex pattern: {pat!r}. {e}") from e
     return compiled
@@ -80,7 +144,7 @@ def _group_words_by_line(words: list[tuple]) -> dict[tuple[int, int], list[tuple
 
 
 def _build_line_text_and_spans(
-    line_words: list[tuple]
+    line_words: list[tuple],
 ) -> tuple[str, list[tuple[int, int, pymupdf.Rect]]]:
     """
     Returns:
@@ -117,6 +181,7 @@ def iter_regex_hits_by_line(
     *,
     case_sensitive: bool,
     pages: Sequence[int] | None = None,
+    ignore_accents: bool = False,
     max_hits: int = 10_000,
 ) -> list[RegexHit]:
     """
@@ -126,7 +191,11 @@ def iter_regex_hits_by_line(
     Returns detailed hits (pattern + matched text), useful for post-filters (phone/Luhn).
     """
     pat_list = _normalize_patterns(patterns)
-    compiled = _compile_patterns(pat_list, case_sensitive=case_sensitive)
+    compiled = _compile_patterns(
+                            pat_list,
+                            case_sensitive=case_sensitive,
+                            ignore_accents=ignore_accents
+                        )
 
     doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")
     try:
@@ -143,8 +212,10 @@ def iter_regex_hits_by_line(
                 if not line_text:
                     continue
 
+                match_text = _fold_keep_len(line_text) if ignore_accents else line_text
+
                 for pat, pat_src in zip(compiled, pat_list, strict=True):
-                    for m in pat.finditer(line_text):
+                    for m in pat.finditer(match_text):
                         if len(hits) >= max_hits:
                             return hits
 
@@ -169,11 +240,13 @@ def iter_regex_hits_by_line(
                             x1=float(union_rect.x1),
                             y1=float(union_rect.y1),
                         )
+
+                        # indices are stable thanks to length-preserving fold
                         hits.append(
                             RegexHit(
                                 page=page_index,
                                 pattern=pat_src,
-                                match=m.group(0),
+                                match=line_text[s:e],
                                 rect=hit_rect,
                             )
                         )
@@ -189,6 +262,7 @@ def find_redaction_rectangles_by_regex(
     *,
     case_sensitive: bool,
     pages: Sequence[int] | None = None,
+    ignore_accents: bool = False,
 ) -> list[RedactionRect]:
     """
     Public API: return rectangles for regex matches (mono-line).
@@ -200,6 +274,7 @@ def find_redaction_rectangles_by_regex(
         patterns,
         case_sensitive=case_sensitive,
         pages=pages,
+        ignore_accents=ignore_accents,
     )
 
     # approximate dedupe (round coords) to keep stability

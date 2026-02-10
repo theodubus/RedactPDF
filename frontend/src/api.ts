@@ -1,16 +1,32 @@
 export type AuditReport = unknown;
 
+export type PresetKey = "email" | "phone" | "credit_card";
+
+export type RuleInput =
+  | {
+      kind: "exact";
+      query: string;
+      caseSensitive: boolean;
+      allowSubwords: boolean;  // UI "Sous-mot"
+      ignoreAccents: boolean;
+    }
+  | {
+      kind: "regex";
+      pattern: string;
+      caseSensitive: boolean;
+      multiline: boolean;
+      allowSubwords: boolean;  // UI "Sous-mot"
+      ignoreAccents: boolean;
+    };
+
 export type RedactSuccess = {
   pdfBlob: Blob;
   headers: {
     auditStatus?: string;
     auditMatches?: string;
 
-    // Endpoints historiques
-    occurrences?: string;
-
-    // Apply (si exposé côté backend)
     occurrencesSearch?: string;
+    occurrencesRegex?: string;
     occurrencesPresets?: string;
     occurrencesTotal?: string;
   };
@@ -31,47 +47,64 @@ async function parseErrorJson(resp: Response): Promise<AuditReport | null> {
   }
 }
 
+
+function wrapWholeWordRegex(pattern: string): string {
+  const p = pattern.trim();
+  if (!p) return p;
+  // Ne wrappe pas deux fois si l'utilisateur l'a déjà fait
+  if (p.startsWith("(?<!\\w)") && p.endsWith("(?!\\w)")) return p;
+  return `(?<!\\w)${p}(?!\\w)`;
+}
+
+
 export async function redactApply(params: {
   file: File;
-  query: string;
-  caseSensitive: boolean;
-  wholeWord: boolean;
-  presets: Array<"email" | "phone" | "credit_card">;
+  rules: RuleInput[];
+  presets: PresetKey[];
 }): Promise<RedactSuccess> {
   const form = new FormData();
   form.append("file", params.file);
 
-  const trimmed = params.query.trim();
-  const hasSearch = trimmed.length > 0;
+  const searches = params.rules
+    .filter((r): r is Extract<RuleInput, { kind: "exact" }> => r.kind === "exact")
+    .map((r) => ({
+      query: r.query.trim(),
+      options: {
+        case_sensitive: r.caseSensitive,
+        whole_word: !r.allowSubwords,     // inversion UI
+        ignore_accents: r.ignoreAccents,
+      },
+      scope: { pages: null as null },
+    }))
+    .filter((s) => s.query.length > 0);
+
+  const regexes = params.rules
+    .filter((r): r is Extract<RuleInput, { kind: "regex" }> => r.kind === "regex")
+    .map((r) => {
+      const raw = r.pattern.trim();
+      const pat = r.allowSubwords ? raw : wrapWholeWordRegex(raw);
+
+      return {
+        patterns: [pat],
+        case_sensitive: r.caseSensitive,
+        multiline: r.multiline,
+        ignore_accents: r.ignoreAccents,
+        scope: { pages: null as null },
+      };
+
+    })
+    .filter((rx) => rx.patterns[0].length > 0);
+
   const hasPresets = params.presets.length > 0;
 
   const payload = {
     rects: [],
-    search: hasSearch
-      ? {
-          query: trimmed,
-          options: {
-            case_sensitive: params.caseSensitive,
-            whole_word: params.wholeWord,
-          },
-          scope: { pages: null },
-        }
-      : null,
-    presets: hasPresets
-      ? {
-          presets: params.presets,
-          scope: { pages: null },
-        }
-      : null,
+    searches,
+    regexes,
+    presets: hasPresets ? { presets: params.presets, scope: { pages: null as null } } : null,
     options: {},
-
-    // Champ conservé pour compat (si votre modèle le requiert).
-    // Si pas de search, on met un pattern improbable.
-    audit: {
-      patterns: [hasSearch ? trimmed : "__NO_MATCH__"],
-      regex: false,
-      case_sensitive: params.caseSensitive,
-    },
+    // audit additionnel facultatif : on laisse null (audit_plan gère déjà search/regex/presets)
+    audit: null,
   };
 
   form.append("payload", JSON.stringify(payload));
@@ -88,121 +121,15 @@ export async function redactApply(params: {
 
   const blob = await resp.blob();
 
-  const occSearch =
-    getHeader(resp.headers, "X-Redaction-Search-Occurrences") ??
-    getHeader(resp.headers, "X-Redaction-Apply-Occurrences-Search");
-
-  const occPresets =
-    getHeader(resp.headers, "X-Redaction-Presets-Occurrences") ??
-    getHeader(resp.headers, "X-Redaction-Apply-Occurrences-Presets");
-
-  const occTotal =
-    getHeader(resp.headers, "X-Redaction-Apply-Occurrences") ??
-    getHeader(resp.headers, "X-Redaction-Apply-Occurrences-Total");
-
   return {
     pdfBlob: blob,
     headers: {
       auditStatus: getHeader(resp.headers, "X-Redaction-Audit-Status"),
       auditMatches: getHeader(resp.headers, "X-Redaction-Audit-Matches"),
-      occurrencesSearch: occSearch,
-      occurrencesPresets: occPresets,
-      occurrencesTotal: occTotal,
-    },
-  };
-}
-
-export async function redactSearch(params: {
-  file: File;
-  query: string;
-  caseSensitive: boolean;
-  wholeWord: boolean;
-}): Promise<RedactSuccess> {
-  const form = new FormData();
-  form.append("file", params.file);
-
-  const payload = {
-    query: params.query,
-    options: {
-      case_sensitive: params.caseSensitive,
-      whole_word: params.wholeWord,
-    },
-    scope: { pages: null },
-    apply: {},
-    audit: {
-      patterns: [params.query],
-      regex: false,
-      case_sensitive: params.caseSensitive,
-    },
-  };
-
-  form.append("payload", JSON.stringify(payload));
-
-  const resp = await fetch("/api/redact/search", { method: "POST", body: form });
-
-  if (!resp.ok) {
-    const report = await parseErrorJson(resp);
-    const err = new Error("AUDIT_FAILED");
-    (err as any).status = resp.status;
-    (err as any).report = report;
-    throw err;
-  }
-
-  const blob = await resp.blob();
-  return {
-    pdfBlob: blob,
-    headers: {
-      auditStatus: getHeader(resp.headers, "X-Redaction-Audit-Status"),
-      auditMatches: getHeader(resp.headers, "X-Redaction-Audit-Matches"),
-      occurrences: getHeader(resp.headers, "X-Redaction-Search-Occurrences"),
-    },
-  };
-}
-
-export async function redactPresets(params: {
-  file: File;
-  presets: Array<"email" | "phone" | "credit_card">;
-}): Promise<RedactSuccess> {
-  const form = new FormData();
-  form.append("file", params.file);
-
-  const presetAuditRegex: Record<"email" | "phone" | "credit_card", string> = {
-    email: "[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}",
-    phone: "(?:\\+?\\d[\\d .()-]{6,}\\d)",
-    credit_card: "(?:\\d[ -]*?){13,19}",
-  };
-
-  const patterns = params.presets.map((p) => presetAuditRegex[p]);
-
-  const payload = {
-    presets: params.presets,
-    options: {},
-    audit: {
-      patterns,
-      regex: true,
-      case_sensitive: false,
-    },
-  };
-
-  form.append("payload", JSON.stringify(payload));
-
-  const resp = await fetch("/api/redact/presets", { method: "POST", body: form });
-
-  if (!resp.ok) {
-    const report = await parseErrorJson(resp);
-    const err = new Error("AUDIT_FAILED");
-    (err as any).status = resp.status;
-    (err as any).report = report;
-    throw err;
-  }
-
-  const blob = await resp.blob();
-  return {
-    pdfBlob: blob,
-    headers: {
-      auditStatus: getHeader(resp.headers, "X-Redaction-Audit-Status"),
-      auditMatches: getHeader(resp.headers, "X-Redaction-Audit-Matches"),
-      occurrences: getHeader(resp.headers, "X-Redaction-Presets-Occurrences"),
+      occurrencesSearch: getHeader(resp.headers, "X-Redaction-Search-Occurrences"),
+      occurrencesRegex: getHeader(resp.headers, "X-Redaction-Regex-Occurrences"),
+      occurrencesPresets: getHeader(resp.headers, "X-Redaction-Presets-Occurrences"),
+      occurrencesTotal: getHeader(resp.headers, "X-Redaction-Total-Occurrences"),
     },
   };
 }

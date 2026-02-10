@@ -27,6 +27,7 @@ class SearchRequest:
     query: str
     case_sensitive: bool = False
     whole_word: bool = False
+    ignore_accents: bool = False
     pages: Sequence[int] | None = None
 
 
@@ -35,6 +36,7 @@ class RegexRequest:
     patterns: list[str]
     case_sensitive: bool = False
     multiline: bool = False
+    ignore_accents: bool = False
     pages: Sequence[int] | None = None
 
 
@@ -69,8 +71,8 @@ def plan_redactions(
     pdf_bytes: bytes,
     *,
     manual_rects: list[RedactionRect] | None = None,
-    search: SearchRequest | None = None,
-    regex: RegexRequest | None = None,
+    searches: Sequence[SearchRequest] | None = None,
+    regexes: Sequence[RegexRequest] | None = None,
     presets: PresetsRequest | None = None,
 ) -> PlanResult:
     if not pdf_bytes:
@@ -82,25 +84,33 @@ def plan_redactions(
     regex_rects: list[RedactionRect] = []
     presets_rects: list[RedactionRect] = []
 
-    if search is not None:
-        search_rects = find_redaction_rectangles(
-            pdf_bytes,
-            SearchOptions(
-                query=search.query,
-                case_sensitive=search.case_sensitive,
-                whole_word=search.whole_word,
-                pages=search.pages,
-            ),
-        )
+    if searches:
+        for s in searches:
+            search_rects.extend(
+                find_redaction_rectangles(
+                    pdf_bytes,
+                    SearchOptions(
+                        query=s.query,
+                        case_sensitive=s.case_sensitive,
+                        whole_word=s.whole_word,
+                        ignore_accents=s.ignore_accents,
+                        pages=s.pages,
+                    ),
+                )
+            )
 
-    if regex is not None:
-        regex_rects = find_redaction_rectangles_by_regex(
-            pdf_bytes,
-            regex.patterns,
-            case_sensitive=regex.case_sensitive,
-            pages=regex.pages,
-            multiline=regex.multiline,
-        )
+    if regexes:
+        for r in regexes:
+            regex_rects.extend(
+                find_redaction_rectangles_by_regex(
+                    pdf_bytes,
+                    r.patterns,
+                    case_sensitive=r.case_sensitive,
+                    pages=r.pages,
+                    multiline=r.multiline,
+                    ignore_accents=r.ignore_accents,
+                )
+            )
 
     if presets is not None:
         presets_rects = find_redaction_rectangles_for_presets(
@@ -185,48 +195,86 @@ def _presets_internal_audit(out_pdf: bytes, *, presets: PresetsRequest) -> dict[
 def audit_plan(
     out_pdf: bytes,
     *,
-    search: SearchRequest | None = None,
-    regex: RegexRequest | None = None,
+    searches: Sequence[SearchRequest] | None = None,
+    regexes: Sequence[RegexRequest] | None = None,
     presets: PresetsRequest | None = None,
     extra_audit: AuditOptions | None = None,
 ) -> dict[str, Any]:
     """
     Run coherent audits for all components that were requested.
-    Returns either:
-      - {"status":"pass", ...}  (composite pass report)
-      - {"status":"fail", "components_failed":[...], "components":{...}} (composite fail)
+    Supports multiple search and regex rules.
     """
     failures: dict[str, Any] = {}
 
-    # Search internal audit (coherent with whole_word / case_sensitive)
-    if search is not None:
-        s_opts = build_audit_for_search(
-            query=search.query,
-            case_sensitive=search.case_sensitive,
-            whole_word=search.whole_word,
-        )
-        report = _audit_pdf_text(out_pdf, s_opts)
-        if report["status"] != "pass":
-            failures["search"] = report
+    # --- Searches audit (cohérent avec whole_word / case_sensitive), par règle
+    if searches:
+        failed: list[dict[str, Any]] = []
+        for idx, s in enumerate(searches):
+            s_opts = build_audit_for_search(
+                query=s.query,
+                case_sensitive=s.case_sensitive,
+                whole_word=s.whole_word,
+                ignore_accents=s.ignore_accents,
+            )
+            report = _audit_pdf_text(out_pdf, s_opts)
+            if report["status"] != "pass":
+                failed.append(
+                    {
+                        "index": idx,
+                        "query": s.query,
+                        "case_sensitive": s.case_sensitive,
+                        "whole_word": s.whole_word,
+                        "pages": list(s.pages) if s.pages else None,
+                        "report": report,
+                    }
+                )
 
-    # Regex audit (coherent: same patterns)
-    if regex is not None:
-        r_opts = AuditOptions(
-                        patterns=regex.patterns,
-                        regex=True,
-                        case_sensitive=regex.case_sensitive
-                    )
-        report = _audit_pdf_text(out_pdf, r_opts)
-        if report["status"] != "pass":
-            failures["regex"] = report
+        if failed:
+            failures["searches"] = {
+                "status": "fail",
+                "rules_failed": len(failed),
+                "rules_total": len(list(searches)),
+                "failed": failed,
+            }
 
-    # Presets internal audit
+    # --- Regex audit (cohérent : mêmes patterns), par règle
+    if regexes:
+        failed = []
+        for idx, r in enumerate(regexes):
+            r_opts = AuditOptions(
+                patterns=r.patterns,
+                regex=True,
+                case_sensitive=r.case_sensitive,
+                ignore_accents=r.ignore_accents,
+            )
+            report = _audit_pdf_text(out_pdf, r_opts)
+            if report["status"] != "pass":
+                failed.append(
+                    {
+                        "index": idx,
+                        "patterns": r.patterns,
+                        "case_sensitive": r.case_sensitive,
+                        "multiline": r.multiline,
+                        "pages": list(r.pages) if r.pages else None,
+                        "report": report,
+                    }
+                )
+
+        if failed:
+            failures["regexes"] = {
+                "status": "fail",
+                "rules_failed": len(failed),
+                "rules_total": len(list(regexes)),
+                "failed": failed,
+            }
+
+    # --- Presets internal audit
     if presets is not None:
         leak_report = _presets_internal_audit(out_pdf, presets=presets)
         if leak_report is not None:
             failures["presets"] = leak_report
 
-    # Extra audit (optional banlist)
+    # --- Extra audit (optional banlist)
     if extra_audit is not None:
         report = _audit_pdf_text(out_pdf, extra_audit)
         if report["status"] != "pass":
