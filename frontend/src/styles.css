@@ -85,6 +85,15 @@
   text-align: center;
 }
 
+
+.pdfFrame {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: 8px;
+  background: #fff;
+}
+
 .sidePanel {
   display: grid;
   gap: 14px;
