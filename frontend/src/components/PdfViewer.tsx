@@ -1,10 +1,21 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
+type PdfViewport = {
+  width: number;
+  height: number;
+  transform: number[];
+};
+
+type PdfTextContent = {
+  items: unknown[];
+};
+
 type PdfPageProxy = {
-  getViewport: (params: { scale: number }) => { width: number; height: number };
+  getViewport: (params: { scale: number }) => PdfViewport;
+  getTextContent: () => Promise<PdfTextContent>;
   render: (params: {
     canvasContext: CanvasRenderingContext2D;
-    viewport: { width: number; height: number };
+    viewport: PdfViewport;
   }) => { promise: Promise<void> };
 };
 
@@ -14,16 +25,21 @@ type PdfDocumentProxy = {
   destroy: () => void;
 };
 
+type PdfTextRenderTask = { promise: Promise<void> };
+
 type PdfJsLib = {
   GlobalWorkerOptions: { workerSrc: string };
   getDocument: (params: { data: Uint8Array }) => { promise: Promise<PdfDocumentProxy> };
+  renderTextLayer: (params: {
+    textContentSource: PdfTextContent;
+    container: HTMLDivElement;
+    viewport: PdfViewport;
+    textDivs: HTMLSpanElement[];
+  }) => PdfTextRenderTask | void;
 };
 
-
-const PDFJS_SCRIPT_URL =
-  "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.8.69/pdf.min.mjs";
-const PDFJS_WORKER_URL =
-  "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.8.69/pdf.worker.min.mjs";
+const PDFJS_SCRIPT_URL = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.8.69/pdf.min.mjs";
+const PDFJS_WORKER_URL = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.8.69/pdf.worker.min.mjs";
 
 async function ensurePdfJsLoaded(): Promise<PdfJsLib> {
   const lib = (await import(/* @vite-ignore */ PDFJS_SCRIPT_URL)) as unknown as PdfJsLib;
@@ -44,13 +60,15 @@ export function PdfViewer(props: {
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const canvasRefs = useRef<Array<HTMLCanvasElement | null>>([]);
+  const textLayerRefs = useRef<Array<HTMLDivElement | null>>([]);
+  const pdfjsRef = useRef<PdfJsLib | null>(null);
 
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
 
     const updateWidth = () => {
-      setContainerWidth(Math.max(320, Math.floor(el.clientWidth)));
+      setContainerWidth(Math.max(320, Math.floor(el.clientWidth) - 20));
     };
 
     updateWidth();
@@ -72,6 +90,8 @@ export function PdfViewer(props: {
     (async () => {
       try {
         const pdfjsLib = await ensurePdfJsLoaded();
+        pdfjsRef.current = pdfjsLib;
+
         const bytes = new Uint8Array(await file.arrayBuffer());
         const doc = await pdfjsLib.getDocument({ data: bytes }).promise;
         loadedDoc = doc;
@@ -102,29 +122,47 @@ export function PdfViewer(props: {
   }, [pdfDoc]);
 
   useEffect(() => {
-    if (!pdfDoc || containerWidth <= 0) return;
+    if (!pdfDoc || containerWidth <= 0 || !pdfjsRef.current) return;
 
     let cancelled = false;
+    const pdfjsLib = pdfjsRef.current;
 
     (async () => {
       for (const pageNumber of pageNumbers) {
         if (cancelled) return;
-
-        const canvas = canvasRefs.current[pageNumber - 1];
-        if (!canvas) continue;
 
         const page = await pdfDoc.getPage(pageNumber);
         const baseViewport = page.getViewport({ scale: 1 });
         const scale = containerWidth / baseViewport.width;
         const viewport = page.getViewport({ scale });
 
+        const canvas = canvasRefs.current[pageNumber - 1];
+        const textLayer = textLayerRefs.current[pageNumber - 1];
+        if (!canvas || !textLayer) continue;
+
         canvas.width = Math.floor(viewport.width);
         canvas.height = Math.floor(viewport.height);
+
+        textLayer.style.width = `${Math.floor(viewport.width)}px`;
+        textLayer.style.height = `${Math.floor(viewport.height)}px`;
+        textLayer.replaceChildren();
 
         const context = canvas.getContext("2d");
         if (!context) continue;
 
         await page.render({ canvasContext: context, viewport }).promise;
+
+        const textContent = await page.getTextContent();
+        const textRenderTask = pdfjsLib.renderTextLayer({
+          textContentSource: textContent,
+          container: textLayer,
+          viewport,
+          textDivs: [],
+        });
+
+        if (textRenderTask && "promise" in textRenderTask) {
+          await textRenderTask.promise;
+        }
       }
     })();
 
@@ -143,13 +181,20 @@ export function PdfViewer(props: {
 
       <div className="pdfCanvasStack" aria-live="polite">
         {pageNumbers.map((pageNumber) => (
-          <canvas
-            key={pageNumber}
-            className="pdfCanvas"
-            ref={(el) => {
-              canvasRefs.current[pageNumber - 1] = el;
-            }}
-          />
+          <div key={pageNumber} className="pdfPage">
+            <canvas
+              className="pdfCanvas"
+              ref={(el) => {
+                canvasRefs.current[pageNumber - 1] = el;
+              }}
+            />
+            <div
+              className="pdfTextLayer"
+              ref={(el) => {
+                textLayerRefs.current[pageNumber - 1] = el;
+              }}
+            />
+          </div>
         ))}
       </div>
     </div>
