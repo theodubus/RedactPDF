@@ -55,6 +55,8 @@
   "viewer.title": "PDF preview",
   "viewer.placeholder.title": "PDF preview (coming soon)",
   "viewer.placeholder.body": "This area is reserved for the PDF viewer and upcoming visual redaction interactions.",
+  "viewer.loading": "Loading PDF…",
+  "viewer.error.load": "Unable to load the PDF in the viewer.",
 
   "result.success.title": "Success",
   "result.success.download": "Download redacted PDF",

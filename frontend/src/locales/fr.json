@@ -55,6 +55,8 @@
   "viewer.title": "Aperçu PDF",
   "viewer.placeholder.title": "Aperçu PDF (bientôt)",
   "viewer.placeholder.body": "Cet espace est réservé au viewer PDF et aux futures interactions de caviardage visuel.",
+  "viewer.loading": "Chargement du PDF…",
+  "viewer.error.load": "Impossible de charger le PDF dans le viewer.",
 
   "result.success.title": "Succès",
   "result.success.download": "Télécharger le PDF redigé",
