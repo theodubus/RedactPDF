@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useI18n } from "./i18n";
 import { redactApply } from "./api";
 import type { PresetKey, RuleInput } from "./api";
@@ -17,6 +17,7 @@ export default function App() {
   const { lang, setLang, t } = useI18n();
 
   const [file, setFile] = useState<File | null>(null);
+  const [filePreviewUrl, setFilePreviewUrl] = useState<string | null>(null);
   const [rules, setRules] = useState<UiRule[]>([]);
   const [presets, setPresets] = useState<Record<PresetKey, boolean>>({
     email: false,
@@ -50,6 +51,20 @@ export default function App() {
   const selectedPresets = useMemo(() => {
     return (Object.keys(presets) as PresetKey[]).filter((k) => presets[k]);
   }, [presets]);
+
+  useEffect(() => {
+    if (!file) {
+      setFilePreviewUrl(null);
+      return;
+    }
+
+    const nextUrl = URL.createObjectURL(file);
+    setFilePreviewUrl(nextUrl);
+
+    return () => {
+      URL.revokeObjectURL(nextUrl);
+    };
+  }, [file]);
 
   const rulesForApi: RuleInput[] = useMemo(() => {
     return rules.map((r) => {
