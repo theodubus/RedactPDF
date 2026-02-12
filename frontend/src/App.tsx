@@ -8,6 +8,7 @@ import { FilePickerSection } from "./components/FilePickerSection";
 import { RulesSection } from "./components/Rules/RulesSection";
 import { PresetsSection } from "./components/PresetsSection";
 import { ResultPanel } from "./components/ResultPanel";
+import { PdfViewer } from "./components/PdfViewer";
 
 import type { UiRule } from "./types/uiRules";
 import { downloadBlob } from "./utils/redactionUtils";
@@ -158,9 +159,15 @@ export default function App() {
         <section className="card viewerCard">
           <FilePickerSection t={t} file={file} onPickFile={onPickFile} />
 
-          <div className="pdfPlaceholder">
-            <div className="sectionTitle">{t("viewer.placeholder.title")}</div>
-            <p className="muted">{t("viewer.placeholder.body")}</p>
+          <div className={`pdfPlaceholder ${file ? "pdfPlaceholderHasFile" : ""}`.trim()}>
+            {file ? (
+              <PdfViewer file={file} t={t} />
+            ) : (
+              <>
+                <div className="sectionTitle">{t("viewer.placeholder.title")}</div>
+                <p className="muted">{t("viewer.placeholder.body")}</p>
+              </>
+            )}
           </div>
         </section>
 

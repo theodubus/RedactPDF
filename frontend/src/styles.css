@@ -67,6 +67,7 @@
 
 .viewerCard {
   min-height: 72vh;
+  height: 72vh;
   display: flex;
   flex-direction: column;
 }
@@ -74,6 +75,7 @@
 .pdfPlaceholder {
   margin-top: 6px;
   flex: 1;
+  min-height: 0;
   border: 1px dashed #d8dce8;
   border-radius: 10px;
   background: #fafbff;
@@ -82,6 +84,88 @@
   flex-direction: column;
   justify-content: center;
   align-items: center;
+  text-align: center;
+  overflow: hidden;
+}
+
+.pdfPlaceholderHasFile {
+  padding: 0;
+  align-items: stretch;
+  justify-content: stretch;
+  min-height: 0;
+}
+
+.pdfViewer {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+  background: #f2f4fa;
+  padding: 10px;
+}
+
+.pdfCanvasStack {
+  display: grid;
+  gap: 12px;
+  justify-items: center;
+}
+
+.pdfPage {
+  position: relative;
+  width: fit-content;
+  max-width: 100%;
+}
+
+.pdfCanvas {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.12);
+  position: relative;
+  z-index: 1;
+}
+
+.pdfTextLayer,
+.textLayer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  line-height: 1;
+  text-size-adjust: none;
+  transform-origin: 0 0;
+  forced-color-adjust: none;
+  user-select: text;
+  -webkit-user-select: text;
+  z-index: 2;
+  pointer-events: auto;
+}
+
+.pdfTextLayer span,
+.textLayer span {
+  position: absolute;
+  white-space: pre;
+  color: rgb(0 0 0 / 0.01);
+  -webkit-text-fill-color: transparent;
+  transform-origin: 0 0;
+  cursor: text;
+}
+
+.pdfTextLayer br,
+.textLayer br {
+  position: absolute;
+  white-space: pre;
+}
+
+.pdfTextLayer span::selection,
+.textLayer span::selection {
+  background: rgba(58, 124, 255, 0.35);
+}
+
+.pdfViewerMessage {
+  padding: 12px;
   text-align: center;
 }
 
@@ -246,5 +330,6 @@
 
   .viewerCard {
     min-height: 52vh;
+    height: 52vh;
   }
 }
