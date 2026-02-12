@@ -25,17 +25,14 @@ type PdfDocumentProxy = {
   destroy: () => void;
 };
 
-type PdfTextRenderTask = { promise: Promise<void> };
-
 type PdfJsLib = {
   GlobalWorkerOptions: { workerSrc: string };
   getDocument: (params: { data: Uint8Array }) => { promise: Promise<PdfDocumentProxy> };
-  renderTextLayer: (params: {
+  TextLayer: new (params: {
     textContentSource: PdfTextContent;
     container: HTMLDivElement;
     viewport: PdfViewport;
-    textDivs: HTMLSpanElement[];
-  }) => PdfTextRenderTask | void;
+  }) => { render: () => Promise<void> };
 };
 
 const PDFJS_SCRIPT_URL = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.8.69/pdf.min.mjs";
@@ -153,16 +150,12 @@ export function PdfViewer(props: {
         await page.render({ canvasContext: context, viewport }).promise;
 
         const textContent = await page.getTextContent();
-        const textRenderTask = pdfjsLib.renderTextLayer({
+        const textLayerTask = new pdfjsLib.TextLayer({
           textContentSource: textContent,
           container: textLayer,
           viewport,
-          textDivs: [],
         });
-
-        if (textRenderTask && "promise" in textRenderTask) {
-          await textRenderTask.promise;
-        }
+        await textLayerTask.render();
       }
     })();
 
@@ -189,7 +182,7 @@ export function PdfViewer(props: {
               }}
             />
             <div
-              className="pdfTextLayer"
+              className="pdfTextLayer textLayer"
               ref={(el) => {
                 textLayerRefs.current[pageNumber - 1] = el;
               }}
