@@ -52,6 +52,9 @@
   "form.submitting": "Processing…",
   "form.hint": "The source file is never modified. Export is blocked if the audit detects a leak.",
 
+  "viewer.placeholder.title": "PDF preview (coming soon)",
+  "viewer.placeholder.body": "This area is reserved for the PDF viewer and upcoming visual redaction interactions.",
+
   "result.success.title": "Success",
   "result.success.download": "Download redacted PDF",
   "result.success.auditStatus": "Audit",
