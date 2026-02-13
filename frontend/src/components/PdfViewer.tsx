@@ -60,6 +60,7 @@ export function PdfViewer(props: {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const canvasRefs = useRef<Array<HTMLCanvasElement | null>>([]);
   const textLayerRefs = useRef<Array<HTMLDivElement | null>>([]);
+  const previewLayerRefs = useRef<Array<HTMLDivElement | null>>([]);
   const pdfjsRef = useRef<PdfJsLib | null>(null);
 
   useEffect(() => {
@@ -137,14 +138,22 @@ export function PdfViewer(props: {
 
         const canvas = canvasRefs.current[pageNumber - 1];
         const textLayer = textLayerRefs.current[pageNumber - 1];
-        if (!canvas || !textLayer) continue;
+        const previewLayer = previewLayerRefs.current[pageNumber - 1];
+        if (!canvas || !textLayer || !previewLayer) continue;
 
         canvas.width = Math.floor(viewport.width);
         canvas.height = Math.floor(viewport.height);
 
-        textLayer.style.width = `${Math.floor(viewport.width)}px`;
-        textLayer.style.height = `${Math.floor(viewport.height)}px`;
+        const layerWidth = `${Math.floor(viewport.width)}px`;
+        const layerHeight = `${Math.floor(viewport.height)}px`;
+
+        textLayer.style.width = layerWidth;
+        textLayer.style.height = layerHeight;
         textLayer.replaceChildren();
+
+        previewLayer.style.width = layerWidth;
+        previewLayer.style.height = layerHeight;
+        previewLayer.replaceChildren();
 
         const context = canvas.getContext("2d");
         if (!context) continue;
@@ -158,7 +167,7 @@ export function PdfViewer(props: {
           viewport,
         });
         await textLayerTask.render();
-        applyPreviewHighlights(textLayer, rules);
+        applyPreviewHighlights(textLayer, previewLayer, rules);
       }
     })();
 
@@ -168,9 +177,10 @@ export function PdfViewer(props: {
   }, [pdfDoc, pageNumbers, containerWidth, rules]);
 
   useEffect(() => {
-    for (const textLayer of textLayerRefs.current) {
-      if (!textLayer) continue;
-      applyPreviewHighlights(textLayer, rules);
+    for (const [index, textLayer] of textLayerRefs.current.entries()) {
+      const previewLayer = previewLayerRefs.current[index];
+      if (!textLayer || !previewLayer) continue;
+      applyPreviewHighlights(textLayer, previewLayer, rules);
     }
   }, [rules]);
 
@@ -192,6 +202,12 @@ export function PdfViewer(props: {
               }}
             />
             <div
+              className="pdfPreviewLayer"
+              ref={(el) => {
+                previewLayerRefs.current[pageNumber - 1] = el;
+              }}
+            />
+            <div
               className="pdfTextLayer textLayer"
               ref={(el) => {
                 textLayerRefs.current[pageNumber - 1] = el;
@@ -204,35 +220,49 @@ export function PdfViewer(props: {
   );
 }
 
-function applyPreviewHighlights(textLayer: HTMLDivElement, rules: UiRule[]) {
+function applyPreviewHighlights(
+  textLayer: HTMLDivElement,
+  previewLayer: HTMLDivElement,
+  rules: UiRule[],
+) {
+  previewLayer.replaceChildren();
+  if (!rules.length) return;
+
+  const layerBounds = textLayer.getBoundingClientRect();
+  if (!layerBounds.width || !layerBounds.height) return;
+
   const spans = textLayer.querySelectorAll("span");
   for (const span of spans) {
-    const raw = span.dataset.previewSource ?? span.textContent ?? "";
-    if (!span.dataset.previewSource) {
-      span.dataset.previewSource = raw;
-    }
+    const textNode = span.firstChild;
+    if (!textNode || textNode.nodeType !== Node.TEXT_NODE) continue;
 
+    const raw = textNode.textContent ?? "";
     if (!raw) continue;
 
     const ranges = collectMatches(raw, rules);
-    if (ranges.length === 0) {
-      span.textContent = raw;
-      continue;
-    }
+    if (ranges.length === 0) continue;
 
-    let cursor = 0;
-    let html = "";
-    for (const range of ranges) {
-      if (range.start > cursor) {
-        html += escapeHtml(raw.slice(cursor, range.start));
+    for (const rangeDef of ranges) {
+      const range = document.createRange();
+      range.setStart(textNode, rangeDef.start);
+      range.setEnd(textNode, rangeDef.end);
+
+      for (const rect of range.getClientRects()) {
+        const width = rect.width;
+        const height = rect.height;
+        if (!width || !height) continue;
+
+        const highlight = document.createElement("div");
+        highlight.className = "redactionPreviewRect";
+        highlight.style.left = `${rect.left - layerBounds.left}px`;
+        highlight.style.top = `${rect.top - layerBounds.top}px`;
+        highlight.style.width = `${width}px`;
+        highlight.style.height = `${height}px`;
+        previewLayer.appendChild(highlight);
       }
-      html += `<mark class="redactionPreviewMark">${escapeHtml(raw.slice(range.start, range.end))}</mark>`;
-      cursor = range.end;
+
+      range.detach();
     }
-    if (cursor < raw.length) {
-      html += escapeHtml(raw.slice(cursor));
-    }
-    span.innerHTML = html;
   }
 }
 
@@ -362,13 +392,4 @@ function mergeRanges(ranges: Array<{ start: number; end: number }>) {
     merged.push(current);
   }
   return merged;
-}
-
-function escapeHtml(input: string) {
-  return input
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
 }
