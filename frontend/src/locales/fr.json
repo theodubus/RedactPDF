@@ -52,6 +52,12 @@
   "form.submitting": "Traitement en cours…",
   "form.hint": "Le fichier source n’est jamais modifié. L’export est bloqué si l’audit détecte une fuite.",
 
+  "viewer.title": "Aperçu PDF",
+  "viewer.placeholder.title": "Aperçu PDF (bientôt)",
+  "viewer.placeholder.body": "Cet espace est réservé au viewer PDF et aux futures interactions de caviardage visuel.",
+  "viewer.loading": "Chargement du PDF…",
+  "viewer.error.load": "Impossible de charger le PDF dans le viewer.",
+
   "result.success.title": "Succès",
   "result.success.download": "Télécharger le PDF redigé",
   "result.success.auditStatus": "Audit",

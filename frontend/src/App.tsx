@@ -8,6 +8,7 @@ import { FilePickerSection } from "./components/FilePickerSection";
 import { RulesSection } from "./components/Rules/RulesSection";
 import { PresetsSection } from "./components/PresetsSection";
 import { ResultPanel } from "./components/ResultPanel";
+import { PdfViewer } from "./components/PdfViewer";
 
 import type { UiRule } from "./types/uiRules";
 import { downloadBlob } from "./utils/redactionUtils";
@@ -154,38 +155,53 @@ export default function App() {
     <div className="page">
       <HeaderBar lang={lang} setLang={setLang} t={t} />
 
-      <main className="main">
-        <form className="card" onSubmit={handleSubmit}>
+      <form className="workspace" onSubmit={handleSubmit}>
+        <section className="card viewerCard">
           <FilePickerSection t={t} file={file} onPickFile={onPickFile} />
 
-          <RulesSection
-            t={t}
-            rules={rules}
-            setRules={setRules}
-            onUserChange={clearNotices}
-          />
+          <div className={`pdfPlaceholder ${file ? "pdfPlaceholderHasFile" : ""}`.trim()}>
+            {file ? (
+              <PdfViewer file={file} t={t} />
+            ) : (
+              <>
+                <div className="sectionTitle">{t("viewer.placeholder.title")}</div>
+                <p className="muted">{t("viewer.placeholder.body")}</p>
+              </>
+            )}
+          </div>
+        </section>
 
-          <PresetsSection t={t} presets={presets} togglePreset={togglePreset} />
+        <aside className="sidePanel">
+          <div className="card">
+            <RulesSection
+              t={t}
+              rules={rules}
+              setRules={setRules}
+              onUserChange={clearNotices}
+            />
 
-          <div className="hint">{t("form.hint")}</div>
+            <PresetsSection t={t} presets={presets} togglePreset={togglePreset} />
 
-          <button className="button" type="submit" disabled={submitting}>
-            {submitting ? t("form.submitting") : t("form.submit")}
-          </button>
-        </form>
+            <div className="hint">{t("form.hint")}</div>
 
-        <aside className="card">
-          <ResultPanel
-            t={t}
-            hintText={t("form.hint")}
-            successInfo={successInfo}
-            errorInfo={errorInfo}
-            onDownload={() => {
-              if (successInfo?.lastBlob) downloadBlob(successInfo.lastBlob, "redacted.pdf");
-            }}
-          />
+            <button className="button" type="submit" disabled={submitting}>
+              {submitting ? t("form.submitting") : t("form.submit")}
+            </button>
+          </div>
+
+          <div className="card">
+            <ResultPanel
+              t={t}
+              hintText={t("form.hint")}
+              successInfo={successInfo}
+              errorInfo={errorInfo}
+              onDownload={() => {
+                if (successInfo?.lastBlob) downloadBlob(successInfo.lastBlob, "redacted.pdf");
+              }}
+            />
+          </div>
         </aside>
-      </main>
+      </form>
     </div>
   );
 }
