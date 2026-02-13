@@ -156,6 +156,7 @@ export function PdfViewer(props: {
 
         textLayer.style.width = layerWidth;
         textLayer.style.height = layerHeight;
+        textLayer.style.setProperty("--scale-factor", String(scale));
         textLayer.replaceChildren();
 
         previewLayer.style.width = layerWidth;
