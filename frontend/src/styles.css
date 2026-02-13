@@ -147,10 +147,31 @@
 .textLayer span {
   position: absolute;
   white-space: pre;
-  color: rgb(0 0 0 / 0.01);
-  -webkit-text-fill-color: transparent;
+  color: transparent;
   transform-origin: 0 0;
   cursor: text;
+  margin: -1px 0;
+  padding: 1px 0;
+}
+
+.pdfTextLayer span.markedContent,
+.textLayer span.markedContent {
+  top: 0;
+  height: 0;
+}
+
+.pdfPreviewLayer {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.redactionPreviewRect {
+  position: absolute;
+  background: rgba(58, 124, 255, 0.45);
+  border-radius: 2px;
+  box-shadow: inset 0 0 0 1px rgba(32, 93, 220, 0.24);
 }
 
 .pdfPreviewLayer {

@@ -17,6 +17,7 @@ type PdfPageProxy = {
   render: (params: {
     canvasContext: CanvasRenderingContext2D;
     viewport: PdfViewport;
+    transform?: number[];
   }) => { promise: Promise<void> };
 };
 
@@ -141,11 +142,17 @@ export function PdfViewer(props: {
         const previewLayer = previewLayerRefs.current[pageNumber - 1];
         if (!canvas || !textLayer || !previewLayer) continue;
 
-        canvas.width = Math.floor(viewport.width);
-        canvas.height = Math.floor(viewport.height);
+        const displayWidth = viewport.width;
+        const displayHeight = viewport.height;
+        const outputScale = window.devicePixelRatio || 1;
 
-        const layerWidth = `${Math.floor(viewport.width)}px`;
-        const layerHeight = `${Math.floor(viewport.height)}px`;
+        canvas.style.width = `${displayWidth}px`;
+        canvas.style.height = `${displayHeight}px`;
+        canvas.width = Math.floor(displayWidth * outputScale);
+        canvas.height = Math.floor(displayHeight * outputScale);
+
+        const layerWidth = `${displayWidth}px`;
+        const layerHeight = `${displayHeight}px`;
 
         textLayer.style.width = layerWidth;
         textLayer.style.height = layerHeight;
@@ -158,7 +165,11 @@ export function PdfViewer(props: {
         const context = canvas.getContext("2d");
         if (!context) continue;
 
-        await page.render({ canvasContext: context, viewport }).promise;
+        await page.render({
+          canvasContext: context,
+          viewport,
+          transform: outputScale === 1 ? undefined : [outputScale, 0, 0, outputScale, 0, 0],
+        }).promise;
 
         const textContent = await page.getTextContent();
         const textLayerTask = new pdfjsLib.TextLayer({
