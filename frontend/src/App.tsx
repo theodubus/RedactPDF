@@ -161,7 +161,7 @@ export default function App() {
 
           <div className={`pdfPlaceholder ${file ? "pdfPlaceholderHasFile" : ""}`.trim()}>
             {file ? (
-              <PdfViewer file={file} t={t} />
+              <PdfViewer file={file} rules={rules} t={t} />
             ) : (
               <>
                 <div className="sectionTitle">{t("viewer.placeholder.title")}</div>
