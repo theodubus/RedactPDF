@@ -273,74 +273,6 @@ export function PdfViewer(props: {
     };
   }, [onSelectionChange]);
 
-  useEffect(() => {
-    const computeSelection = () => {
-      const selection = window.getSelection();
-      if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
-        onSelectionChange(null);
-        return;
-      }
-
-      const selectedText = selection.toString().trim();
-      if (!selectedText) {
-        onSelectionChange(null);
-        return;
-      }
-
-      const range = selection.getRangeAt(0);
-      const anchorNode = range.commonAncestorContainer;
-      if (!anchorNode) {
-        onSelectionChange(null);
-        return;
-      }
-
-      const pageIndex = textLayerRefs.current.findIndex((layer) => layer?.contains(anchorNode) ?? false);
-      if (pageIndex < 0) {
-        onSelectionChange(null);
-        return;
-      }
-
-      const textLayer = textLayerRefs.current[pageIndex];
-      const scale = pageScalesRef.current[pageIndex] ?? 1;
-      if (!textLayer || scale <= 0) {
-        onSelectionChange(null);
-        return;
-      }
-
-      const layerBounds = textLayer.getBoundingClientRect();
-      const rects: UiRect[] = [];
-
-      for (const rect of range.getClientRects()) {
-        const localLeft = rect.left - layerBounds.left;
-        const localRight = rect.right - layerBounds.left;
-        const localTop = rect.top - layerBounds.top;
-        const localBottom = rect.bottom - layerBounds.top;
-
-        if (localRight <= localLeft || localBottom <= localTop) continue;
-
-        rects.push({
-          page: pageIndex,
-          x0: localLeft / scale,
-          y0: localTop / scale,
-          x1: localRight / scale,
-          y1: localBottom / scale,
-        });
-      }
-
-      if (rects.length === 0) {
-        onSelectionChange(null);
-        return;
-      }
-
-      onSelectionChange({ text: selectedText, rects });
-    };
-
-    document.addEventListener("selectionchange", computeSelection);
-    return () => {
-      document.removeEventListener("selectionchange", computeSelection);
-    };
-  }, [onSelectionChange]);
-
   if (error) {
     return <div className="pdfViewerMessage bad">{error}</div>;
   }
@@ -419,6 +351,10 @@ function applyPreviewHighlights(
     }
   }
 
+  if (presetKeys.includes("phone")) {
+    highlightPhonePresetMatches(textLayer, previewLayer, layerBounds);
+  }
+
   const selectionRules = rules.filter((r): r is Extract<UiRule, { kind: "selection" }> => r.kind === "selection");
   for (const selectionRule of selectionRules) {
     for (const rect of selectionRule.rects) {
@@ -471,18 +407,18 @@ function collectMatches(
 }
 
 
+const PHONE_PRESET_REGEX = /\b(?:\+|00)?\s*(?:\d[\s().-]?){6,20}\d\b/gi;
+
 function findPresetMatches(text: string, presetKeys: PresetKey[]) {
   const ranges: Array<{ start: number; end: number }> = [];
 
   for (const key of presetKeys) {
-    let regex: RegExp;
-    if (key === "email") {
-      regex = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/gi;
-    } else if (key === "phone") {
-      regex = /\b(?:\+|00)?\s*(?:\d[\s().-]?){6,20}\d\b/gi;
-    } else {
-      regex = /\b(?:\d[ -]*?){13,19}\b/gi;
-    }
+    if (key === "phone") continue;
+
+    const regex =
+      key === "email"
+        ? /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/gi
+        : /\b(?:\d[ -]*?){13,19}\b/gi;
 
     for (const match of text.matchAll(regex)) {
       if (typeof match.index !== "number") continue;
@@ -493,6 +429,78 @@ function findPresetMatches(text: string, presetKeys: PresetKey[]) {
   }
 
   return ranges;
+}
+
+type LayerTextNode = {
+  node: Text;
+  start: number;
+  end: number;
+};
+
+function highlightPhonePresetMatches(
+  textLayer: HTMLDivElement,
+  previewLayer: HTMLDivElement,
+  layerBounds: DOMRect,
+) {
+  const { fullText, nodes } = collectLayerTextNodes(textLayer);
+  if (!fullText || nodes.length === 0) return;
+
+  const phoneRegex = new RegExp(PHONE_PRESET_REGEX.source, PHONE_PRESET_REGEX.flags);
+  for (const match of fullText.matchAll(phoneRegex)) {
+    if (typeof match.index !== "number") continue;
+    const value = match[0] ?? "";
+    if (!value) continue;
+
+    const matchStart = match.index;
+    const matchEnd = match.index + value.length;
+
+    for (const item of nodes) {
+      const localStart = Math.max(matchStart, item.start) - item.start;
+      const localEnd = Math.min(matchEnd, item.end) - item.start;
+      if (localEnd <= localStart) continue;
+
+      const range = document.createRange();
+      range.setStart(item.node, localStart);
+      range.setEnd(item.node, localEnd);
+
+      for (const rect of range.getClientRects()) {
+        drawPreviewRect(previewLayer, {
+          left: rect.left - layerBounds.left,
+          top: rect.top - layerBounds.top,
+          width: rect.width,
+          height: rect.height,
+        });
+      }
+      range.detach();
+    }
+  }
+}
+
+function collectLayerTextNodes(textLayer: HTMLDivElement) {
+  const nodes: LayerTextNode[] = [];
+  let fullText = "";
+  let cursor = 0;
+
+  const spans = textLayer.querySelectorAll("span");
+  for (const span of spans) {
+    const textNode = span.firstChild;
+    if (!textNode || textNode.nodeType !== Node.TEXT_NODE) continue;
+
+    const value = textNode.textContent ?? "";
+    if (!value) continue;
+
+    const start = cursor;
+    const end = start + value.length;
+    nodes.push({ node: textNode as Text, start, end });
+
+    fullText += value;
+    cursor = end;
+
+    fullText += "\n";
+    cursor += 1;
+  }
+
+  return { fullText, nodes };
 }
 
 function findExactMatches(
