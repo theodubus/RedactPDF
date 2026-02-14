@@ -2,6 +2,14 @@ export type AuditReport = unknown;
 
 export type PresetKey = "email" | "phone" | "credit_card";
 
+export type RectInput = {
+  page: number;
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+};
+
 export type RuleInput =
   | {
       kind: "exact";
@@ -59,6 +67,7 @@ function wrapWholeWordRegex(pattern: string): string {
 
 export async function redactApply(params: {
   file: File;
+  rects: RectInput[];
   rules: RuleInput[];
   presets: PresetKey[];
 }): Promise<RedactSuccess> {
@@ -98,7 +107,7 @@ export async function redactApply(params: {
   const hasPresets = params.presets.length > 0;
 
   const payload = {
-    rects: [],
+    rects: params.rects,
     searches,
     regexes,
     presets: hasPresets ? { presets: params.presets, scope: { pages: null as null } } : null,

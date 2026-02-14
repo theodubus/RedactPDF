@@ -8,8 +8,10 @@ import { RuleAddBar } from "./RuleAddBar";
 import { RulesList } from "./RulesList";
 import { EditRuleModal } from "./EditRuleModal";
 
-function kindLabel(t: (k: string) => string, kind: RuleKind) {
-  return kind === "exact" ? t("rules.badge.exact") : t("rules.badge.regex");
+function kindLabel(t: (k: string) => string, kind: RuleKind | "selection") {
+  if (kind === "exact") return t("rules.badge.exact");
+  if (kind === "regex") return t("rules.badge.regex");
+  return t("rules.badge.selection");
 }
 
 export function RulesSection(props: {
@@ -17,10 +19,12 @@ export function RulesSection(props: {
   rules: UiRule[];
   setRules: React.Dispatch<React.SetStateAction<UiRule[]>>;
   onUserChange: () => void;
+  pendingSelectionText: string;
+  canAddSelection: boolean;
+  onAddSelection: () => void;
 }) {
-  const { t, rules, setRules, onUserChange } = props;
+  const { t, rules, setRules, onUserChange, pendingSelectionText, canAddSelection, onAddSelection } = props;
 
-  // Draft
   const [draftKind, setDraftKind] = useState<RuleKind>("exact");
   const [draftValue, setDraftValue] = useState("");
 
@@ -29,14 +33,14 @@ export function RulesSection(props: {
   const [draftAllowSubwords, setDraftAllowSubwords] = useState(false);
   const [draftIgnoreAccents, setDraftIgnoreAccents] = useState(false);
 
-  // Modal edit
   const [editingId, setEditingId] = useState<string | null>(null);
   const editingRule = useMemo(
-    () => (editingId ? rules.find((r) => r.id === editingId) ?? null : null),
+    () => (editingId ? rules.find((r) => r.id === editingId && r.kind !== "selection") ?? null : null),
     [editingId, rules]
   );
 
   const openEdit = (r: UiRule) => {
+    if (r.kind === "selection") return;
     setEditingId(r.id);
   };
   const closeEdit = () => setEditingId(null);
@@ -46,7 +50,6 @@ export function RulesSection(props: {
     setDraftIgnoreAccents(false);
     setDraftAllowSubwords(false);
     setDraftMultiline(false);
-    // rien d’autre : multiline n’est affiché que si kind === "regex"
     void kind;
   };
 
@@ -122,7 +125,6 @@ export function RulesSection(props: {
     <section className="section">
       <div className="sectionTitle">{t("form.section.rules")}</div>
 
-      {/* Type de recherche */}
       <div
         style={{
           display: "grid",
@@ -141,7 +143,6 @@ export function RulesSection(props: {
           <RuleKindToggle t={t} value={draftKind} onChange={onSetDraftKind} />
         </div>
 
-        {/* Options */}
         <div className="muted" style={{ fontWeight: 600, lineHeight: "32px" }}>
           {t("rules.label.options")}:
         </div>
@@ -173,11 +174,8 @@ export function RulesSection(props: {
         </div>
       </div>
 
-      {/* petit espace avant l’input */}
       <div style={{ height: 8 }} />
 
-
-      {/* Input + Ajouter sur la même ligne */}
       <RuleAddBar
         t={t}
         kind={draftKind}
@@ -190,6 +188,29 @@ export function RulesSection(props: {
         onAdd={addRule}
         onKeyDown={onDraftKeyDown}
       />
+
+      <button
+        type="button"
+        className="buttonSecondary"
+        disabled={!canAddSelection}
+        onClick={() => {
+          onUserChange();
+          onAddSelection();
+        }}
+        title={pendingSelectionText || t("rules.selection.none")}
+      >
+        {t("rules.selection.add")}
+      </button>
+
+      {pendingSelectionText ? (
+        <div className="muted" style={{ marginTop: 6 }}>
+          {t("rules.selection.current")}: <strong>{pendingSelectionText}</strong>
+        </div>
+      ) : (
+        <div className="muted" style={{ marginTop: 6 }}>
+          {t("rules.selection.none")}
+        </div>
+      )}
 
       <RulesList
         t={t}
