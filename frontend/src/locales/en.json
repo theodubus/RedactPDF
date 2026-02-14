@@ -64,5 +64,8 @@
   "rules.badge.selection": "selection",
   "rules.selection.add": "Redact selection",
   "rules.selection.current": "Current selection",
-  "rules.selection.none": "Select text in the PDF to prepare targeted redaction."
+  "rules.selection.none": "Select text in the PDF to prepare targeted redaction.",
+  "form.file.change": "Load a new PDF",
+  "viewer.drop.title": "Drop a PDF here",
+  "viewer.drop.body": "Or click to choose a PDF file"
 }

@@ -1,10 +1,9 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import { useI18n } from "./i18n";
 import { redactApply } from "./api";
 import type { PresetKey, RuleInput } from "./api";
 
 import { HeaderBar } from "./components/HeaderBar";
-import { FilePickerSection } from "./components/FilePickerSection";
 import { RulesSection } from "./components/Rules/RulesSection";
 import { PresetsSection } from "./components/PresetsSection";
 import { ResultPanel } from "./components/ResultPanel";
@@ -18,17 +17,20 @@ type PendingSelection = {
   rects: UiRect[];
 };
 
+const EMPTY_PRESETS: Record<PresetKey, boolean> = {
+  email: false,
+  phone: false,
+  credit_card: false,
+};
+
 export default function App() {
   const { lang, setLang, t } = useI18n();
 
   const [file, setFile] = useState<File | null>(null);
   const [rules, setRules] = useState<UiRule[]>([]);
   const [pendingSelection, setPendingSelection] = useState<PendingSelection | null>(null);
-  const [presets, setPresets] = useState<Record<PresetKey, boolean>>({
-    email: false,
-    phone: false,
-    credit_card: false,
-  });
+  const [presets, setPresets] = useState<Record<PresetKey, boolean>>(EMPTY_PRESETS);
+  const [isDragOver, setIsDragOver] = useState(false);
 
   const [submitting, setSubmitting] = useState(false);
 
@@ -47,6 +49,8 @@ export default function App() {
     report?: unknown;
     rawMessage?: string;
   } | null>(null);
+
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const clearNotices = () => {
     setSuccessInfo(null);
@@ -90,31 +94,32 @@ export default function App() {
 
   const hasAnythingToDo = rules.length > 0 || selectedPresets.length > 0;
 
-  const onPickFile: React.ChangeEventHandler<HTMLInputElement> = (e) => {
+  const loadPdfFile = (pickedFile: File | null) => {
     clearNotices();
 
-    const f = e.target.files?.[0] ?? null;
-    if (!f) {
+    if (!pickedFile) {
       setFile(null);
       setPendingSelection(null);
       return;
     }
 
-    const isPdf = f.type === "application/pdf" || f.name.toLowerCase().endsWith(".pdf");
+    const isPdf =
+      pickedFile.type === "application/pdf" || pickedFile.name.toLowerCase().endsWith(".pdf");
     if (!isPdf) {
       setFile(null);
       setErrorInfo({ rawMessage: t("form.file.invalidType") });
       return;
     }
 
-    setFile(f);
+    setFile(pickedFile);
     setPendingSelection(null);
     setRules([]);
-    setPresets({
-      email: false,
-      phone: false,
-      credit_card: false,
-    });
+    setPresets(EMPTY_PRESETS);
+  };
+
+  const onPickFile: React.ChangeEventHandler<HTMLInputElement> = (e) => {
+    loadPdfFile(e.target.files?.[0] ?? null);
+    e.currentTarget.value = "";
   };
 
   const togglePreset = (key: PresetKey) => {
@@ -194,63 +199,83 @@ export default function App() {
   };
 
   return (
-    <div className="page">
-      <HeaderBar lang={lang} setLang={setLang} t={t} />
+    <div className="page pageLayout">
+      <input ref={fileInputRef} type="file" accept="application/pdf" onChange={onPickFile} hidden />
 
-      <form className="workspace" onSubmit={handleSubmit}>
-        <section className="card viewerCard">
-          <FilePickerSection t={t} file={file} onPickFile={onPickFile} />
+      <HeaderBar
+        lang={lang}
+        setLang={setLang}
+        t={t}
+        fileName={file?.name}
+        onChangeFile={file ? () => fileInputRef.current?.click() : undefined}
+      />
 
-          <div className={`pdfPlaceholder ${file ? "pdfPlaceholderHasFile" : ""}`.trim()}>
-            {file ? (
-              <PdfViewer
-                file={file}
-                rules={rules}
-                presetKeys={selectedPresets}
-                t={t}
-                onSelectionChange={setPendingSelection}
-              />
-            ) : (
-              <>
-                <div className="sectionTitle">{t("viewer.placeholder.title")}</div>
-                <p className="muted">{t("viewer.placeholder.body")}</p>
-              </>
-            )}
-          </div>
+      <form className="mainColumns" onSubmit={handleSubmit}>
+        <section className="viewerPane">
+          {file ? (
+            <PdfViewer
+              file={file}
+              rules={rules}
+              presetKeys={selectedPresets}
+              t={t}
+              onSelectionChange={setPendingSelection}
+            />
+          ) : (
+            <div
+              className={`uploadDropZone ${isDragOver ? "uploadDropZoneActive" : ""}`.trim()}
+              onDragOver={(e) => {
+                e.preventDefault();
+                setIsDragOver(true);
+              }}
+              onDragLeave={() => setIsDragOver(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setIsDragOver(false);
+                loadPdfFile(e.dataTransfer.files?.[0] ?? null);
+              }}
+            >
+              <div className="sectionTitle">{t("viewer.drop.title")}</div>
+              <p className="muted">{t("viewer.drop.body")}</p>
+              <button
+                type="button"
+                className="button"
+                style={{ width: "min(260px, 100%)" }}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                {t("form.file.choose")}
+              </button>
+            </div>
+          )}
         </section>
 
-        <aside className="sidePanel">
-          <div className="card">
-            <RulesSection
-              t={t}
-              rules={rules}
-              setRules={setRules}
-              onUserChange={clearNotices}
-              pendingSelectionText={pendingSelection?.text ?? ""}
-              canAddSelection={!!pendingSelection && pendingSelection.rects.length > 0}
-              onAddSelection={addPendingSelection}
-            />
+        <aside className="toolsPane">
+          <RulesSection
+            t={t}
+            rules={rules}
+            setRules={setRules}
+            onUserChange={clearNotices}
+            pendingSelectionText={pendingSelection?.text ?? ""}
+            canAddSelection={!!pendingSelection && pendingSelection.rects.length > 0}
+            onAddSelection={addPendingSelection}
+          />
 
-            <PresetsSection t={t} presets={presets} togglePreset={togglePreset} />
+          <PresetsSection t={t} presets={presets} togglePreset={togglePreset} />
 
-            <div className="hint">{t("form.hint")}</div>
+          <div className="hint">{t("form.hint")}</div>
 
-            <button className="button" type="submit" disabled={submitting}>
-              {submitting ? t("form.submitting") : t("form.submit")}
-            </button>
-          </div>
+          <button className="button" type="submit" disabled={submitting}>
+            {submitting ? t("form.submitting") : t("form.submit")}
+          </button>
 
-          <div className="card">
-            <ResultPanel
-              t={t}
-              hintText={t("form.hint")}
-              successInfo={successInfo}
-              errorInfo={errorInfo}
-              onDownload={() => {
-                if (successInfo?.lastBlob) downloadBlob(successInfo.lastBlob, "redacted.pdf");
-              }}
-            />
-          </div>
+          <ResultPanel
+            t={t}
+            hintText={t("form.hint")}
+            successInfo={successInfo}
+            errorInfo={errorInfo}
+            onDownload={() => {
+              if (successInfo?.lastBlob) downloadBlob(successInfo.lastBlob, "redacted.pdf");
+            }}
+          />
         </aside>
       </form>
     </div>
