@@ -95,6 +95,7 @@ body,
 .toolsPane {
   padding: 10px;
   overflow: hidden;
+  overflow-x: hidden;
 }
 
 .section { margin-bottom: 14px; }

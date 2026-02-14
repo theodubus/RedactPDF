@@ -35,7 +35,9 @@ export function RulesList(props: {
         padding: 10,
         height: 240,
         overflowY: "auto",
+        overflowX: "hidden",
         background: "rgba(255,255,255,0.6)",
+        width: "100%",
       }}
     >
       {rules.length === 0 ? (
@@ -56,6 +58,8 @@ export function RulesList(props: {
                 padding: "10px 12px",
                 gap: 12,
                 minHeight: 58,
+                maxWidth: "100%",
+                overflow: "hidden",
               }}
             >
               <div style={{ minWidth: 0, flex: 1 }}>
@@ -68,7 +72,7 @@ export function RulesList(props: {
                   }}
                   title={r.value}
                 >
-                  {truncate(r.value, 34)}
+                  {truncate(r.value, 24)}
                 </div>
 
                 <div className="muted" style={{ fontSize: 12 }}>
