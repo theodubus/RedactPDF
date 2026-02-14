@@ -10,14 +10,20 @@ import { PresetsSection } from "./components/PresetsSection";
 import { ResultPanel } from "./components/ResultPanel";
 import { PdfViewer } from "./components/PdfViewer";
 
-import type { UiRule } from "./types/uiRules";
-import { downloadBlob } from "./utils/redactionUtils";
+import type { UiRect, UiRule } from "./types/uiRules";
+import { downloadBlob, newId } from "./utils/redactionUtils";
+
+type PendingSelection = {
+  text: string;
+  rects: UiRect[];
+};
 
 export default function App() {
   const { lang, setLang, t } = useI18n();
 
   const [file, setFile] = useState<File | null>(null);
   const [rules, setRules] = useState<UiRule[]>([]);
+  const [pendingSelection, setPendingSelection] = useState<PendingSelection | null>(null);
   const [presets, setPresets] = useState<Record<PresetKey, boolean>>({
     email: false,
     phone: false,
@@ -52,25 +58,34 @@ export default function App() {
   }, [presets]);
 
   const rulesForApi: RuleInput[] = useMemo(() => {
-    return rules.map((r) => {
+    const mapped: RuleInput[] = [];
+    for (const r of rules) {
       if (r.kind === "exact") {
-        return {
+        mapped.push({
           kind: "exact",
           query: r.value,
           caseSensitive: r.caseSensitive,
           allowSubwords: r.allowSubwords,
           ignoreAccents: r.ignoreAccents,
-        };
+        });
+        continue;
       }
-      return {
-        kind: "regex",
-        pattern: r.value,
-        caseSensitive: r.caseSensitive,
-        multiline: r.multiline,
-        allowSubwords: r.allowSubwords,
-        ignoreAccents: r.ignoreAccents,
-      };
-    });
+      if (r.kind === "regex") {
+        mapped.push({
+          kind: "regex",
+          pattern: r.value,
+          caseSensitive: r.caseSensitive,
+          multiline: r.multiline,
+          allowSubwords: r.allowSubwords,
+          ignoreAccents: r.ignoreAccents,
+        });
+      }
+    }
+    return mapped;
+  }, [rules]);
+
+  const rectsForApi = useMemo(() => {
+    return rules.flatMap((r) => (r.kind === "selection" ? r.rects : []));
   }, [rules]);
 
   const hasAnythingToDo = rules.length > 0 || selectedPresets.length > 0;
@@ -81,6 +96,7 @@ export default function App() {
     const f = e.target.files?.[0] ?? null;
     if (!f) {
       setFile(null);
+      setPendingSelection(null);
       return;
     }
 
@@ -92,11 +108,36 @@ export default function App() {
     }
 
     setFile(f);
+    setPendingSelection(null);
+    setRules([]);
+    setPresets({
+      email: false,
+      phone: false,
+      credit_card: false,
+    });
   };
 
   const togglePreset = (key: PresetKey) => {
     clearNotices();
     setPresets((p) => ({ ...p, [key]: !p[key] }));
+  };
+
+  const addPendingSelection = () => {
+    if (!pendingSelection) return;
+    clearNotices();
+
+    const trimmed = pendingSelection.text.trim();
+    if (!trimmed || pendingSelection.rects.length === 0) return;
+
+    const newRule: UiRule = {
+      id: newId(),
+      kind: "selection",
+      value: trimmed,
+      rects: pendingSelection.rects,
+    };
+
+    setRules((prev) => [...prev, newRule]);
+    setPendingSelection(null);
   };
 
   const handleSubmit: React.FormEventHandler<HTMLFormElement> = async (e) => {
@@ -119,6 +160,7 @@ export default function App() {
     try {
       const r = await redactApply({
         file,
+        rects: rectsForApi,
         rules: rulesForApi,
         presets: selectedPresets,
       });
@@ -161,7 +203,13 @@ export default function App() {
 
           <div className={`pdfPlaceholder ${file ? "pdfPlaceholderHasFile" : ""}`.trim()}>
             {file ? (
-              <PdfViewer file={file} rules={rules} t={t} />
+              <PdfViewer
+                file={file}
+                rules={rules}
+                presetKeys={selectedPresets}
+                t={t}
+                onSelectionChange={setPendingSelection}
+              />
             ) : (
               <>
                 <div className="sectionTitle">{t("viewer.placeholder.title")}</div>
@@ -178,6 +226,9 @@ export default function App() {
               rules={rules}
               setRules={setRules}
               onUserChange={clearNotices}
+              pendingSelectionText={pendingSelection?.text ?? ""}
+              canAddSelection={!!pendingSelection && pendingSelection.rects.length > 0}
+              onAddSelection={addPendingSelection}
             />
 
             <PresetsSection t={t} presets={presets} togglePreset={togglePreset} />
