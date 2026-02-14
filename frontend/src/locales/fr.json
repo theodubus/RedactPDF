@@ -62,7 +62,7 @@
   "debug.show": "Afficher",
   "debug.hide": "Masquer",
   "rules.badge.selection": "Sélection",
-  "rules.selection.add": "Redact selection",
+  "rules.selection.add": "Censurer la sélection",
   "rules.selection.current": "Sélection courante",
   "rules.selection.none": "Sélectionnez du texte dans le PDF pour préparer une censure ciblée.",
   "form.file.change": "Charger un nouveau PDF",
