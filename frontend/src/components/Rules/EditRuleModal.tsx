@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
 import type { RuleKind, UiRule } from "../../types/uiRules";
-import { RuleKindToggle } from "./RuleKindToggle";
 import { RuleOptionsRow } from "./RuleOptionsRow";
 
 type UiRuleNoId =
@@ -36,10 +35,10 @@ export function EditRuleModal(props: {
   const [editAllowSubwords, setEditAllowSubwords] = useState(false);
   const [editIgnoreAccents, setEditIgnoreAccents] = useState(false);
 
-  const isOpen = !!rule;
+  const isOpen = !!rule && rule.kind !== "selection";
 
   useEffect(() => {
-    if (!rule) return;
+    if (!rule || rule.kind === "selection") return;
 
     setEditKind(rule.kind);
     setEditValue(rule.value);
@@ -96,19 +95,22 @@ export function EditRuleModal(props: {
         alignItems: "center",
         justifyContent: "center",
         padding: 16,
-        zIndex: 50,
+        zIndex: 200,
       }}
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
       <div
-        className="card"
         style={{
-          width: "min(720px, 100%)",
+          width: "min(820px, 100%)",
           maxHeight: "85vh",
           overflow: "auto",
           padding: 16,
+          background: "#fff",
+          border: "1px solid #d8dce8",
+          borderRadius: 12,
+          boxShadow: "0 10px 24px rgba(0,0,0,0.22)",
         }}
         onMouseDown={(e) => e.stopPropagation()}
       >
@@ -117,17 +119,6 @@ export function EditRuleModal(props: {
         </div>
 
         <div style={{ marginTop: 12 }}>
-          <div className="sectionTitle" style={{ marginBottom: 8 }}>
-            {t("modal.edit.kind")}
-          </div>
-          <RuleKindToggle t={t} value={editKind} onChange={setEditKind} />
-        </div>
-
-        <div style={{ marginTop: 12 }}>
-          <div className="sectionTitle" style={{ marginBottom: 8 }}>
-            {t("modal.edit.value")}
-          </div>
-
           {editKind === "regex" ? (
             <textarea
               className="input"
@@ -146,23 +137,23 @@ export function EditRuleModal(props: {
           )}
         </div>
 
-        <div style={{ marginTop: 12 }}>
-          <div className="sectionTitle" style={{ marginBottom: 8 }}>
-            {t("modal.edit.options")}
-          </div>
-
-          <RuleOptionsRow
-            kind={editKind}
-            caseSensitive={editCaseSensitive}
-            setCaseSensitive={setEditCaseSensitive}
-            multiline={editMultiline}
-            setMultiline={setEditMultiline}
-            allowSubwords={editAllowSubwords}
-            setAllowSubwords={setEditAllowSubwords}
-            ignoreAccents={editIgnoreAccents}
-            setIgnoreAccents={setEditIgnoreAccents}
-          />
-        </div>
+        <RuleOptionsRow
+          kind={editKind}
+          setKind={(nextKind) => {
+            setEditKind(nextKind);
+            if (nextKind !== "regex") {
+              setEditMultiline(false);
+            }
+          }}
+          caseSensitive={editCaseSensitive}
+          setCaseSensitive={setEditCaseSensitive}
+          multiline={editMultiline}
+          setMultiline={setEditMultiline}
+          allowSubwords={editAllowSubwords}
+          setAllowSubwords={setEditAllowSubwords}
+          ignoreAccents={editIgnoreAccents}
+          setIgnoreAccents={setEditIgnoreAccents}
+        />
 
         <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
           <button type="button" className="buttonSecondary buttonStretch" onClick={onClose}>
