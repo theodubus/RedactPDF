@@ -36,10 +36,10 @@ export function EditRuleModal(props: {
   const [editAllowSubwords, setEditAllowSubwords] = useState(false);
   const [editIgnoreAccents, setEditIgnoreAccents] = useState(false);
 
-  const isOpen = !!rule;
+  const isOpen = !!rule && rule.kind !== "selection";
 
   useEffect(() => {
-    if (!rule) return;
+    if (!rule || rule.kind === "selection") return;
 
     setEditKind(rule.kind);
     setEditValue(rule.value);

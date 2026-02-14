@@ -4,7 +4,7 @@ import { truncate } from "../../utils/redactionUtils";
 export function RulesList(props: {
   t: (k: string) => string;
   rules: UiRule[];
-  kindLabel: (k: RuleKind) => string;
+  kindLabel: (k: RuleKind | "selection") => string;
   onEdit: (r: UiRule) => void;
   onDelete: (id: string) => void;
 }) {
@@ -60,15 +60,17 @@ export function RulesList(props: {
               </div>
 
               <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
-                <button
-                  type="button"
-                  className="buttonSecondary"
-                  onClick={() => onEdit(r)}
-                  aria-label={t("rules.item.edit")}
-                  title={t("rules.item.edit")}
-                >
-                  ✎
-                </button>
+                {r.kind !== "selection" ? (
+                  <button
+                    type="button"
+                    className="buttonSecondary"
+                    onClick={() => onEdit(r)}
+                    aria-label={t("rules.item.edit")}
+                    title={t("rules.item.edit")}
+                  >
+                    ✎
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   className="buttonSecondary"
