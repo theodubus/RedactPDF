@@ -14,6 +14,14 @@ function kindLabel(t: (k: string) => string, kind: RuleKind | "selection") {
   return t("rules.badge.selection");
 }
 
+function summarizeSelection(text: string) {
+  const clean = text.trim();
+  const maxLen = 40;
+  if (clean.length <= maxLen) return clean;
+  const keep = 14;
+  return `${clean.slice(0, keep)} ... ${clean.slice(-keep)}`;
+}
+
 export function RulesSection(props: {
   t: (k: string) => string;
   rules: UiRule[];
@@ -204,7 +212,7 @@ export function RulesSection(props: {
 
       {pendingSelectionText ? (
         <div className="muted" style={{ marginTop: 6 }}>
-          {t("rules.selection.current")}: <strong>{pendingSelectionText}</strong>
+          {t("rules.selection.current")}: <strong>{summarizeSelection(pendingSelectionText)}</strong>
         </div>
       ) : (
         <div className="muted" style={{ marginTop: 6 }}>

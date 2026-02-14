@@ -1,5 +1,21 @@
+import type { CSSProperties } from "react";
 import type { RuleKind, UiRule } from "../../types/uiRules";
 import { truncate } from "../../utils/redactionUtils";
+
+const actionButtonStyle: CSSProperties = {
+  border: "1px solid #ddd",
+  borderRadius: 10,
+  width: 34,
+  minWidth: 34,
+  height: 34,
+  padding: 0,
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  background: "#fff",
+  cursor: "pointer",
+  fontWeight: 700,
+};
 
 export function RulesList(props: {
   t: (k: string) => string;
@@ -39,9 +55,10 @@ export function RulesList(props: {
                 borderRadius: 10,
                 padding: "10px 12px",
                 gap: 12,
+                minHeight: 58,
               }}
             >
-              <div style={{ minWidth: 0 }}>
+              <div style={{ minWidth: 0, flex: 1 }}>
                 <div
                   style={{
                     fontWeight: 600,
@@ -51,7 +68,7 @@ export function RulesList(props: {
                   }}
                   title={r.value}
                 >
-                  {truncate(r.value)}
+                  {truncate(r.value, 34)}
                 </div>
 
                 <div className="muted" style={{ fontSize: 12 }}>
@@ -63,7 +80,7 @@ export function RulesList(props: {
                 {r.kind !== "selection" ? (
                   <button
                     type="button"
-                    className="buttonSecondary"
+                    style={actionButtonStyle}
                     onClick={() => onEdit(r)}
                     aria-label={t("rules.item.edit")}
                     title={t("rules.item.edit")}
@@ -73,7 +90,7 @@ export function RulesList(props: {
                 ) : null}
                 <button
                   type="button"
-                  className="buttonSecondary"
+                  style={actionButtonStyle}
                   onClick={() => onDelete(r.id)}
                   aria-label={t("rules.item.delete")}
                   title={t("rules.item.delete")}

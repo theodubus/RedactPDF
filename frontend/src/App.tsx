@@ -109,6 +109,7 @@ export default function App() {
 
     setFile(f);
     setPendingSelection(null);
+    setRules([]);
   };
 
   const togglePreset = (key: PresetKey) => {
