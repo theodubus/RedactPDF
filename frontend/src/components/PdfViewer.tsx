@@ -273,6 +273,74 @@ export function PdfViewer(props: {
     };
   }, [onSelectionChange]);
 
+  useEffect(() => {
+    const computeSelection = () => {
+      const selection = window.getSelection();
+      if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
+        onSelectionChange(null);
+        return;
+      }
+
+      const selectedText = selection.toString().trim();
+      if (!selectedText) {
+        onSelectionChange(null);
+        return;
+      }
+
+      const range = selection.getRangeAt(0);
+      const anchorNode = range.commonAncestorContainer;
+      if (!anchorNode) {
+        onSelectionChange(null);
+        return;
+      }
+
+      const pageIndex = textLayerRefs.current.findIndex((layer) => layer?.contains(anchorNode) ?? false);
+      if (pageIndex < 0) {
+        onSelectionChange(null);
+        return;
+      }
+
+      const textLayer = textLayerRefs.current[pageIndex];
+      const scale = pageScalesRef.current[pageIndex] ?? 1;
+      if (!textLayer || scale <= 0) {
+        onSelectionChange(null);
+        return;
+      }
+
+      const layerBounds = textLayer.getBoundingClientRect();
+      const rects: UiRect[] = [];
+
+      for (const rect of range.getClientRects()) {
+        const localLeft = rect.left - layerBounds.left;
+        const localRight = rect.right - layerBounds.left;
+        const localTop = rect.top - layerBounds.top;
+        const localBottom = rect.bottom - layerBounds.top;
+
+        if (localRight <= localLeft || localBottom <= localTop) continue;
+
+        rects.push({
+          page: pageIndex,
+          x0: localLeft / scale,
+          y0: localTop / scale,
+          x1: localRight / scale,
+          y1: localBottom / scale,
+        });
+      }
+
+      if (rects.length === 0) {
+        onSelectionChange(null);
+        return;
+      }
+
+      onSelectionChange({ text: selectedText, rects });
+    };
+
+    document.addEventListener("selectionchange", computeSelection);
+    return () => {
+      document.removeEventListener("selectionchange", computeSelection);
+    };
+  }, [onSelectionChange]);
+
   if (error) {
     return <div className="pdfViewerMessage bad">{error}</div>;
   }
