@@ -3,15 +3,12 @@
   "app.subtitle": "Robust redaction (real removal) with post-export audit",
   "lang.fr": "FR",
   "lang.en": "EN",
-
   "form.section.file": "PDF document",
   "form.file.choose": "Choose a PDF file",
   "form.file.selected": "Selected file",
   "form.file.invalidType": "Please select a PDF file.",
   "form.file.required": "Please select a file.",
-
   "form.section.rules": "Items to redact",
-
   "rules.toggle.exact": "Exact match",
   "rules.toggle.regex": "Regex",
   "rules.input.aria": "Add an item to redact",
@@ -24,40 +21,33 @@
   "rules.item.edit": "Edit",
   "rules.item.delete": "Delete",
   "rules.error.empty": "Please enter a non-empty value.",
-
   "rules.option.caseSensitive": "Case sensitive",
   "rules.option.wholeWord": "Whole word",
   "rules.option.multiline": "Multiline",
   "rules.options.label": "Options",
   "rules.option.subword": "Subword",
   "rules.option.ignoreAccents": "Ignore accents",
-
   "rules.label.searchType": "Search type",
   "rules.label.options": "Options",
-
   "modal.edit.title": "Edit item",
   "modal.edit.kind": "Type",
   "modal.edit.value": "Value",
   "modal.edit.options": "Options",
   "modal.cancel": "Cancel",
   "modal.save": "Save",
-
   "form.section.presets": "Presets",
   "form.presets.email": "Emails",
   "form.presets.phone": "Phone numbers",
   "form.presets.creditCard": "Credit cards",
-
   "form.nothingToDo.rules": "Please add at least one item to redact and/or select a preset.",
   "form.submit": "Redact & Export",
   "form.submitting": "Processing…",
   "form.hint": "The source file is never modified. Export is blocked if the audit detects a leak.",
-
   "viewer.title": "PDF preview",
   "viewer.placeholder.title": "PDF preview (coming soon)",
   "viewer.placeholder.body": "This area is reserved for the PDF viewer and upcoming visual redaction interactions.",
   "viewer.loading": "Loading PDF…",
   "viewer.error.load": "Unable to load the PDF in the viewer.",
-
   "result.success.title": "Success",
   "result.success.download": "Download redacted PDF",
   "result.success.auditStatus": "Audit",
@@ -65,12 +55,17 @@
   "result.success.occurrencesRegex": "Occurrences (regex)",
   "result.success.occurrencesPresets": "Occurrences (presets)",
   "result.success.occurrencesTotal": "Occurrences (total)",
-
   "result.error.title": "Failed: audit error",
   "result.error.http": "HTTP status",
   "result.error.details": "Report details",
   "result.error.noJson": "Unexpected error (non-JSON response).",
-
   "debug.show": "Show",
-  "debug.hide": "Hide"
+  "debug.hide": "Hide",
+  "rules.badge.selection": "selection",
+  "rules.selection.add": "Redact selection",
+  "rules.selection.current": "Current selection",
+  "rules.selection.none": "Select text in the PDF to prepare targeted redaction.",
+  "form.file.change": "Load a new PDF",
+  "viewer.drop.title": "Drop a PDF here",
+  "viewer.drop.body": "Or click to choose a PDF file"
 }
