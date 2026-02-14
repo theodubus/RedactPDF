@@ -2,7 +2,6 @@ import { useMemo, useState } from "react";
 import type { RuleKind, UiRule } from "../../types/uiRules";
 import { newId } from "../../utils/redactionUtils";
 
-import { RuleKindToggle } from "./RuleKindToggle";
 import { RuleOptionsRow } from "./RuleOptionsRow";
 import { RuleAddBar } from "./RuleAddBar";
 import { RulesList } from "./RulesList";
@@ -53,18 +52,10 @@ export function RulesSection(props: {
   };
   const closeEdit = () => setEditingId(null);
 
-  const resetDraftOptionsToDefaults = (kind: RuleKind) => {
-    setDraftCaseSensitive(false);
-    setDraftIgnoreAccents(false);
-    setDraftAllowSubwords(false);
-    setDraftMultiline(false);
-    void kind;
-  };
-
   const onSetDraftKind = (k: RuleKind) => {
     onUserChange();
     setDraftKind(k);
-    resetDraftOptionsToDefaults(k);
+    if (k !== "regex") setDraftMultiline(false);
   };
 
   const addRule = () => {
@@ -95,9 +86,7 @@ export function RulesSection(props: {
           };
 
     setRules((prev) => [...prev, rule]);
-
     setDraftValue("");
-    resetDraftOptionsToDefaults(draftKind);
   };
 
   const deleteRule = (id: string) => {
@@ -133,60 +122,8 @@ export function RulesSection(props: {
     <section className="section">
       <div className="sectionTitle">{t("form.section.rules")}</div>
 
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "150px 1fr",
-          alignItems: "center",
-          columnGap: 12,
-          rowGap: 0,
-          marginTop: 6,
-        }}
-      >
-        <div className="muted" style={{ fontWeight: 600, lineHeight: "32px" }}>
-          {t("rules.label.searchType")}:
-        </div>
-
-        <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
-          <RuleKindToggle t={t} value={draftKind} onChange={onSetDraftKind} />
-        </div>
-
-        <div className="muted" style={{ fontWeight: 600, lineHeight: "32px" }}>
-          {t("rules.label.options")}:
-        </div>
-
-        <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
-          <RuleOptionsRow
-            kind={draftKind}
-            caseSensitive={draftCaseSensitive}
-            setCaseSensitive={(v: boolean) => {
-              onUserChange();
-              setDraftCaseSensitive(v);
-            }}
-            multiline={draftMultiline}
-            setMultiline={(v: boolean) => {
-              onUserChange();
-              setDraftMultiline(v);
-            }}
-            allowSubwords={draftAllowSubwords}
-            setAllowSubwords={(v: boolean) => {
-              onUserChange();
-              setDraftAllowSubwords(v);
-            }}
-            ignoreAccents={draftIgnoreAccents}
-            setIgnoreAccents={(v: boolean) => {
-              onUserChange();
-              setDraftIgnoreAccents(v);
-            }}
-          />
-        </div>
-      </div>
-
-      <div style={{ height: 8 }} />
-
       <RuleAddBar
         t={t}
-        kind={draftKind}
         value={draftValue}
         onChangeValue={(v: string) => {
           onUserChange();
@@ -195,6 +132,31 @@ export function RulesSection(props: {
         placeholder={inputPlaceholder}
         onAdd={addRule}
         onKeyDown={onDraftKeyDown}
+      />
+
+      <RuleOptionsRow
+        kind={draftKind}
+        setKind={onSetDraftKind}
+        caseSensitive={draftCaseSensitive}
+        setCaseSensitive={(v: boolean) => {
+          onUserChange();
+          setDraftCaseSensitive(v);
+        }}
+        multiline={draftMultiline}
+        setMultiline={(v: boolean) => {
+          onUserChange();
+          setDraftMultiline(v);
+        }}
+        allowSubwords={draftAllowSubwords}
+        setAllowSubwords={(v: boolean) => {
+          onUserChange();
+          setDraftAllowSubwords(v);
+        }}
+        ignoreAccents={draftIgnoreAccents}
+        setIgnoreAccents={(v: boolean) => {
+          onUserChange();
+          setDraftIgnoreAccents(v);
+        }}
       />
 
       <button
