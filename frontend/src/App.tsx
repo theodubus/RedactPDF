@@ -261,15 +261,12 @@ export default function App() {
 
           <PresetsSection t={t} presets={presets} togglePreset={togglePreset} />
 
-          <div className="hint">{t("form.hint")}</div>
-
           <button className="button" type="submit" disabled={submitting}>
             {submitting ? t("form.submitting") : t("form.submit")}
           </button>
 
           <ResultPanel
             t={t}
-            hintText={t("form.hint")}
             successInfo={successInfo}
             errorInfo={errorInfo}
             onDownload={() => {

@@ -61,11 +61,13 @@
   "result.error.noJson": "Unexpected error (non-JSON response).",
   "debug.show": "Show",
   "debug.hide": "Hide",
-  "rules.badge.selection": "selection",
+  "rules.badge.selection": "Selection",
   "rules.selection.add": "Redact selection",
   "rules.selection.current": "Current selection",
   "rules.selection.none": "Select text in the PDF to prepare targeted redaction.",
   "form.file.change": "Load a new PDF",
   "viewer.drop.title": "Drop a PDF here",
-  "viewer.drop.body": "Or click to choose a PDF file"
+  "viewer.drop.body": "Or click to choose a PDF file",
+  "rules.badge.request": "Request",
+  "rules.options.summary": "> Options"
 }

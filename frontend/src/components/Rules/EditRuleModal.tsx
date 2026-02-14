@@ -137,23 +137,28 @@ export function EditRuleModal(props: {
           )}
         </div>
 
-        <RuleOptionsRow
-          kind={editKind}
-          setKind={(nextKind) => {
-            setEditKind(nextKind);
-            if (nextKind !== "regex") {
-              setEditMultiline(false);
-            }
-          }}
-          caseSensitive={editCaseSensitive}
-          setCaseSensitive={setEditCaseSensitive}
-          multiline={editMultiline}
-          setMultiline={setEditMultiline}
-          allowSubwords={editAllowSubwords}
-          setAllowSubwords={setEditAllowSubwords}
-          ignoreAccents={editIgnoreAccents}
-          setIgnoreAccents={setEditIgnoreAccents}
-        />
+        <details style={{ marginTop: 10 }}>
+          <summary style={{ cursor: "pointer", fontWeight: 600, userSelect: "none" }}>
+            {t("rules.options.summary")}
+          </summary>
+          <RuleOptionsRow
+            kind={editKind}
+            setKind={(nextKind) => {
+              setEditKind(nextKind);
+              if (nextKind !== "regex") {
+                setEditMultiline(false);
+              }
+            }}
+            caseSensitive={editCaseSensitive}
+            setCaseSensitive={setEditCaseSensitive}
+            multiline={editMultiline}
+            setMultiline={setEditMultiline}
+            allowSubwords={editAllowSubwords}
+            setAllowSubwords={setEditAllowSubwords}
+            ignoreAccents={editIgnoreAccents}
+            setIgnoreAccents={setEditIgnoreAccents}
+          />
+        </details>
 
         <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
           <button type="button" className="buttonSecondary buttonStretch" onClick={onClose}>

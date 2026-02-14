@@ -8,9 +8,8 @@ import { RulesList } from "./RulesList";
 import { EditRuleModal } from "./EditRuleModal";
 
 function kindLabel(t: (k: string) => string, kind: RuleKind | "selection") {
-  if (kind === "exact") return t("rules.badge.exact");
-  if (kind === "regex") return t("rules.badge.regex");
-  return t("rules.badge.selection");
+  if (kind === "selection") return t("rules.badge.selection");
+  return t("rules.badge.request");
 }
 
 function summarizeSelection(text: string) {
@@ -134,30 +133,35 @@ export function RulesSection(props: {
         onKeyDown={onDraftKeyDown}
       />
 
-      <RuleOptionsRow
-        kind={draftKind}
-        setKind={onSetDraftKind}
-        caseSensitive={draftCaseSensitive}
-        setCaseSensitive={(v: boolean) => {
-          onUserChange();
-          setDraftCaseSensitive(v);
-        }}
-        multiline={draftMultiline}
-        setMultiline={(v: boolean) => {
-          onUserChange();
-          setDraftMultiline(v);
-        }}
-        allowSubwords={draftAllowSubwords}
-        setAllowSubwords={(v: boolean) => {
-          onUserChange();
-          setDraftAllowSubwords(v);
-        }}
-        ignoreAccents={draftIgnoreAccents}
-        setIgnoreAccents={(v: boolean) => {
-          onUserChange();
-          setDraftIgnoreAccents(v);
-        }}
-      />
+      <details style={{ marginTop: 8 }}>
+        <summary style={{ cursor: "pointer", fontWeight: 600, userSelect: "none" }}>
+          {t("rules.options.summary")}
+        </summary>
+        <RuleOptionsRow
+          kind={draftKind}
+          setKind={onSetDraftKind}
+          caseSensitive={draftCaseSensitive}
+          setCaseSensitive={(v: boolean) => {
+            onUserChange();
+            setDraftCaseSensitive(v);
+          }}
+          multiline={draftMultiline}
+          setMultiline={(v: boolean) => {
+            onUserChange();
+            setDraftMultiline(v);
+          }}
+          allowSubwords={draftAllowSubwords}
+          setAllowSubwords={(v: boolean) => {
+            onUserChange();
+            setDraftAllowSubwords(v);
+          }}
+          ignoreAccents={draftIgnoreAccents}
+          setIgnoreAccents={(v: boolean) => {
+            onUserChange();
+            setDraftIgnoreAccents(v);
+          }}
+        />
+      </details>
 
       <button
         type="button"
