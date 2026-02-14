@@ -3,15 +3,12 @@
   "app.subtitle": "Redaction robuste (suppression réelle) avec audit post-export",
   "lang.fr": "FR",
   "lang.en": "EN",
-
   "form.section.file": "Document PDF",
   "form.file.choose": "Choisir un fichier PDF",
   "form.file.selected": "Fichier sélectionné",
   "form.file.invalidType": "Veuillez sélectionner un fichier PDF.",
   "form.file.required": "Veuillez sélectionner un fichier.",
-
   "form.section.rules": "Éléments à censurer",
-
   "rules.toggle.exact": "Recherche exacte",
   "rules.toggle.regex": "Regex",
   "rules.input.aria": "Ajouter un élément à censurer",
@@ -24,40 +21,33 @@
   "rules.item.edit": "Modifier",
   "rules.item.delete": "Supprimer",
   "rules.error.empty": "Veuillez saisir une valeur non vide.",
-
   "rules.option.caseSensitive": "Sensible à la casse",
   "rules.option.wholeWord": "Mot entier",
   "rules.option.multiline": "Multilignes",
   "rules.options.label": "Options",
   "rules.option.subword": "Sous-mot",
   "rules.option.ignoreAccents": "Ignorer les accents",
-
   "rules.label.searchType": "Type de recherche",
   "rules.label.options": "Options",
-
   "modal.edit.title": "Modifier l’élément",
   "modal.edit.kind": "Type",
   "modal.edit.value": "Valeur",
   "modal.edit.options": "Options",
   "modal.cancel": "Annuler",
   "modal.save": "Enregistrer",
-
   "form.section.presets": "Presets",
   "form.presets.email": "Emails",
   "form.presets.phone": "Numéros de téléphone",
   "form.presets.creditCard": "Cartes bancaires",
-
   "form.nothingToDo.rules": "Veuillez ajouter au moins un élément à censurer et/ou sélectionner un preset.",
   "form.submit": "Redact & Export",
   "form.submitting": "Traitement en cours…",
   "form.hint": "Le fichier source n’est jamais modifié. L’export est bloqué si l’audit détecte une fuite.",
-
   "viewer.title": "Aperçu PDF",
   "viewer.placeholder.title": "Aperçu PDF (bientôt)",
   "viewer.placeholder.body": "Cet espace est réservé au viewer PDF et aux futures interactions de caviardage visuel.",
   "viewer.loading": "Chargement du PDF…",
   "viewer.error.load": "Impossible de charger le PDF dans le viewer.",
-
   "result.success.title": "Succès",
   "result.success.download": "Télécharger le PDF redigé",
   "result.success.auditStatus": "Audit",
@@ -65,12 +55,19 @@
   "result.success.occurrencesRegex": "Occurrences (regex)",
   "result.success.occurrencesPresets": "Occurrences (presets)",
   "result.success.occurrencesTotal": "Occurrences (total)",
-
   "result.error.title": "Échec : audit en erreur",
   "result.error.http": "Code HTTP",
   "result.error.details": "Détails du report",
   "result.error.noJson": "Erreur inattendue (réponse non JSON).",
-
   "debug.show": "Afficher",
-  "debug.hide": "Masquer"
+  "debug.hide": "Masquer",
+  "rules.badge.selection": "Sélection",
+  "rules.selection.add": "Redact selection",
+  "rules.selection.current": "Sélection courante",
+  "rules.selection.none": "Sélectionnez du texte dans le PDF pour préparer une censure ciblée.",
+  "form.file.change": "Charger un nouveau PDF",
+  "viewer.drop.title": "Déposez un PDF ici",
+  "viewer.drop.body": "Ou cliquez pour sélectionner un fichier PDF",
+  "rules.badge.request": "Requête",
+  "rules.options.summary": "> Options"
 }
