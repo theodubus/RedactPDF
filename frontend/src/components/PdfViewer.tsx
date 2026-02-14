@@ -431,6 +431,22 @@ function findPresetMatches(text: string, presetKeys: PresetKey[]) {
   return ranges;
 }
 
+function isLikelyPhonePresetMatch(rawMatch: string) {
+  const value = rawMatch.trim();
+  if (!value) return false;
+  if (/[A-Za-z/]/.test(value)) return false;
+
+  const hasIntlPrefix = /^\s*(?:\+|00)/.test(value);
+  const digits = value.replace(/\D+/g, "");
+  const minDigits = hasIntlPrefix ? 8 : 10;
+  if (digits.length < minDigits || digits.length > 15) return false;
+
+  if (!hasIntlPrefix && !digits.startsWith("0")) return false;
+  if (!/[+\s().-]/.test(value)) return false;
+
+  return true;
+}
+
 type LayerTextNode = {
   node: Text;
   start: number;
@@ -450,6 +466,7 @@ function highlightPhonePresetMatches(
     if (typeof match.index !== "number") continue;
     const value = match[0] ?? "";
     if (!value) continue;
+    if (!isLikelyPhonePresetMatch(value)) continue;
 
     const matchStart = match.index;
     const matchEnd = match.index + value.length;
