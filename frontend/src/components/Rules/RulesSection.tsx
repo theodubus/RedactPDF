@@ -121,17 +121,67 @@ export function RulesSection(props: {
     <section className="section">
       <div className="sectionTitle">{t("form.section.rules")}</div>
 
-      <RuleAddBar
-        t={t}
-        value={draftValue}
-        onChangeValue={(v: string) => {
-          onUserChange();
-          setDraftValue(v);
-        }}
-        placeholder={inputPlaceholder}
-        onAdd={addRule}
-        onKeyDown={onDraftKeyDown}
-      />
+      {canAddSelection ? (
+        <>
+          <button
+            type="button"
+            className="buttonSecondary"
+            onClick={() => {
+              onUserChange();
+              onAddSelection();
+            }}
+            title={pendingSelectionText}
+          >
+            {t("rules.selection.add")}
+          </button>
+
+          <div className="muted" style={{ marginTop: 6 }}>
+            {t("rules.selection.current")}: <strong>{summarizeSelection(pendingSelectionText)}</strong>
+          </div>
+        </>
+      ) : (
+        <>
+          <RuleAddBar
+            t={t}
+            value={draftValue}
+            onChangeValue={(v: string) => {
+              onUserChange();
+              setDraftValue(v);
+            }}
+            placeholder={inputPlaceholder}
+            onAdd={addRule}
+            onKeyDown={onDraftKeyDown}
+          />
+
+          <details style={{ marginTop: 8 }}>
+            <summary className="optionsSummary">{t("rules.options.summary")}</summary>
+            <RuleOptionsRow
+              kind={draftKind}
+              setKind={onSetDraftKind}
+              caseSensitive={draftCaseSensitive}
+              setCaseSensitive={(v: boolean) => {
+                onUserChange();
+                setDraftCaseSensitive(v);
+              }}
+              multiline={draftMultiline}
+              setMultiline={(v: boolean) => {
+                onUserChange();
+                setDraftMultiline(v);
+              }}
+              allowSubwords={draftAllowSubwords}
+              setAllowSubwords={(v: boolean) => {
+                onUserChange();
+                setDraftAllowSubwords(v);
+              }}
+              ignoreAccents={draftIgnoreAccents}
+              setIgnoreAccents={(v: boolean) => {
+                onUserChange();
+                setDraftIgnoreAccents(v);
+              }}
+            />
+          </details>
+        </>
+      )}
 
       <details style={{ marginTop: 8 }}>
         <summary style={{ cursor: "pointer", fontWeight: 600, userSelect: "none" }}>

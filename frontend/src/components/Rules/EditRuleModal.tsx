@@ -138,9 +138,7 @@ export function EditRuleModal(props: {
         </div>
 
         <details style={{ marginTop: 10 }}>
-          <summary style={{ cursor: "pointer", fontWeight: 600, userSelect: "none" }}>
-            {t("rules.options.summary")}
-          </summary>
+          <summary className="optionsSummary">{t("rules.options.summary")}</summary>
           <RuleOptionsRow
             kind={editKind}
             setKind={(nextKind) => {
