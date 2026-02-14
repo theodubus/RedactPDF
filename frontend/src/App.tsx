@@ -110,6 +110,11 @@ export default function App() {
     setFile(f);
     setPendingSelection(null);
     setRules([]);
+    setPresets({
+      email: false,
+      phone: false,
+      credit_card: false,
+    });
   };
 
   const togglePreset = (key: PresetKey) => {
@@ -201,6 +206,7 @@ export default function App() {
               <PdfViewer
                 file={file}
                 rules={rules}
+                presetKeys={selectedPresets}
                 t={t}
                 onSelectionChange={setPendingSelection}
               />

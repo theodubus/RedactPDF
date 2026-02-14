@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { PresetKey } from "../api";
 import type { UiRect, UiRule } from "../types/uiRules";
 
 type PdfViewport = {
@@ -49,10 +50,11 @@ async function ensurePdfJsLoaded(): Promise<PdfJsLib> {
 export function PdfViewer(props: {
   file: File;
   rules: UiRule[];
+  presetKeys: PresetKey[];
   t: (k: string) => string;
   onSelectionChange: (selection: { text: string; rects: UiRect[] } | null) => void;
 }) {
-  const { file, rules, t, onSelectionChange } = props;
+  const { file, rules, presetKeys, t, onSelectionChange } = props;
 
   const [pdfDoc, setPdfDoc] = useState<PdfDocumentProxy | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -185,23 +187,91 @@ export function PdfViewer(props: {
           viewport,
         });
         await textLayerTask.render();
-        applyPreviewHighlights(textLayer, previewLayer, rules, pageNumber - 1, scale);
+        applyPreviewHighlights(textLayer, previewLayer, rules, presetKeys, pageNumber - 1, scale);
       }
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [pdfDoc, pageNumbers, containerWidth, rules]);
+  }, [pdfDoc, pageNumbers, containerWidth, rules, presetKeys]);
 
   useEffect(() => {
     for (const [index, textLayer] of textLayerRefs.current.entries()) {
       const previewLayer = previewLayerRefs.current[index];
       const scale = pageScalesRef.current[index] ?? 1;
       if (!textLayer || !previewLayer) continue;
-      applyPreviewHighlights(textLayer, previewLayer, rules, index, scale);
+      applyPreviewHighlights(textLayer, previewLayer, rules, presetKeys, index, scale);
     }
-  }, [rules]);
+  }, [rules, presetKeys]);
+
+  useEffect(() => {
+    const computeSelection = () => {
+      const selection = window.getSelection();
+      if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
+        onSelectionChange(null);
+        return;
+      }
+
+      const selectedText = selection.toString().trim();
+      if (!selectedText) {
+        onSelectionChange(null);
+        return;
+      }
+
+      const range = selection.getRangeAt(0);
+      const anchorNode = range.commonAncestorContainer;
+      if (!anchorNode) {
+        onSelectionChange(null);
+        return;
+      }
+
+      const pageIndex = textLayerRefs.current.findIndex((layer) => layer?.contains(anchorNode) ?? false);
+      if (pageIndex < 0) {
+        onSelectionChange(null);
+        return;
+      }
+
+      const textLayer = textLayerRefs.current[pageIndex];
+      const scale = pageScalesRef.current[pageIndex] ?? 1;
+      if (!textLayer || scale <= 0) {
+        onSelectionChange(null);
+        return;
+      }
+
+      const layerBounds = textLayer.getBoundingClientRect();
+      const rects: UiRect[] = [];
+
+      for (const rect of range.getClientRects()) {
+        const localLeft = rect.left - layerBounds.left;
+        const localRight = rect.right - layerBounds.left;
+        const localTop = rect.top - layerBounds.top;
+        const localBottom = rect.bottom - layerBounds.top;
+
+        if (localRight <= localLeft || localBottom <= localTop) continue;
+
+        rects.push({
+          page: pageIndex,
+          x0: localLeft / scale,
+          y0: localTop / scale,
+          x1: localRight / scale,
+          y1: localBottom / scale,
+        });
+      }
+
+      if (rects.length === 0) {
+        onSelectionChange(null);
+        return;
+      }
+
+      onSelectionChange({ text: selectedText, rects });
+    };
+
+    document.addEventListener("selectionchange", computeSelection);
+    return () => {
+      document.removeEventListener("selectionchange", computeSelection);
+    };
+  }, [onSelectionChange]);
 
   useEffect(() => {
     const computeSelection = () => {
@@ -311,6 +381,7 @@ function applyPreviewHighlights(
   textLayer: HTMLDivElement,
   previewLayer: HTMLDivElement,
   rules: UiRule[],
+  presetKeys: PresetKey[],
   pageIndex: number,
   scale: number,
 ) {
@@ -327,7 +398,7 @@ function applyPreviewHighlights(
     const raw = textNode.textContent ?? "";
     if (!raw) continue;
 
-    const ranges = collectMatches(raw, rules);
+    const ranges = collectMatches(raw, rules, presetKeys);
     if (ranges.length === 0) continue;
 
     for (const rangeDef of ranges) {
@@ -379,7 +450,11 @@ function drawPreviewRect(
   previewLayer.appendChild(highlight);
 }
 
-function collectMatches(text: string, rules: UiRule[]): Array<{ start: number; end: number }> {
+function collectMatches(
+  text: string,
+  rules: UiRule[],
+  presetKeys: PresetKey[],
+): Array<{ start: number; end: number }> {
   const matches: Array<{ start: number; end: number }> = [];
   for (const rule of rules) {
     if (rule.kind === "selection") continue;
@@ -391,7 +466,33 @@ function collectMatches(text: string, rules: UiRule[]): Array<{ start: number; e
         : findRegexMatches(text, value, rule.caseSensitive, rule.ignoreAccents, rule.allowSubwords);
     matches.push(...ranges);
   }
+  matches.push(...findPresetMatches(text, presetKeys));
   return mergeRanges(matches);
+}
+
+
+function findPresetMatches(text: string, presetKeys: PresetKey[]) {
+  const ranges: Array<{ start: number; end: number }> = [];
+
+  for (const key of presetKeys) {
+    let regex: RegExp;
+    if (key === "email") {
+      regex = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/gi;
+    } else if (key === "phone") {
+      regex = /\b(?:\+|00)?\s*(?:\d[\s().-]?){6,20}\d\b/gi;
+    } else {
+      regex = /\b(?:\d[ -]*?){13,19}\b/gi;
+    }
+
+    for (const match of text.matchAll(regex)) {
+      if (typeof match.index !== "number") continue;
+      const value = match[0] ?? "";
+      if (!value) continue;
+      ranges.push({ start: match.index, end: match.index + value.length });
+    }
+  }
+
+  return ranges;
 }
 
 function findExactMatches(
