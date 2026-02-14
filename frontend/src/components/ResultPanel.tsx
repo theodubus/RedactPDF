@@ -2,7 +2,6 @@ import { JsonBlock } from "./JsonBlock";
 
 export function ResultPanel(props: {
   t: (k: string) => string;
-  hintText: string;
   successInfo: {
     auditStatus?: string;
     auditMatches?: string;
@@ -15,7 +14,7 @@ export function ResultPanel(props: {
   errorInfo: { status?: number; report?: unknown; rawMessage?: string } | null;
   onDownload: () => void;
 }) {
-  const { t, hintText, successInfo, errorInfo, onDownload } = props;
+  const { t, successInfo, errorInfo, onDownload } = props;
 
   if (successInfo) {
     return (
@@ -86,5 +85,5 @@ export function ResultPanel(props: {
     );
   }
 
-  return <div className="muted">{hintText}</div>;
+  return null;
 }
