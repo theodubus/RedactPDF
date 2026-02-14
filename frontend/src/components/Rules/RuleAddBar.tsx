@@ -1,8 +1,5 @@
-import type { RuleKind } from "../../types/uiRules";
-
 export function RuleAddBar(props: {
   t: (k: string) => string;
-  kind: RuleKind;
   value: string;
   onChangeValue: (v: string) => void;
   placeholder: string;
