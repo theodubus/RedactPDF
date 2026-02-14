@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { UiRule } from "../types/uiRules";
+import type { UiRect, UiRule } from "../types/uiRules";
 
 type PdfViewport = {
   width: number;
@@ -50,8 +50,9 @@ export function PdfViewer(props: {
   file: File;
   rules: UiRule[];
   t: (k: string) => string;
+  onSelectionChange: (selection: { text: string; rects: UiRect[] } | null) => void;
 }) {
-  const { file, rules, t } = props;
+  const { file, rules, t, onSelectionChange } = props;
 
   const [pdfDoc, setPdfDoc] = useState<PdfDocumentProxy | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -62,6 +63,7 @@ export function PdfViewer(props: {
   const canvasRefs = useRef<Array<HTMLCanvasElement | null>>([]);
   const textLayerRefs = useRef<Array<HTMLDivElement | null>>([]);
   const previewLayerRefs = useRef<Array<HTMLDivElement | null>>([]);
+  const pageScalesRef = useRef<Array<number>>([]);
   const pdfjsRef = useRef<PdfJsLib | null>(null);
 
   useEffect(() => {
@@ -84,6 +86,8 @@ export function PdfViewer(props: {
     let active = true;
     let loadedDoc: PdfDocumentProxy | null = null;
 
+    onSelectionChange(null);
+    pageScalesRef.current = [];
     setPdfDoc(null);
     setError(null);
     setIsLoading(true);
@@ -115,7 +119,7 @@ export function PdfViewer(props: {
       active = false;
       if (loadedDoc) loadedDoc.destroy();
     };
-  }, [file, t]);
+  }, [file, onSelectionChange, t]);
 
   const pageNumbers = useMemo(() => {
     if (!pdfDoc) return [];
@@ -136,6 +140,8 @@ export function PdfViewer(props: {
         const baseViewport = page.getViewport({ scale: 1 });
         const scale = containerWidth / baseViewport.width;
         const viewport = page.getViewport({ scale });
+
+        pageScalesRef.current[pageNumber - 1] = scale;
 
         const canvas = canvasRefs.current[pageNumber - 1];
         const textLayer = textLayerRefs.current[pageNumber - 1];
@@ -179,7 +185,7 @@ export function PdfViewer(props: {
           viewport,
         });
         await textLayerTask.render();
-        applyPreviewHighlights(textLayer, previewLayer, rules);
+        applyPreviewHighlights(textLayer, previewLayer, rules, pageNumber - 1, scale);
       }
     })();
 
@@ -191,10 +197,79 @@ export function PdfViewer(props: {
   useEffect(() => {
     for (const [index, textLayer] of textLayerRefs.current.entries()) {
       const previewLayer = previewLayerRefs.current[index];
+      const scale = pageScalesRef.current[index] ?? 1;
       if (!textLayer || !previewLayer) continue;
-      applyPreviewHighlights(textLayer, previewLayer, rules);
+      applyPreviewHighlights(textLayer, previewLayer, rules, index, scale);
     }
   }, [rules]);
+
+  useEffect(() => {
+    const computeSelection = () => {
+      const selection = window.getSelection();
+      if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
+        onSelectionChange(null);
+        return;
+      }
+
+      const selectedText = selection.toString().trim();
+      if (!selectedText) {
+        onSelectionChange(null);
+        return;
+      }
+
+      const range = selection.getRangeAt(0);
+      const anchorNode = range.commonAncestorContainer;
+      if (!anchorNode) {
+        onSelectionChange(null);
+        return;
+      }
+
+      const pageIndex = textLayerRefs.current.findIndex((layer) => layer?.contains(anchorNode) ?? false);
+      if (pageIndex < 0) {
+        onSelectionChange(null);
+        return;
+      }
+
+      const textLayer = textLayerRefs.current[pageIndex];
+      const scale = pageScalesRef.current[pageIndex] ?? 1;
+      if (!textLayer || scale <= 0) {
+        onSelectionChange(null);
+        return;
+      }
+
+      const layerBounds = textLayer.getBoundingClientRect();
+      const rects: UiRect[] = [];
+
+      for (const rect of range.getClientRects()) {
+        const localLeft = rect.left - layerBounds.left;
+        const localRight = rect.right - layerBounds.left;
+        const localTop = rect.top - layerBounds.top;
+        const localBottom = rect.bottom - layerBounds.top;
+
+        if (localRight <= localLeft || localBottom <= localTop) continue;
+
+        rects.push({
+          page: pageIndex,
+          x0: localLeft / scale,
+          y0: localTop / scale,
+          x1: localRight / scale,
+          y1: localBottom / scale,
+        });
+      }
+
+      if (rects.length === 0) {
+        onSelectionChange(null);
+        return;
+      }
+
+      onSelectionChange({ text: selectedText, rects });
+    };
+
+    document.addEventListener("selectionchange", computeSelection);
+    return () => {
+      document.removeEventListener("selectionchange", computeSelection);
+    };
+  }, [onSelectionChange]);
 
   if (error) {
     return <div className="pdfViewerMessage bad">{error}</div>;
@@ -236,9 +311,10 @@ function applyPreviewHighlights(
   textLayer: HTMLDivElement,
   previewLayer: HTMLDivElement,
   rules: UiRule[],
+  pageIndex: number,
+  scale: number,
 ) {
   previewLayer.replaceChildren();
-  if (!rules.length) return;
 
   const layerBounds = textLayer.getBoundingClientRect();
   if (!layerBounds.width || !layerBounds.height) return;
@@ -260,27 +336,53 @@ function applyPreviewHighlights(
       range.setEnd(textNode, rangeDef.end);
 
       for (const rect of range.getClientRects()) {
-        const width = rect.width;
-        const height = rect.height;
-        if (!width || !height) continue;
-
-        const highlight = document.createElement("div");
-        highlight.className = "redactionPreviewRect";
-        highlight.style.left = `${rect.left - layerBounds.left}px`;
-        highlight.style.top = `${rect.top - layerBounds.top}px`;
-        highlight.style.width = `${width}px`;
-        highlight.style.height = `${height}px`;
-        previewLayer.appendChild(highlight);
+        drawPreviewRect(previewLayer, {
+          left: rect.left - layerBounds.left,
+          top: rect.top - layerBounds.top,
+          width: rect.width,
+          height: rect.height,
+        });
       }
 
       range.detach();
     }
   }
+
+  const selectionRules = rules.filter((r): r is Extract<UiRule, { kind: "selection" }> => r.kind === "selection");
+  for (const selectionRule of selectionRules) {
+    for (const rect of selectionRule.rects) {
+      if (rect.page !== pageIndex) continue;
+      drawPreviewRect(previewLayer, {
+        left: rect.x0 * scale,
+        top: rect.y0 * scale,
+        width: (rect.x1 - rect.x0) * scale,
+        height: (rect.y1 - rect.y0) * scale,
+      });
+    }
+  }
+}
+
+function drawPreviewRect(
+  previewLayer: HTMLDivElement,
+  rect: { left: number; top: number; width: number; height: number },
+) {
+  const width = rect.width;
+  const height = rect.height;
+  if (!width || !height) return;
+
+  const highlight = document.createElement("div");
+  highlight.className = "redactionPreviewRect";
+  highlight.style.left = `${rect.left}px`;
+  highlight.style.top = `${rect.top}px`;
+  highlight.style.width = `${width}px`;
+  highlight.style.height = `${height}px`;
+  previewLayer.appendChild(highlight);
 }
 
 function collectMatches(text: string, rules: UiRule[]): Array<{ start: number; end: number }> {
   const matches: Array<{ start: number; end: number }> = [];
   for (const rule of rules) {
+    if (rule.kind === "selection") continue;
     const value = rule.value.trim();
     if (!value) continue;
     const ranges =
