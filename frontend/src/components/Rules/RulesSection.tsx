@@ -49,6 +49,14 @@ export function RulesSection(props: {
   };
 
 
+  const resetDraftOptions = () => {
+    setDraftKind("exact");
+    setDraftCaseSensitive(false);
+    setDraftMultiline(false);
+    setDraftAllowSubwords(false);
+    setDraftIgnoreAccents(true);
+  };
+
   const [editingId, setEditingId] = useState<string | null>(null);
   const editingRule = useMemo(
     () => (editingId ? rules.find((r) => r.id === editingId && r.kind !== "selection") ?? null : null),
