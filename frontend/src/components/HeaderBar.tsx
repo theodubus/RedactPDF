@@ -2,14 +2,20 @@ export function HeaderBar(props: {
   lang: "fr" | "en";
   setLang: (l: "fr" | "en") => void;
   t: (k: string) => string;
+  fileName?: string;
+  onChangeFile?: () => void;
 }) {
-  const { lang, setLang, t } = props;
+  const { lang, setLang, t, fileName, onChangeFile } = props;
 
   return (
-    <header className="header">
-      <div className="headerLeft">
-        <div className="title">{t("app.title")}</div>
-        <div className="subtitle">{t("app.subtitle")}</div>
+    <header className="topBand">
+      <div className="topBandLeft">
+        {onChangeFile ? (
+          <button type="button" className="pill" onClick={onChangeFile}>
+            {t("form.file.change")}
+          </button>
+        ) : null}
+        {fileName ? <div className="topBandFileName">{fileName}</div> : null}
       </div>
 
       <div className="headerRight">
