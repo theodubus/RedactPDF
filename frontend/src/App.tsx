@@ -29,6 +29,7 @@ export default function App() {
   const [file, setFile] = useState<File | null>(null);
   const [rules, setRules] = useState<UiRule[]>([]);
   const [pendingSelection, setPendingSelection] = useState<PendingSelection | null>(null);
+  const [currentPage, setCurrentPage] = useState<number | null>(null);
   const [presets, setPresets] = useState<Record<PresetKey, boolean>>(EMPTY_PRESETS);
   const [isDragOver, setIsDragOver] = useState(false);
 
@@ -79,10 +80,12 @@ export default function App() {
   }, [rules]);
 
   const rectsForApi = useMemo(() => {
-    return rules.flatMap((r) => (r.kind === "selection" ? r.rects : []));
+    return rules.flatMap((r) => (r.kind === "selection" ? r.rects : r.kind === "page" ? [r.rect] : []));
   }, [rules]);
 
   const hasAnythingToDo = rules.length > 0 || selectedPresets.length > 0;
+
+  const hasFullPageRule = useMemo(() => rules.some((r) => r.kind === "page"), [rules]);
 
   const loadPdfFile = (pickedFile: File | null) => {
     clearNotices();
@@ -90,6 +93,7 @@ export default function App() {
     if (!pickedFile) {
       setFile(null);
       setPendingSelection(null);
+      setCurrentPage(null);
       return;
     }
 
@@ -97,12 +101,14 @@ export default function App() {
       pickedFile.type === "application/pdf" || pickedFile.name.toLowerCase().endsWith(".pdf");
     if (!isPdf) {
       setFile(null);
+      setCurrentPage(null);
       setErrorInfo({ rawMessage: t("form.file.invalidType") });
       return;
     }
 
     setFile(pickedFile);
     setPendingSelection(null);
+    setCurrentPage(1);
     setRules([]);
     setPresets(EMPTY_PRESETS);
   };
@@ -135,6 +141,31 @@ export default function App() {
     setPendingSelection(null);
   };
 
+
+  const addCurrentPageRule = () => {
+    if (!currentPage) return;
+    clearNotices();
+
+    const exists = rules.some((rule) => rule.kind === "page" && rule.pageNumber === currentPage);
+    if (exists) return;
+
+    const newRule: UiRule = {
+      id: newId(),
+      kind: "page",
+      value: `${t("rules.page.title")} ${currentPage}`,
+      pageNumber: currentPage,
+      rect: {
+        page: currentPage - 1,
+        x0: 0,
+        y0: 0,
+        x1: Number.MAX_SAFE_INTEGER,
+        y1: Number.MAX_SAFE_INTEGER,
+      },
+    };
+
+    setRules((prev) => [...prev, newRule]);
+  };
+
   const handleSubmit: React.FormEventHandler<HTMLFormElement> = async (e) => {
     e.preventDefault();
     setErrorInfo(null);
@@ -157,6 +188,8 @@ export default function App() {
         rects: rectsForApi,
         rules: rulesForApi,
         presets: selectedPresets,
+        applyImages: hasFullPageRule,
+        applyGraphics: hasFullPageRule,
       });
 
       downloadBlob(r.pdfBlob, "redacted.pdf");
@@ -192,6 +225,7 @@ export default function App() {
               presetKeys={selectedPresets}
               t={t}
               onSelectionChange={setPendingSelection}
+              onCurrentPageChange={setCurrentPage}
             />
           ) : (
             <div
@@ -231,6 +265,8 @@ export default function App() {
               pendingSelectionText={pendingSelection?.text ?? ""}
               canAddSelection={!!pendingSelection && pendingSelection.rects.length > 0}
               onAddSelection={addPendingSelection}
+              canCensorPage={!!currentPage}
+              onCensorPage={addCurrentPageRule}
             />
 
             <PresetsSection t={t} presets={presets} togglePreset={togglePreset} />

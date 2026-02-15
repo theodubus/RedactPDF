@@ -70,6 +70,8 @@ export async function redactApply(params: {
   rects: RectInput[];
   rules: RuleInput[];
   presets: PresetKey[];
+  applyImages?: boolean;
+  applyGraphics?: boolean;
 }): Promise<RedactSuccess> {
   const form = new FormData();
   form.append("file", params.file);
@@ -111,7 +113,10 @@ export async function redactApply(params: {
     searches,
     regexes,
     presets: hasPresets ? { presets: params.presets, scope: { pages: null as null } } : null,
-    options: {},
+    options: {
+      apply_images: !!params.applyImages,
+      apply_graphics: !!params.applyGraphics,
+    },
     // audit additionnel facultatif : on laisse null (audit_plan gère déjà search/regex/presets)
     audit: null,
   };

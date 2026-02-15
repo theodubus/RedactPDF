@@ -71,5 +71,7 @@
   "rules.options.summary": "Options",
   "rules.action.drawSelection": "Draw selection",
   "rules.action.censorPage": "Redact page",
-  "rules.option.respectAccents": "Respect accents"
+  "rules.option.respectAccents": "Respect accents",
+  "rules.badge.page": "Full page",
+  "rules.page.title": "Page"
 }
