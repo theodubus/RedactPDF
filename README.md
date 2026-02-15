@@ -6,7 +6,7 @@ Local, verifiable PDF redaction (removes content instead of masking).
 Install dev dependencies:
 ```bash
 pip install -e "backend[dev]"
-````
+```
 
 Run tests:
 
@@ -24,7 +24,7 @@ uvicorn app.main:app --reload
 
 ## Security
 
-See [docs/SECURITY.md](../docs/SECURITY.md).
+See [docs/SECURITY.md](docs/SECURITY.md).
 
 ## Fixtures
 
@@ -32,4 +32,4 @@ See [backend/tests/fixtures/README.md](backend/tests/fixtures/README.md).
 
 ## Testing
 
-See [docs/TESTING.md](../docs/TESTING.md).
+See [docs/TESTING.md](docs/TESTING.md).
