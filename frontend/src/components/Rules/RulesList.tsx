@@ -78,7 +78,7 @@ function RuleOptionPills(props: {
 export function RulesList(props: {
   t: (k: string) => string;
   rules: UiRule[];
-  kindLabel: (k: RuleKind | "selection") => string;
+  kindLabel: (k: RuleKind | "selection" | "page") => string;
   onEdit: (r: UiRule) => void;
   onDelete: (id: string) => void;
 }) {
@@ -138,11 +138,16 @@ export function RulesList(props: {
                   {kindLabel(r.kind)}
                 </div>
 
-                {r.kind !== "selection" ? <RuleOptionPills rule={r} t={t} /> : null}
+                {r.kind === "page" ? (
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 4 }}>
+                    <span style={optionPillStyle}>{`${t("rules.page.pill")} ${r.pageNumber}`}</span>
+                  </div>
+                ) : null}
+                {r.kind !== "selection" && r.kind !== "page" ? <RuleOptionPills rule={r} t={t} /> : null}
               </div>
 
               <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
-                {r.kind !== "selection" ? (
+                {r.kind !== "selection" && r.kind !== "page" ? (
                   <button
                     type="button"
                     style={actionButtonStyle}
