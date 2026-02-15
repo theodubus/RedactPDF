@@ -23,7 +23,7 @@ const optionPillStyle: CSSProperties = {
   background: "#f5f7ff",
   color: "#2f3f86",
   fontSize: 12,
-  fontWeight: 600,
+  fontWeight: 500,
   padding: "2px 8px",
   lineHeight: 1.2,
 };
@@ -62,7 +62,7 @@ function RuleOptionPills({ rule }: { rule: Extract<UiRule, { kind: "exact" | "re
   if (rule.allowSubwords) {
     pills.push(
       <span key="subword" style={optionPillStyle} title="Sous-mot">
-        sub<strong>word</strong>
+        sub<strong style={{ fontWeight: 800, color: "#1f2f6b" }}>word</strong>
       </span>
     );
   }
