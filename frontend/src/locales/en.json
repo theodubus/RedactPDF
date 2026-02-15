@@ -26,7 +26,6 @@
   "rules.option.multiline": "Multiline",
   "rules.options.label": "Options",
   "rules.option.subword": "Subword",
-  "rules.option.ignoreAccents": "Ignore accents",
   "rules.label.searchType": "Search type",
   "rules.label.options": "Options",
   "modal.edit.title": "Edit item",
@@ -71,5 +70,6 @@
   "rules.badge.request": "Request",
   "rules.options.summary": "Options",
   "rules.action.drawSelection": "Draw selection",
-  "rules.action.censorPage": "Redact page"
+  "rules.action.censorPage": "Redact page",
+  "rules.option.respectAccents": "Respect accents"
 }
