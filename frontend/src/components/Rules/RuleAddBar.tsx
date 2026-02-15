@@ -1,8 +1,5 @@
-import type { RuleKind } from "../../types/uiRules";
-
 export function RuleAddBar(props: {
   t: (k: string) => string;
-  kind: RuleKind;
   value: string;
   onChangeValue: (v: string) => void;
   placeholder: string;
@@ -28,7 +25,7 @@ export function RuleAddBar(props: {
         onKeyDown={onKeyDown}
         placeholder={placeholder}
         aria-label={t("rules.input.aria")}
-        style={{ flex: "1 1 auto", minWidth: 0, height: 48 }}
+        style={{ flex: "1 1 auto", minWidth: 0 }}
       />
 
       <button
@@ -38,10 +35,10 @@ export function RuleAddBar(props: {
         style={{
           flex: "0 0 auto",
           width: "auto",
-          height: 48,
           paddingInline: 14,
           fontSize: 13,
           whiteSpace: "nowrap",
+          marginTop: 0,
         }}
       >
         {t("rules.add")}
