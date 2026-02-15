@@ -3,7 +3,7 @@
     "Segoe UI Emoji";
   line-height: 1.4;
   color: #111;
-  background: #f6f7fb;
+  background: #edf2ff;
 }
 
 * { box-sizing: border-box; }
@@ -31,7 +31,7 @@ body,
 
 .topBand {
   padding: 10px 12px;
-  background: #fff;
+  background: linear-gradient(90deg, #1f2f6b 0%, #2f4aa0 100%);
   display: flex;
   justify-content: space-between;
   gap: 12px;
@@ -40,7 +40,7 @@ body,
   position: sticky;
   top: 0;
   z-index: 20;
-  border-bottom: 1px solid #d8dce8;
+  border-bottom: 1px solid #23346f;
 }
 
 .topBandLeft {
@@ -52,7 +52,7 @@ body,
 
 .topBandFileName {
   font-size: 14px;
-  color: #333;
+  color: #e5ebff;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -62,23 +62,30 @@ body,
 .headerRight { display: flex; gap: 8px; }
 
 .pill {
-  border: 1px solid #ddd;
-  background: #fff;
+  border: 1px solid #c4cce3;
+  background: #f8faff;
   padding: 6px 10px;
   border-radius: 999px;
   cursor: pointer;
+  font-weight: 500;
 }
 .pillActive {
-  border-color: #aaa;
+  border-color: #2f4aa0;
+  background: #dfe8ff;
+  color: #1f2f6b;
   font-weight: 700;
 }
+
+
+
+
 
 .mainColumns {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 420px;
   gap: 0;
   align-items: stretch;
-  background: #fff;
+  background: #f7f9ff;
   min-height: 0;
   height: 100%;
   overflow: hidden;
@@ -87,7 +94,7 @@ body,
 .viewerPane {
   min-height: 0;
   padding: 10px;
-  border-right: 1px solid #d8dce8;
+  border-right: 1px solid #d4dbf0;
   display: flex;
   overflow: auto;
 }
@@ -303,13 +310,13 @@ body,
 
 .input {
   width: 100%;
-  border: 1px solid #ddd;
+  border: 1px solid #cbd5ea;
   border-radius: 10px;
   padding: 10px 12px;
   outline: none;
 }
 .input:focus {
-  border-color: #aaa;
+  border-color: #5773cf;
 }
 
 .row {
@@ -337,7 +344,7 @@ body,
   border: 0;
   border-radius: 10px;
   padding: 10px 12px;
-  background: #111;
+  background: linear-gradient(90deg, #1b2f6d 0%, #2747a2 100%);
   color: #fff;
   cursor: pointer;
   font-weight: 700;
@@ -350,7 +357,7 @@ body,
 .buttonSecondary {
   margin-top: 10px;
   width: 100%;
-  border: 1px solid #ddd;
+  border: 1px solid #cbd5ea;
   border-radius: 10px;
   padding: 10px 12px;
   background: #fff;
