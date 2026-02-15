@@ -136,13 +136,13 @@ export function RulesSection(props: {
               onAddSelection();
             }}
             title={pendingSelectionText}
-            style={{ height: 42 }}
           >
             {t("rules.selection.add")}
           </button>
 
-          <div className="muted" style={{ marginTop: 6 }}>
-            {t("rules.selection.current")}: <strong>{summarizeSelection(pendingSelectionText)}</strong>
+          <div className="selectionInfoSlot" aria-live="polite">
+            <div className="selectionInfoLabel">{t("rules.selection.current")}</div>
+            <div className="selectionInfoValue">{summarizeSelection(pendingSelectionText)}</div>
           </div>
         </>
       ) : (

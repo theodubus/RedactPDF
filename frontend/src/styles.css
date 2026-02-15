@@ -115,8 +115,43 @@ body,
 .section { margin-bottom: 14px; }
 
 
+
+.selectionInfoSlot {
+  margin-top: 6px;
+  min-height: 44px;
+  max-height: 44px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid #e1e6f3;
+  background: #f7f9ff;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  overflow: hidden;
+}
+
+.selectionInfoLabel {
+  color: #4b5563;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.selectionInfoValue {
+  color: #111827;
+  font-size: 13px;
+  line-height: 1.2;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  word-break: break-word;
+}
+
 .optionsSummary {
   margin-top: 6px;
+  min-height: 44px;
   padding: 6px 8px;
   border-radius: 8px;
   color: #4b5563;
