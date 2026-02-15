@@ -14,10 +14,10 @@ function kindLabel(t: (k: string) => string, kind: RuleKind | "selection") {
 
 function summarizeSelection(text: string) {
   const clean = text.trim();
-  const maxLen = 40;
+  const maxLen = 80;
   if (clean.length <= maxLen) return clean;
-  const keep = 14;
-  return `${clean.slice(0, keep)} ... ${clean.slice(-keep)}`;
+  const keep = 35;
+  return `${clean.slice(0, keep)} [...] ${clean.slice(-keep)}`;
 }
 
 export function RulesSection(props: {
