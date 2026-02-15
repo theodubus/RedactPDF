@@ -37,6 +37,10 @@ def _tighten_rect_vertical(rect: pymupdf.Rect) -> pymupdf.Rect:
     if h <= 0:
         return rect
 
+    # Les zones volumineuses (ex: page complète) ne doivent pas être compressées verticalement.
+    if h > 24.0:
+        return rect
+
     target = h * 0.60
     if target < 3.0:
         target = 3.0

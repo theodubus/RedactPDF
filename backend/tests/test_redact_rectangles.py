@@ -130,3 +130,32 @@ def test_redaction_does_not_modify_original_fixture_on_disk() -> None:
     after_bytes = SECRET_FIXTURE.read_bytes()
     assert before_bytes == after_bytes, "Fixture PDF on disk must remain byte-identical"
     assert SECRET in extract_text(after_bytes), "Original must still contain the secret"
+
+
+@pytest.mark.integration
+def test_redact_rectangles_full_page_rect_redacts_target() -> None:
+    pdf_in = SECRET_FIXTURE.read_bytes()
+    original_text = extract_text(pdf_in)
+    assert SECRET in original_text
+
+    doc = pymupdf.open(stream=pdf_in, filetype="pdf")
+    try:
+        page = doc[0]
+        bounds = page.rect
+        full_page_rect = {"page": 0, "x0": bounds.x0, "y0": bounds.y0, "x1": bounds.x1, "y1": bounds.y1}
+    finally:
+        doc.close()
+
+    payload = make_payload([full_page_rect], patterns=[SECRET])
+
+    resp = CLIENT.post(
+        "/redact/rectangles",
+        files={"file": ("input.pdf", pdf_in, "application/pdf")},
+        data={"payload": json.dumps(payload)},
+    )
+
+    assert resp.status_code == 200
+    assert resp.headers.get("x-redaction-audit-status") == "pass"
+
+    out_text = extract_text(resp.content)
+    assert SECRET not in out_text

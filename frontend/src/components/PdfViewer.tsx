@@ -53,8 +53,10 @@ export function PdfViewer(props: {
   presetKeys: PresetKey[];
   t: (k: string) => string;
   onSelectionChange: (selection: { text: string; rects: UiRect[] } | null) => void;
+  onCurrentPageChange: (pageNumber: number | null) => void;
+  onPageSizeChange: (pageNumber: number, size: { width: number; height: number }) => void;
 }) {
-  const { file, rules, presetKeys, t, onSelectionChange } = props;
+  const { file, rules, presetKeys, t, onSelectionChange, onCurrentPageChange, onPageSizeChange } = props;
 
   const [pdfDoc, setPdfDoc] = useState<PdfDocumentProxy | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -65,6 +67,7 @@ export function PdfViewer(props: {
   const canvasRefs = useRef<Array<HTMLCanvasElement | null>>([]);
   const textLayerRefs = useRef<Array<HTMLDivElement | null>>([]);
   const previewLayerRefs = useRef<Array<HTMLDivElement | null>>([]);
+  const pageRefs = useRef<Array<HTMLDivElement | null>>([]);
   const pageScalesRef = useRef<Array<number>>([]);
   const pdfjsRef = useRef<PdfJsLib | null>(null);
 
@@ -89,6 +92,7 @@ export function PdfViewer(props: {
     let loadedDoc: PdfDocumentProxy | null = null;
 
     onSelectionChange(null);
+    onCurrentPageChange(null);
     pageScalesRef.current = [];
     setPdfDoc(null);
     setError(null);
@@ -109,6 +113,7 @@ export function PdfViewer(props: {
         }
 
         setPdfDoc(doc);
+        onCurrentPageChange(1);
       } catch {
         if (!active) return;
         setError(t("viewer.error.load"));
@@ -121,7 +126,7 @@ export function PdfViewer(props: {
       active = false;
       if (loadedDoc) loadedDoc.destroy();
     };
-  }, [file, onSelectionChange]);
+  }, [file, onSelectionChange, onCurrentPageChange]);
 
   const pageNumbers = useMemo(() => {
     if (!pdfDoc) return [];
@@ -140,6 +145,7 @@ export function PdfViewer(props: {
 
         const page = await pdfDoc.getPage(pageNumber);
         const baseViewport = page.getViewport({ scale: 1 });
+        onPageSizeChange(pageNumber, { width: baseViewport.width, height: baseViewport.height });
         const scale = containerWidth / baseViewport.width;
         const viewport = page.getViewport({ scale });
 
@@ -194,7 +200,7 @@ export function PdfViewer(props: {
     return () => {
       cancelled = true;
     };
-  }, [pdfDoc, pageNumbers, containerWidth, rules, presetKeys]);
+  }, [pdfDoc, pageNumbers, containerWidth, rules, presetKeys, onPageSizeChange]);
 
   useEffect(() => {
     for (const [index, textLayer] of textLayerRefs.current.entries()) {
@@ -204,6 +210,37 @@ export function PdfViewer(props: {
       applyPreviewHighlights(textLayer, previewLayer, rules, presetKeys, index, scale);
     }
   }, [rules, presetKeys]);
+
+  useEffect(() => {
+    if (!containerRef.current || pageNumbers.length === 0) return;
+
+    const container = containerRef.current;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        let bestPage: number | null = null;
+        let bestRatio = 0;
+
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          const page = Number((entry.target as HTMLElement).dataset.pageNumber ?? "0");
+          if (!page) continue;
+          if (entry.intersectionRatio > bestRatio) {
+            bestRatio = entry.intersectionRatio;
+            bestPage = page;
+          }
+        }
+
+        if (bestPage) onCurrentPageChange(bestPage);
+      },
+      { root: container, threshold: [0.25, 0.5, 0.75] },
+    );
+
+    for (const pageEl of pageRefs.current) {
+      if (pageEl) observer.observe(pageEl);
+    }
+
+    return () => observer.disconnect();
+  }, [pageNumbers, onCurrentPageChange]);
 
   useEffect(() => {
     const computeSelection = () => {
@@ -265,13 +302,14 @@ export function PdfViewer(props: {
       }
 
       onSelectionChange({ text: selectedText, rects });
+      onCurrentPageChange(pageIndex + 1);
     };
 
     document.addEventListener("selectionchange", computeSelection);
     return () => {
       document.removeEventListener("selectionchange", computeSelection);
     };
-  }, [onSelectionChange]);
+  }, [onSelectionChange, onCurrentPageChange]);
 
   if (error) {
     return <div className="pdfViewerMessage bad">{error}</div>;
@@ -283,7 +321,14 @@ export function PdfViewer(props: {
 
       <div className="pdfCanvasStack" aria-live="polite">
         {pageNumbers.map((pageNumber) => (
-          <div key={pageNumber} className="pdfPage">
+          <div
+            key={pageNumber}
+            className="pdfPage"
+            data-page-number={pageNumber}
+            ref={(el) => {
+              pageRefs.current[pageNumber - 1] = el;
+            }}
+          >
             <canvas
               className="pdfCanvas"
               ref={(el) => {
@@ -355,6 +400,17 @@ function applyPreviewHighlights(
     highlightPhonePresetMatches(textLayer, previewLayer, layerBounds);
   }
 
+  const pageRules = rules.filter((r): r is Extract<UiRule, { kind: "page" }> => r.kind === "page");
+  for (const pageRule of pageRules) {
+    if (pageRule.pageNumber !== pageIndex + 1) continue;
+    drawPreviewRect(previewLayer, {
+      left: 0,
+      top: 0,
+      width: layerBounds.width,
+      height: layerBounds.height,
+    });
+  }
+
   const selectionRules = rules.filter((r): r is Extract<UiRule, { kind: "selection" }> => r.kind === "selection");
   for (const selectionRule of selectionRules) {
     for (const rect of selectionRule.rects) {
@@ -393,7 +449,7 @@ function collectMatches(
 ): Array<{ start: number; end: number }> {
   const matches: Array<{ start: number; end: number }> = [];
   for (const rule of rules) {
-    if (rule.kind === "selection") continue;
+    if (rule.kind === "selection" || rule.kind === "page") continue;
     const value = rule.value.trim();
     if (!value) continue;
     const ranges =
