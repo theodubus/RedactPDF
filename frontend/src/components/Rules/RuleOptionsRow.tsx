@@ -23,7 +23,7 @@ function OptionPill(props: { active: boolean; label: string; onClick: () => void
   return (
     <button
       type="button"
-      className={props.active ? "pill pillActive" : "pill"}
+      className={props.active ? "pill ruleOptionPill ruleOptionPillActive" : "pill ruleOptionPill"}
       onClick={props.onClick}
       aria-pressed={props.active}
       disabled={props.disabled}
@@ -64,8 +64,8 @@ export function RuleOptionsRow({
         onClick={() => setAllowSubwords(!allowSubwords)}
       />
       <OptionPill
-        active={ignoreAccents}
-        label={t("rules.option.ignoreAccents")}
+        active={!ignoreAccents}
+        label={t("rules.option.respectAccents")}
         onClick={() => setIgnoreAccents(!ignoreAccents)}
       />
       <OptionPill
