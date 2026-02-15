@@ -25,7 +25,7 @@ export function RuleAddBar(props: {
         onKeyDown={onKeyDown}
         placeholder={placeholder}
         aria-label={t("rules.input.aria")}
-        style={{ flex: "1 1 auto", minWidth: 0, height: 48 }}
+        style={{ flex: "1 1 auto", minWidth: 0, height: 42 }}
       />
 
       <button
@@ -35,7 +35,7 @@ export function RuleAddBar(props: {
         style={{
           flex: "0 0 auto",
           width: "auto",
-          height: 48,
+          height: 42,
           paddingInline: 14,
           fontSize: 13,
           whiteSpace: "nowrap",

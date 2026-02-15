@@ -96,6 +96,20 @@ body,
   padding: 10px;
   overflow: hidden;
   overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.toolsPaneContent {
+  min-height: 0;
+  overflow: auto;
+  padding-bottom: 10px;
+}
+
+.toolsSubmitButton {
+  margin-top: auto;
+  flex: 0 0 auto;
 }
 
 .section { margin-bottom: 14px; }

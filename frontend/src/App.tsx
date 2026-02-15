@@ -222,22 +222,50 @@ export default function App() {
         </section>
 
         <aside className="toolsPane">
-          <RulesSection
-            t={t}
-            rules={rules}
-            setRules={setRules}
-            onUserChange={clearNotices}
-            pendingSelectionText={pendingSelection?.text ?? ""}
-            canAddSelection={!!pendingSelection && pendingSelection.rects.length > 0}
-            onAddSelection={addPendingSelection}
-          />
+          <div className="toolsPaneContent">
+            <RulesSection
+              t={t}
+              rules={rules}
+              setRules={setRules}
+              onUserChange={clearNotices}
+              pendingSelectionText={pendingSelection?.text ?? ""}
+              canAddSelection={!!pendingSelection && pendingSelection.rects.length > 0}
+              onAddSelection={addPendingSelection}
+            />
+          ) : (
+            <div
+              className={`uploadDropZone ${isDragOver ? "uploadDropZoneActive" : ""}`.trim()}
+              onDragOver={(e) => {
+                e.preventDefault();
+                setIsDragOver(true);
+              }}
+              onDragLeave={() => setIsDragOver(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setIsDragOver(false);
+                loadPdfFile(e.dataTransfer.files?.[0] ?? null);
+              }}
+            >
+              <div className="sectionTitle">{t("viewer.drop.title")}</div>
+              <p className="muted">{t("viewer.drop.body")}</p>
+              <button
+                type="button"
+                className="button"
+                style={{ width: "min(260px, 100%)" }}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                {t("form.file.choose")}
+              </button>
+            </div>
+          )}
+        </section>
 
-          <PresetsSection t={t} presets={presets} togglePreset={togglePreset} />
+            <PresetsSection t={t} presets={presets} togglePreset={togglePreset} />
+          </div>
 
-          <button className="button" type="submit" disabled={submitting}>
+          <button className="button toolsSubmitButton" type="submit" disabled={submitting}>
             {submitting ? t("form.submitting") : t("form.submit")}
           </button>
-
         </aside>
       </form>
 

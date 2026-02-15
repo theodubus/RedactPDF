@@ -130,12 +130,13 @@ export function RulesSection(props: {
         <>
           <button
             type="button"
-            className="buttonSecondary"
+            className="buttonSecondary buttonInline"
             onClick={() => {
               onUserChange();
               onAddSelection();
             }}
             title={pendingSelectionText}
+            style={{ height: 42 }}
           >
             {t("rules.selection.add")}
           </button>
@@ -158,7 +159,7 @@ export function RulesSection(props: {
             onKeyDown={onDraftKeyDown}
           />
 
-          <details open style={{ marginTop: 4 }}>
+          <details style={{ marginTop: 4 }}>
             <summary className="optionsSummary">{t("rules.options.summary")}</summary>
             <RuleOptionsRow
               kind={draftKind}
