@@ -87,7 +87,7 @@ export function RulesList(props: {
         border: "1px solid rgba(47,63,134,0.16)",
         borderRadius: 12,
         padding: 10,
-        height: 300,
+        height: 270,
         overflowY: "auto",
         overflowX: "hidden",
         background: "rgba(255,255,255,0.75)",
