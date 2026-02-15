@@ -23,7 +23,7 @@ function OptionPill(props: { active: boolean; label: string; onClick: () => void
   return (
     <button
       type="button"
-      className={props.active ? "pill optionTogglePill optionTogglePillActive" : "pill optionTogglePill"}
+      className={props.active ? "pill ruleOptionPill ruleOptionPillActive" : "pill ruleOptionPill"}
       onClick={props.onClick}
       aria-pressed={props.active}
       disabled={props.disabled}
