@@ -14,9 +14,9 @@ function kindLabel(t: (k: string) => string, kind: RuleKind | "selection") {
 
 function summarizeSelection(text: string) {
   const clean = text.trim();
-  const maxLen = 80;
+  const maxLen = 105;
   if (clean.length <= maxLen) return clean;
-  const keep = 35;
+  const keep = 45;
   return `${clean.slice(0, keep)} [...] ${clean.slice(-keep)}`;
 }
 
