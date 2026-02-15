@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import { useI18n } from "./i18n";
 import { redactApply } from "./api";
 import type { PresetKey, RuleInput } from "./api";
@@ -87,6 +87,14 @@ export default function App() {
   const hasAnythingToDo = rules.length > 0 || selectedPresets.length > 0;
 
   const hasFullPageRule = useMemo(() => rules.some((r) => r.kind === "page"), [rules]);
+
+  const handlePageSizeChange = useCallback((pageNumber: number, size: { width: number; height: number }) => {
+    setPageSizes((prev) => {
+      const existing = prev[pageNumber];
+      if (existing && existing.width === size.width && existing.height === size.height) return prev;
+      return { ...prev, [pageNumber]: size };
+    });
+  }, []);
 
   const loadPdfFile = (pickedFile: File | null) => {
     clearNotices();
@@ -235,13 +243,7 @@ export default function App() {
               t={t}
               onSelectionChange={setPendingSelection}
               onCurrentPageChange={setCurrentPage}
-              onPageSizeChange={(pageNumber, size) => {
-                setPageSizes((prev) => {
-                  const existing = prev[pageNumber];
-                  if (existing && existing.width === size.width && existing.height === size.height) return prev;
-                  return { ...prev, [pageNumber]: size };
-                });
-              }}
+              onPageSizeChange={handlePageSizeChange}
             />
           ) : (
             <div
