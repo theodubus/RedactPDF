@@ -141,8 +141,8 @@ export function RulesSection(props: {
           </button>
 
           <div className="selectionInfoSlot" aria-live="polite">
-            <div className="selectionInfoLabel">{t("rules.selection.current")}</div>
-            <div className="selectionInfoValue">{summarizeSelection(pendingSelectionText)}</div>
+            <span className="selectionInfoLabel">{t("rules.selection.current")}: </span>
+            <span className="selectionInfoValue">{summarizeSelection(pendingSelectionText)}</span>
           </div>
         </>
       ) : (
