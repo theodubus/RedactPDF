@@ -37,7 +37,7 @@ export function RulesSection(props: {
   const [draftCaseSensitive, setDraftCaseSensitive] = useState(false);
   const [draftMultiline, setDraftMultiline] = useState(false);
   const [draftAllowSubwords, setDraftAllowSubwords] = useState(false);
-  const [draftIgnoreAccents, setDraftIgnoreAccents] = useState(true);
+  const [draftIgnoreAccents, setDraftIgnoreAccents] = useState(false);
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const editingRule = useMemo(
@@ -90,7 +90,7 @@ export function RulesSection(props: {
     setDraftCaseSensitive(false);
     setDraftMultiline(false);
     setDraftAllowSubwords(false);
-    setDraftIgnoreAccents(true);
+    setDraftIgnoreAccents(false);
   };
 
   const deleteRule = (id: string) => {
