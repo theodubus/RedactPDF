@@ -75,7 +75,7 @@ body,
 
 .mainColumns {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 360px;
+  grid-template-columns: minmax(0, 1fr) 420px;
   gap: 0;
   align-items: stretch;
   background: #fff;
@@ -308,6 +308,26 @@ body,
   background: #fff;
   cursor: pointer;
   font-weight: 700;
+}
+
+
+.buttonInline {
+  margin-top: 0;
+}
+
+.buttonStretch {
+  width: 100%;
+  margin-top: 0;
+}
+
+.modalActions {
+  display: flex;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.modalActions > button {
+  flex: 1 1 0;
 }
 
 .resultTitle {

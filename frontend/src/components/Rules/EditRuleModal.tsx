@@ -137,7 +137,7 @@ export function EditRuleModal(props: {
           )}
         </div>
 
-        <details style={{ marginTop: 10 }}>
+        <details open style={{ marginTop: 10 }}>
           <summary className="optionsSummary">{t("rules.options.summary")}</summary>
           <RuleOptionsRow
             kind={editKind}
@@ -158,7 +158,7 @@ export function EditRuleModal(props: {
           />
         </details>
 
-        <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
+        <div className="modalActions">
           <button type="button" className="buttonSecondary buttonStretch" onClick={onClose}>
             {t("modal.cancel")}
           </button>

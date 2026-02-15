@@ -37,7 +37,7 @@ export function RulesSection(props: {
   const [draftCaseSensitive, setDraftCaseSensitive] = useState(false);
   const [draftMultiline, setDraftMultiline] = useState(false);
   const [draftAllowSubwords, setDraftAllowSubwords] = useState(false);
-  const [draftIgnoreAccents, setDraftIgnoreAccents] = useState(false);
+  const [draftIgnoreAccents, setDraftIgnoreAccents] = useState(true);
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const editingRule = useMemo(
@@ -85,7 +85,12 @@ export function RulesSection(props: {
           };
 
     setRules((prev) => [...prev, rule]);
+    setDraftKind("exact");
     setDraftValue("");
+    setDraftCaseSensitive(false);
+    setDraftMultiline(false);
+    setDraftAllowSubwords(false);
+    setDraftIgnoreAccents(true);
   };
 
   const deleteRule = (id: string) => {
@@ -153,7 +158,7 @@ export function RulesSection(props: {
             onKeyDown={onDraftKeyDown}
           />
 
-          <details style={{ marginTop: 4 }}>
+          <details open style={{ marginTop: 4 }}>
             <summary className="optionsSummary">{t("rules.options.summary")}</summary>
             <RuleOptionsRow
               kind={draftKind}
