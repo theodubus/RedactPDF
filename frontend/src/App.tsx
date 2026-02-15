@@ -150,7 +150,7 @@ export default function App() {
     const newRule: UiRule = {
       id: newId(),
       kind: "page",
-      value: `${t("rules.badge.page")} ${currentPage}`,
+      value: `${t("rules.page.title")} ${currentPage}`,
       pageNumber: currentPage,
       rect: {
         page: currentPage - 1,

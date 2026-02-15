@@ -138,11 +138,6 @@ export function RulesList(props: {
                   {kindLabel(r.kind)}
                 </div>
 
-                {r.kind === "page" ? (
-                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 4 }}>
-                    <span style={optionPillStyle}>{`${t("rules.page.pill")} ${r.pageNumber}`}</span>
-                  </div>
-                ) : null}
                 {r.kind !== "selection" && r.kind !== "page" ? <RuleOptionPills rule={r} t={t} /> : null}
               </div>
 

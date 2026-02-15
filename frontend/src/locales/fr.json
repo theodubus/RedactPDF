@@ -72,6 +72,6 @@
   "rules.action.drawSelection": "Dessiner sélection",
   "rules.action.censorPage": "Censurer la page",
   "rules.option.respectAccents": "Respecter les accents",
-  "rules.badge.page": "Page",
-  "rules.page.pill": "Page"
+  "rules.badge.page": "Page complète",
+  "rules.page.title": "Page"
 }
