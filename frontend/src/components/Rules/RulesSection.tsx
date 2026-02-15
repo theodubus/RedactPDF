@@ -7,8 +7,9 @@ import { RuleAddBar } from "./RuleAddBar";
 import { RulesList } from "./RulesList";
 import { EditRuleModal } from "./EditRuleModal";
 
-function kindLabel(t: (k: string) => string, kind: RuleKind | "selection") {
+function kindLabel(t: (k: string) => string, kind: RuleKind | "selection" | "page") {
   if (kind === "selection") return t("rules.badge.selection");
+  if (kind === "page") return t("rules.badge.page");
   return t("rules.badge.request");
 }
 
@@ -28,8 +29,10 @@ export function RulesSection(props: {
   pendingSelectionText: string;
   canAddSelection: boolean;
   onAddSelection: () => void;
+  canCensorPage: boolean;
+  onCensorPage: () => void;
 }) {
-  const { t, rules, setRules, onUserChange, pendingSelectionText, canAddSelection, onAddSelection } = props;
+  const { t, rules, setRules, onUserChange, pendingSelectionText, canAddSelection, onAddSelection, canCensorPage, onCensorPage } = props;
 
   const [draftKind, setDraftKind] = useState<RuleKind>("exact");
   const [draftValue, setDraftValue] = useState("");
@@ -49,13 +52,18 @@ export function RulesSection(props: {
   };
 
   const [editingId, setEditingId] = useState<string | null>(null);
-  const editingRule = useMemo(
-    () => (editingId ? rules.find((r) => r.id === editingId && r.kind !== "selection") ?? null : null),
+  const editingRule = useMemo<Extract<UiRule, { kind: "exact" | "regex" }> | null>(
+    () =>
+      (editingId
+        ? (rules.find((r): r is Extract<UiRule, { kind: "exact" | "regex" }> =>
+            r.id === editingId && (r.kind === "exact" || r.kind === "regex")
+          ) ?? null)
+        : null),
     [editingId, rules]
   );
 
   const openEdit = (r: UiRule) => {
-    if (r.kind === "selection") return;
+    if (r.kind === "selection" || r.kind === "page") return;
     setEditingId(r.id);
   };
   const closeEdit = () => setEditingId(null);
@@ -103,7 +111,7 @@ export function RulesSection(props: {
     setRules((prev) => prev.filter((r) => r.id !== id));
   };
 
-  const saveEdit = (updated: Omit<UiRule, "id">) => {
+  const saveEdit = (updated: Omit<Extract<UiRule, { kind: "exact" | "regex" }>, "id">) => {
     if (!editingRule) return;
     onUserChange();
 
@@ -208,7 +216,16 @@ export function RulesSection(props: {
         <button type="button" className="buttonSecondary" disabled style={{ marginTop: 0 }}>
           {t("rules.action.drawSelection")}
         </button>
-        <button type="button" className="buttonSecondary" disabled style={{ marginTop: 0 }}>
+        <button
+          type="button"
+          className="buttonSecondary"
+          disabled={!canCensorPage}
+          style={{ marginTop: 0 }}
+          onClick={() => {
+            onUserChange();
+            onCensorPage();
+          }}
+        >
           {t("rules.action.censorPage")}
         </button>
       </div>
