@@ -30,6 +30,7 @@ export default function App() {
   const [rules, setRules] = useState<UiRule[]>([]);
   const [pendingSelection, setPendingSelection] = useState<PendingSelection | null>(null);
   const [currentPage, setCurrentPage] = useState<number | null>(null);
+  const [pageSizes, setPageSizes] = useState<Record<number, { width: number; height: number }>>({});
   const [presets, setPresets] = useState<Record<PresetKey, boolean>>(EMPTY_PRESETS);
   const [isDragOver, setIsDragOver] = useState(false);
 
@@ -94,6 +95,7 @@ export default function App() {
       setFile(null);
       setPendingSelection(null);
       setCurrentPage(null);
+      setPageSizes({});
       return;
     }
 
@@ -102,6 +104,7 @@ export default function App() {
     if (!isPdf) {
       setFile(null);
       setCurrentPage(null);
+      setPageSizes({});
       setErrorInfo({ rawMessage: t("form.file.invalidType") });
       return;
     }
@@ -109,6 +112,7 @@ export default function App() {
     setFile(pickedFile);
     setPendingSelection(null);
     setCurrentPage(1);
+    setPageSizes({});
     setRules([]);
     setPresets(EMPTY_PRESETS);
   };
@@ -130,6 +134,7 @@ export default function App() {
     const trimmed = pendingSelection.text.trim();
     if (!trimmed || pendingSelection.rects.length === 0) return;
 
+
     const newRule: UiRule = {
       id: newId(),
       kind: "selection",
@@ -143,23 +148,27 @@ export default function App() {
 
 
   const addCurrentPageRule = () => {
-    if (!currentPage) return;
+    const pageNumber = currentPage;
+    if (!pageNumber) return;
     clearNotices();
 
-    const exists = rules.some((rule) => rule.kind === "page" && rule.pageNumber === currentPage);
+    const exists = rules.some((rule) => rule.kind === "page" && rule.pageNumber === pageNumber);
     if (exists) return;
+
+    const pageSize = pageSizes[pageNumber];
+    if (!pageSize) return;
 
     const newRule: UiRule = {
       id: newId(),
       kind: "page",
-      value: `${t("rules.page.title")} ${currentPage}`,
-      pageNumber: currentPage,
+      value: `${t("rules.page.title")} ${pageNumber}`,
+      pageNumber,
       rect: {
-        page: currentPage - 1,
+        page: pageNumber - 1,
         x0: 0,
         y0: 0,
-        x1: Number.MAX_SAFE_INTEGER,
-        y1: Number.MAX_SAFE_INTEGER,
+        x1: pageSize.width,
+        y1: pageSize.height,
       },
     };
 
@@ -226,6 +235,13 @@ export default function App() {
               t={t}
               onSelectionChange={setPendingSelection}
               onCurrentPageChange={setCurrentPage}
+              onPageSizeChange={(pageNumber, size) => {
+                setPageSizes((prev) => {
+                  const existing = prev[pageNumber];
+                  if (existing && existing.width === size.width && existing.height === size.height) return prev;
+                  return { ...prev, [pageNumber]: size };
+                });
+              }}
             />
           ) : (
             <div
@@ -265,7 +281,7 @@ export default function App() {
               pendingSelectionText={pendingSelection?.text ?? ""}
               canAddSelection={!!pendingSelection && pendingSelection.rects.length > 0}
               onAddSelection={addPendingSelection}
-              canCensorPage={!!currentPage}
+              canCensorPage={!!currentPage && !!pageSizes[currentPage]}
               onCensorPage={addCurrentPageRule}
             />
 

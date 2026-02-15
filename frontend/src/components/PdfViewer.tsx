@@ -54,8 +54,9 @@ export function PdfViewer(props: {
   t: (k: string) => string;
   onSelectionChange: (selection: { text: string; rects: UiRect[] } | null) => void;
   onCurrentPageChange: (pageNumber: number | null) => void;
+  onPageSizeChange: (pageNumber: number, size: { width: number; height: number }) => void;
 }) {
-  const { file, rules, presetKeys, t, onSelectionChange, onCurrentPageChange } = props;
+  const { file, rules, presetKeys, t, onSelectionChange, onCurrentPageChange, onPageSizeChange } = props;
 
   const [pdfDoc, setPdfDoc] = useState<PdfDocumentProxy | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -144,6 +145,7 @@ export function PdfViewer(props: {
 
         const page = await pdfDoc.getPage(pageNumber);
         const baseViewport = page.getViewport({ scale: 1 });
+        onPageSizeChange(pageNumber, { width: baseViewport.width, height: baseViewport.height });
         const scale = containerWidth / baseViewport.width;
         const viewport = page.getViewport({ scale });
 
@@ -198,7 +200,7 @@ export function PdfViewer(props: {
     return () => {
       cancelled = true;
     };
-  }, [pdfDoc, pageNumbers, containerWidth, rules, presetKeys]);
+  }, [pdfDoc, pageNumbers, containerWidth, rules, presetKeys, onPageSizeChange]);
 
   useEffect(() => {
     for (const [index, textLayer] of textLayerRefs.current.entries()) {
