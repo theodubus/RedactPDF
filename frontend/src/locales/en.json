@@ -40,7 +40,7 @@
   "form.presets.phone": "Phone numbers",
   "form.presets.creditCard": "Credit cards",
   "form.nothingToDo.rules": "Please add at least one item to redact and/or select a preset.",
-  "form.submit": "Redact & Export",
+  "form.submit": "Redact & Download",
   "form.submitting": "Processing…",
   "form.hint": "The source file is never modified. Export is blocked if the audit detects a leak.",
   "viewer.title": "PDF preview",
