@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import { useI18n } from "./i18n";
 import { redactApply } from "./api";
 import type { PresetKey, RuleInput } from "./api";
@@ -29,6 +29,8 @@ export default function App() {
   const [file, setFile] = useState<File | null>(null);
   const [rules, setRules] = useState<UiRule[]>([]);
   const [pendingSelection, setPendingSelection] = useState<PendingSelection | null>(null);
+  const [currentPage, setCurrentPage] = useState<number | null>(null);
+  const [pageSizes, setPageSizes] = useState<Record<number, { width: number; height: number }>>({});
   const [presets, setPresets] = useState<Record<PresetKey, boolean>>(EMPTY_PRESETS);
   const [isDragOver, setIsDragOver] = useState(false);
 
@@ -79,10 +81,20 @@ export default function App() {
   }, [rules]);
 
   const rectsForApi = useMemo(() => {
-    return rules.flatMap((r) => (r.kind === "selection" ? r.rects : []));
+    return rules.flatMap((r) => (r.kind === "selection" ? r.rects : r.kind === "page" ? [r.rect] : []));
   }, [rules]);
 
   const hasAnythingToDo = rules.length > 0 || selectedPresets.length > 0;
+
+  const hasFullPageRule = useMemo(() => rules.some((r) => r.kind === "page"), [rules]);
+
+  const handlePageSizeChange = useCallback((pageNumber: number, size: { width: number; height: number }) => {
+    setPageSizes((prev) => {
+      const existing = prev[pageNumber];
+      if (existing && existing.width === size.width && existing.height === size.height) return prev;
+      return { ...prev, [pageNumber]: size };
+    });
+  }, []);
 
   const loadPdfFile = (pickedFile: File | null) => {
     clearNotices();
@@ -90,6 +102,8 @@ export default function App() {
     if (!pickedFile) {
       setFile(null);
       setPendingSelection(null);
+      setCurrentPage(null);
+      setPageSizes({});
       return;
     }
 
@@ -97,12 +111,16 @@ export default function App() {
       pickedFile.type === "application/pdf" || pickedFile.name.toLowerCase().endsWith(".pdf");
     if (!isPdf) {
       setFile(null);
+      setCurrentPage(null);
+      setPageSizes({});
       setErrorInfo({ rawMessage: t("form.file.invalidType") });
       return;
     }
 
     setFile(pickedFile);
     setPendingSelection(null);
+    setCurrentPage(1);
+    setPageSizes({});
     setRules([]);
     setPresets(EMPTY_PRESETS);
   };
@@ -124,6 +142,7 @@ export default function App() {
     const trimmed = pendingSelection.text.trim();
     if (!trimmed || pendingSelection.rects.length === 0) return;
 
+
     const newRule: UiRule = {
       id: newId(),
       kind: "selection",
@@ -133,6 +152,35 @@ export default function App() {
 
     setRules((prev) => [...prev, newRule]);
     setPendingSelection(null);
+  };
+
+
+  const addCurrentPageRule = () => {
+    const pageNumber = currentPage;
+    if (!pageNumber) return;
+    clearNotices();
+
+    const exists = rules.some((rule) => rule.kind === "page" && rule.pageNumber === pageNumber);
+    if (exists) return;
+
+    const pageSize = pageSizes[pageNumber];
+    if (!pageSize) return;
+
+    const newRule: UiRule = {
+      id: newId(),
+      kind: "page",
+      value: `${t("rules.page.title")} ${pageNumber}`,
+      pageNumber,
+      rect: {
+        page: pageNumber - 1,
+        x0: 0,
+        y0: 0,
+        x1: pageSize.width,
+        y1: pageSize.height,
+      },
+    };
+
+    setRules((prev) => [...prev, newRule]);
   };
 
   const handleSubmit: React.FormEventHandler<HTMLFormElement> = async (e) => {
@@ -157,6 +205,8 @@ export default function App() {
         rects: rectsForApi,
         rules: rulesForApi,
         presets: selectedPresets,
+        applyImages: hasFullPageRule,
+        applyGraphics: hasFullPageRule,
       });
 
       downloadBlob(r.pdfBlob, "redacted.pdf");
@@ -192,6 +242,8 @@ export default function App() {
               presetKeys={selectedPresets}
               t={t}
               onSelectionChange={setPendingSelection}
+              onCurrentPageChange={setCurrentPage}
+              onPageSizeChange={handlePageSizeChange}
             />
           ) : (
             <div
@@ -231,6 +283,8 @@ export default function App() {
               pendingSelectionText={pendingSelection?.text ?? ""}
               canAddSelection={!!pendingSelection && pendingSelection.rects.length > 0}
               onAddSelection={addPendingSelection}
+              canCensorPage={!!currentPage && !!pageSizes[currentPage]}
+              onCensorPage={addCurrentPageRule}
             />
 
             <PresetsSection t={t} presets={presets} togglePreset={togglePreset} />

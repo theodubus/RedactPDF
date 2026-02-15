@@ -31,4 +31,11 @@ export type UiRule =
       kind: "selection";
       value: string;
       rects: UiRect[];
+    }
+  | {
+      id: string;
+      kind: "page";
+      value: string;
+      pageNumber: number;
+      rect: UiRect;
     };
