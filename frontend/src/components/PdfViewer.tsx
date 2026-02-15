@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { PointerEvent as ReactPointerEvent } from "react";
 import type { PresetKey } from "../api";
 import type { UiRect, UiRule } from "../types/uiRules";
 
@@ -28,6 +29,15 @@ type PdfDocumentProxy = {
   destroy: () => void;
 };
 
+
+type DrawDraft = {
+  pageIndex: number;
+  startX: number;
+  startY: number;
+  currentX: number;
+  currentY: number;
+};
+
 type PdfJsLib = {
   GlobalWorkerOptions: { workerSrc: string };
   getDocument: (params: { data: Uint8Array }) => { promise: Promise<PdfDocumentProxy> };
@@ -53,8 +63,12 @@ export function PdfViewer(props: {
   presetKeys: PresetKey[];
   t: (k: string) => string;
   onSelectionChange: (selection: { text: string; rects: UiRect[] } | null) => void;
+  onCurrentPageChange: (pageNumber: number | null) => void;
+  onPageSizeChange: (pageNumber: number, size: { width: number; height: number }) => void;
+  isDrawingRect: boolean;
+  onAddDrawnRect: (params: { pageNumber: number; rect: UiRect }) => void;
 }) {
-  const { file, rules, presetKeys, t, onSelectionChange } = props;
+  const { file, rules, presetKeys, t, onSelectionChange, onCurrentPageChange, onPageSizeChange, isDrawingRect, onAddDrawnRect } = props;
 
   const [pdfDoc, setPdfDoc] = useState<PdfDocumentProxy | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -65,8 +79,10 @@ export function PdfViewer(props: {
   const canvasRefs = useRef<Array<HTMLCanvasElement | null>>([]);
   const textLayerRefs = useRef<Array<HTMLDivElement | null>>([]);
   const previewLayerRefs = useRef<Array<HTMLDivElement | null>>([]);
+  const pageRefs = useRef<Array<HTMLDivElement | null>>([]);
   const pageScalesRef = useRef<Array<number>>([]);
   const pdfjsRef = useRef<PdfJsLib | null>(null);
+  const [drawDraft, setDrawDraft] = useState<DrawDraft | null>(null);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -89,10 +105,12 @@ export function PdfViewer(props: {
     let loadedDoc: PdfDocumentProxy | null = null;
 
     onSelectionChange(null);
+    onCurrentPageChange(null);
     pageScalesRef.current = [];
     setPdfDoc(null);
     setError(null);
     setIsLoading(true);
+    setDrawDraft(null);
 
     (async () => {
       try {
@@ -109,6 +127,7 @@ export function PdfViewer(props: {
         }
 
         setPdfDoc(doc);
+        onCurrentPageChange(1);
       } catch {
         if (!active) return;
         setError(t("viewer.error.load"));
@@ -121,7 +140,7 @@ export function PdfViewer(props: {
       active = false;
       if (loadedDoc) loadedDoc.destroy();
     };
-  }, [file, onSelectionChange]);
+  }, [file, onSelectionChange, onCurrentPageChange]);
 
   const pageNumbers = useMemo(() => {
     if (!pdfDoc) return [];
@@ -140,6 +159,7 @@ export function PdfViewer(props: {
 
         const page = await pdfDoc.getPage(pageNumber);
         const baseViewport = page.getViewport({ scale: 1 });
+        onPageSizeChange(pageNumber, { width: baseViewport.width, height: baseViewport.height });
         const scale = containerWidth / baseViewport.width;
         const viewport = page.getViewport({ scale });
 
@@ -194,7 +214,7 @@ export function PdfViewer(props: {
     return () => {
       cancelled = true;
     };
-  }, [pdfDoc, pageNumbers, containerWidth, rules, presetKeys]);
+  }, [pdfDoc, pageNumbers, containerWidth, rules, presetKeys, onPageSizeChange]);
 
   useEffect(() => {
     for (const [index, textLayer] of textLayerRefs.current.entries()) {
@@ -206,7 +226,43 @@ export function PdfViewer(props: {
   }, [rules, presetKeys]);
 
   useEffect(() => {
+    if (!containerRef.current || pageNumbers.length === 0) return;
+
+    const container = containerRef.current;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        let bestPage: number | null = null;
+        let bestRatio = 0;
+
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          const page = Number((entry.target as HTMLElement).dataset.pageNumber ?? "0");
+          if (!page) continue;
+          if (entry.intersectionRatio > bestRatio) {
+            bestRatio = entry.intersectionRatio;
+            bestPage = page;
+          }
+        }
+
+        if (bestPage) onCurrentPageChange(bestPage);
+      },
+      { root: container, threshold: [0.25, 0.5, 0.75] },
+    );
+
+    for (const pageEl of pageRefs.current) {
+      if (pageEl) observer.observe(pageEl);
+    }
+
+    return () => observer.disconnect();
+  }, [pageNumbers, onCurrentPageChange]);
+
+  useEffect(() => {
     const computeSelection = () => {
+      if (isDrawingRect) {
+        onSelectionChange(null);
+        return;
+      }
+
       const selection = window.getSelection();
       if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
         onSelectionChange(null);
@@ -265,13 +321,84 @@ export function PdfViewer(props: {
       }
 
       onSelectionChange({ text: selectedText, rects });
+      onCurrentPageChange(pageIndex + 1);
     };
 
     document.addEventListener("selectionchange", computeSelection);
     return () => {
       document.removeEventListener("selectionchange", computeSelection);
     };
-  }, [onSelectionChange]);
+  }, [onSelectionChange, onCurrentPageChange, isDrawingRect]);
+
+
+  const clampPoint = (value: number, max: number) => Math.max(0, Math.min(value, max));
+
+  const beginDraw = (pageIndex: number, event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!isDrawingRect) return;
+
+    const layer = event.currentTarget;
+    const bounds = layer.getBoundingClientRect();
+    const x = clampPoint(event.clientX - bounds.left, bounds.width);
+    const y = clampPoint(event.clientY - bounds.top, bounds.height);
+
+    layer.setPointerCapture(event.pointerId);
+    setDrawDraft({ pageIndex, startX: x, startY: y, currentX: x, currentY: y });
+    event.preventDefault();
+  };
+
+  const moveDraw = (pageIndex: number, event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!isDrawingRect || !drawDraft || drawDraft.pageIndex !== pageIndex) return;
+
+    const layer = event.currentTarget;
+    const bounds = layer.getBoundingClientRect();
+    const x = clampPoint(event.clientX - bounds.left, bounds.width);
+    const y = clampPoint(event.clientY - bounds.top, bounds.height);
+
+    setDrawDraft((prev) => (prev && prev.pageIndex === pageIndex ? { ...prev, currentX: x, currentY: y } : prev));
+    event.preventDefault();
+  };
+
+  const endDraw = (pageIndex: number, event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!isDrawingRect || !drawDraft || drawDraft.pageIndex !== pageIndex) return;
+
+    const layer = event.currentTarget;
+    if (layer.hasPointerCapture(event.pointerId)) {
+      layer.releasePointerCapture(event.pointerId);
+    }
+
+    const bounds = layer.getBoundingClientRect();
+    const x = clampPoint(event.clientX - bounds.left, bounds.width);
+    const y = clampPoint(event.clientY - bounds.top, bounds.height);
+
+    const left = Math.min(drawDraft.startX, x);
+    const right = Math.max(drawDraft.startX, x);
+    const top = Math.min(drawDraft.startY, y);
+    const bottom = Math.max(drawDraft.startY, y);
+
+    const minSize = 4;
+    if (right - left >= minSize && bottom - top >= minSize) {
+      const scale = pageScalesRef.current[pageIndex] ?? 1;
+      if (scale > 0) {
+        onAddDrawnRect({
+          pageNumber: pageIndex + 1,
+          rect: {
+            page: pageIndex,
+            x0: left / scale,
+            y0: top / scale,
+            x1: right / scale,
+            y1: bottom / scale,
+          },
+        });
+      }
+    }
+
+    setDrawDraft(null);
+    event.preventDefault();
+  };
+
+  const cancelDraw = () => {
+    if (drawDraft) setDrawDraft(null);
+  };
 
   if (error) {
     return <div className="pdfViewerMessage bad">{error}</div>;
@@ -283,7 +410,14 @@ export function PdfViewer(props: {
 
       <div className="pdfCanvasStack" aria-live="polite">
         {pageNumbers.map((pageNumber) => (
-          <div key={pageNumber} className="pdfPage">
+          <div
+            key={pageNumber}
+            className="pdfPage"
+            data-page-number={pageNumber}
+            ref={(el) => {
+              pageRefs.current[pageNumber - 1] = el;
+            }}
+          >
             <canvas
               className="pdfCanvas"
               ref={(el) => {
@@ -297,7 +431,26 @@ export function PdfViewer(props: {
               }}
             />
             <div
-              className="pdfTextLayer textLayer"
+              className={`pdfDrawLayer ${isDrawingRect ? "pdfDrawLayerActive" : ""}`.trim()}
+              onPointerDown={(event) => beginDraw(pageNumber - 1, event)}
+              onPointerMove={(event) => moveDraw(pageNumber - 1, event)}
+              onPointerUp={(event) => endDraw(pageNumber - 1, event)}
+              onPointerCancel={cancelDraw}
+            >
+              {drawDraft && drawDraft.pageIndex === pageNumber - 1 ? (
+                <div
+                  className="redactionPreviewRect"
+                  style={{
+                    left: `${Math.min(drawDraft.startX, drawDraft.currentX)}px`,
+                    top: `${Math.min(drawDraft.startY, drawDraft.currentY)}px`,
+                    width: `${Math.abs(drawDraft.currentX - drawDraft.startX)}px`,
+                    height: `${Math.abs(drawDraft.currentY - drawDraft.startY)}px`,
+                  }}
+                />
+              ) : null}
+            </div>
+            <div
+              className={`pdfTextLayer textLayer ${isDrawingRect ? "pdfTextLayerNoPointer" : ""}`.trim()}
               ref={(el) => {
                 textLayerRefs.current[pageNumber - 1] = el;
               }}
@@ -355,6 +508,29 @@ function applyPreviewHighlights(
     highlightPhonePresetMatches(textLayer, previewLayer, layerBounds);
   }
 
+  const pageRules = rules.filter((r): r is Extract<UiRule, { kind: "page" }> => r.kind === "page");
+  for (const pageRule of pageRules) {
+    if (pageRule.pageNumber !== pageIndex + 1) continue;
+    drawPreviewRect(previewLayer, {
+      left: 0,
+      top: 0,
+      width: layerBounds.width,
+      height: layerBounds.height,
+    });
+  }
+
+  const rectangleRules = rules.filter((r): r is Extract<UiRule, { kind: "rectangle" }> => r.kind === "rectangle");
+  for (const rectangleRule of rectangleRules) {
+    if (rectangleRule.pageNumber !== pageIndex + 1) continue;
+    const rect = rectangleRule.rect;
+    drawPreviewRect(previewLayer, {
+      left: rect.x0 * scale,
+      top: rect.y0 * scale,
+      width: (rect.x1 - rect.x0) * scale,
+      height: (rect.y1 - rect.y0) * scale,
+    }, String(rectangleRule.rectangleNumber));
+  }
+
   const selectionRules = rules.filter((r): r is Extract<UiRule, { kind: "selection" }> => r.kind === "selection");
   for (const selectionRule of selectionRules) {
     for (const rect of selectionRule.rects) {
@@ -372,6 +548,7 @@ function applyPreviewHighlights(
 function drawPreviewRect(
   previewLayer: HTMLDivElement,
   rect: { left: number; top: number; width: number; height: number },
+  label?: string,
 ) {
   const width = rect.width;
   const height = rect.height;
@@ -383,6 +560,13 @@ function drawPreviewRect(
   highlight.style.top = `${rect.top}px`;
   highlight.style.width = `${width}px`;
   highlight.style.height = `${height}px`;
+  if (label) {
+    const badge = document.createElement("div");
+    badge.className = "redactionPreviewRectLabel";
+    badge.textContent = label;
+    highlight.appendChild(badge);
+  }
+
   previewLayer.appendChild(highlight);
 }
 
@@ -393,7 +577,7 @@ function collectMatches(
 ): Array<{ start: number; end: number }> {
   const matches: Array<{ start: number; end: number }> = [];
   for (const rule of rules) {
-    if (rule.kind === "selection") continue;
+    if (rule.kind === "selection" || rule.kind === "page" || rule.kind === "rectangle") continue;
     const value = rule.value.trim();
     if (!value) continue;
     const ranges =
