@@ -28,40 +28,44 @@ const optionPillStyle: CSSProperties = {
   lineHeight: 1.2,
 };
 
-function RuleOptionPills({ rule }: { rule: Extract<UiRule, { kind: "exact" | "regex" }> }) {
+function RuleOptionPills(props: {
+  rule: Extract<UiRule, { kind: "exact" | "regex" }>;
+  t: (k: string) => string;
+}) {
+  const { rule, t } = props;
   const pills: ReactNode[] = [];
 
   if (rule.kind === "regex") {
     pills.push(
-      <span key="regex" style={optionPillStyle} title="Regex">
+      <span key="regex" style={optionPillStyle} title={t("rules.toggle.regex")}>
         .* 
       </span>
     );
   }
   if (rule.caseSensitive) {
     pills.push(
-      <span key="case" style={optionPillStyle} title="Casse">
+      <span key="case" style={optionPillStyle} title={t("rules.option.caseSensitive")}>
         Aa
       </span>
     );
   }
   if (!rule.ignoreAccents) {
     pills.push(
-      <span key="accents" style={optionPillStyle} title="Accents">
+      <span key="accents" style={optionPillStyle} title={t("rules.option.respectAccents")}>
         ëà
       </span>
     );
   }
   if (rule.kind === "regex" && rule.multiline) {
     pills.push(
-      <span key="multiline" style={optionPillStyle} title="Multiligne">
+      <span key="multiline" style={optionPillStyle} title={t("rules.option.multiline")}>
         ↵
       </span>
     );
   }
   if (rule.allowSubwords) {
     pills.push(
-      <span key="subword" style={optionPillStyle} title="Sous-mot">
+      <span key="subword" style={optionPillStyle} title={t("rules.option.subword")}>
         sub<strong style={{ fontWeight: 800, color: "#1f2f6b" }}>word</strong>
       </span>
     );
@@ -134,7 +138,7 @@ export function RulesList(props: {
                   {kindLabel(r.kind)}
                 </div>
 
-                {r.kind !== "selection" ? <RuleOptionPills rule={r} /> : null}
+                {r.kind !== "selection" ? <RuleOptionPills rule={r} t={t} /> : null}
               </div>
 
               <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
