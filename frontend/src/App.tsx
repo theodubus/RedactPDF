@@ -34,7 +34,6 @@ export default function App() {
 
   const [submitting, setSubmitting] = useState(false);
 
-
   const [errorInfo, setErrorInfo] = useState<{
     status?: number;
     report?: unknown;
@@ -232,33 +231,6 @@ export default function App() {
               canAddSelection={!!pendingSelection && pendingSelection.rects.length > 0}
               onAddSelection={addPendingSelection}
             />
-          ) : (
-            <div
-              className={`uploadDropZone ${isDragOver ? "uploadDropZoneActive" : ""}`.trim()}
-              onDragOver={(e) => {
-                e.preventDefault();
-                setIsDragOver(true);
-              }}
-              onDragLeave={() => setIsDragOver(false)}
-              onDrop={(e) => {
-                e.preventDefault();
-                setIsDragOver(false);
-                loadPdfFile(e.dataTransfer.files?.[0] ?? null);
-              }}
-            >
-              <div className="sectionTitle">{t("viewer.drop.title")}</div>
-              <p className="muted">{t("viewer.drop.body")}</p>
-              <button
-                type="button"
-                className="button"
-                style={{ width: "min(260px, 100%)" }}
-                onClick={() => fileInputRef.current?.click()}
-              >
-                {t("form.file.choose")}
-              </button>
-            </div>
-          )}
-        </section>
 
             <PresetsSection t={t} presets={presets} togglePreset={togglePreset} />
           </div>
