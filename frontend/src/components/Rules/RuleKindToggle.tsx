@@ -8,21 +8,13 @@ export function RuleKindToggle(props: {
   const { t, value, onChange } = props;
 
   return (
-    <div className="row" style={{ gap: 8 }}>
-      <button
-        type="button"
-        className={value === "exact" ? "pill pillActive" : "pill"}
-        onClick={() => onChange("exact")}
-      >
-        {t("rules.toggle.exact")}
-      </button>
-      <button
-        type="button"
-        className={value === "regex" ? "pill pillActive" : "pill"}
-        onClick={() => onChange("regex")}
-      >
-        {t("rules.toggle.regex")}
-      </button>
-    </div>
+    <button
+      type="button"
+      className={value === "regex" ? "pill pillActive" : "pill"}
+      onClick={() => onChange(value === "regex" ? "exact" : "regex")}
+      aria-pressed={value === "regex"}
+    >
+      {t("rules.toggle.regex")}
+    </button>
   );
 }
