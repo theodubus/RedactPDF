@@ -1,9 +1,9 @@
-import type { CSSProperties } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import type { RuleKind, UiRule } from "../../types/uiRules";
 import { truncate } from "../../utils/redactionUtils";
 
 const actionButtonStyle: CSSProperties = {
-  border: "1px solid #ddd",
+  border: "1px solid #d6dbe8",
   borderRadius: 10,
   width: 34,
   minWidth: 34,
@@ -16,6 +16,60 @@ const actionButtonStyle: CSSProperties = {
   cursor: "pointer",
   fontWeight: 700,
 };
+
+const optionPillStyle: CSSProperties = {
+  border: "1px solid #d6dbe8",
+  borderRadius: 999,
+  background: "#f5f7ff",
+  color: "#2f3f86",
+  fontSize: 12,
+  fontWeight: 600,
+  padding: "2px 8px",
+  lineHeight: 1.2,
+};
+
+function RuleOptionPills({ rule }: { rule: Extract<UiRule, { kind: "exact" | "regex" }> }) {
+  const pills: ReactNode[] = [];
+
+  if (rule.kind === "regex") {
+    pills.push(
+      <span key="regex" style={optionPillStyle} title="Regex">
+        .* 
+      </span>
+    );
+  }
+  if (rule.caseSensitive) {
+    pills.push(
+      <span key="case" style={optionPillStyle} title="Casse">
+        Aa
+      </span>
+    );
+  }
+  if (!rule.ignoreAccents) {
+    pills.push(
+      <span key="accents" style={optionPillStyle} title="Accents">
+        ëà
+      </span>
+    );
+  }
+  if (rule.kind === "regex" && rule.multiline) {
+    pills.push(
+      <span key="multiline" style={optionPillStyle} title="Multiligne">
+        ↵
+      </span>
+    );
+  }
+  if (rule.allowSubwords) {
+    pills.push(
+      <span key="subword" style={optionPillStyle} title="Sous-mot">
+        sub<strong>word</strong>
+      </span>
+    );
+  }
+
+  if (pills.length === 0) return null;
+  return <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 4 }}>{pills}</div>;
+}
 
 export function RulesList(props: {
   t: (k: string) => string;
@@ -30,13 +84,13 @@ export function RulesList(props: {
     <div
       style={{
         marginTop: 10,
-        border: "1px solid rgba(0,0,0,0.12)",
+        border: "1px solid rgba(47,63,134,0.16)",
         borderRadius: 12,
         padding: 10,
-        height: 240,
+        height: 300,
         overflowY: "auto",
         overflowX: "hidden",
-        background: "rgba(255,255,255,0.6)",
+        background: "rgba(255,255,255,0.75)",
         width: "100%",
       }}
     >
@@ -53,13 +107,14 @@ export function RulesList(props: {
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "space-between",
-                border: "1px solid rgba(0,0,0,0.10)",
+                border: "1px solid rgba(47,63,134,0.12)",
                 borderRadius: 10,
                 padding: "10px 12px",
                 gap: 12,
                 minHeight: 58,
                 maxWidth: "100%",
                 overflow: "hidden",
+                background: "#fff",
               }}
             >
               <div style={{ minWidth: 0, flex: 1 }}>
@@ -78,6 +133,8 @@ export function RulesList(props: {
                 <div className="muted" style={{ fontSize: 12 }}>
                   {kindLabel(r.kind)}
                 </div>
+
+                {r.kind !== "selection" ? <RuleOptionPills rule={r} /> : null}
               </div>
 
               <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>

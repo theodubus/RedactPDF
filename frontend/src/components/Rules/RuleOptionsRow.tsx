@@ -64,8 +64,8 @@ export function RuleOptionsRow({
         onClick={() => setAllowSubwords(!allowSubwords)}
       />
       <OptionPill
-        active={ignoreAccents}
-        label={t("rules.option.ignoreAccents")}
+        active={!ignoreAccents}
+        label={t("rules.option.respectAccents")}
         onClick={() => setIgnoreAccents(!ignoreAccents)}
       />
       <OptionPill
