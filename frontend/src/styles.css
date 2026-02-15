@@ -70,11 +70,11 @@ body,
   font-weight: 500;
 }
 .pillActive {
-  border-color: #2f4aa0;
-  background: #dfe8ff;
-  color: #1f2f6b;
+  border-color: #2b48a5;
+  background: #d7e2ff;
+  color: #152a6a;
   font-weight: 700;
-  box-shadow: inset 0 0 0 1px rgba(47, 74, 160, 0.18);
+  box-shadow: inset 0 0 0 1px rgba(43, 72, 165, 0.2);
 }
 
 
