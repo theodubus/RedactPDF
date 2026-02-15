@@ -37,7 +37,25 @@ export function RulesSection(props: {
   const [draftCaseSensitive, setDraftCaseSensitive] = useState(false);
   const [draftMultiline, setDraftMultiline] = useState(false);
   const [draftAllowSubwords, setDraftAllowSubwords] = useState(false);
-  const [draftIgnoreAccents, setDraftIgnoreAccents] = useState(true);
+  const [draftIgnoreAccents, setDraftIgnoreAccents] = useState(false);
+
+
+  const resetDraftOptions = () => {
+    setDraftKind("exact");
+    setDraftCaseSensitive(false);
+    setDraftMultiline(false);
+    setDraftAllowSubwords(false);
+    setDraftIgnoreAccents(true);
+  };
+
+
+  const resetDraftOptions = () => {
+    setDraftKind("exact");
+    setDraftCaseSensitive(false);
+    setDraftMultiline(false);
+    setDraftAllowSubwords(false);
+    setDraftIgnoreAccents(true);
+  };
 
 
   const resetDraftOptions = () => {
