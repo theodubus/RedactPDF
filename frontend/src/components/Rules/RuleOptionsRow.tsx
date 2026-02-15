@@ -50,7 +50,7 @@ export function RuleOptionsRow({
   const regexEnabled = kind === "regex";
 
   return (
-    <div className="row" style={{ gap: 8, flexWrap: "wrap", marginTop: 8 }}>
+    <div className="row" style={{ gap: 8, flexWrap: "wrap", marginTop: 4 }}>
       <RuleKindToggle t={t} value={kind} onChange={setKind} />
 
       <OptionPill

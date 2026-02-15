@@ -121,7 +121,7 @@ export function PdfViewer(props: {
       active = false;
       if (loadedDoc) loadedDoc.destroy();
     };
-  }, [file, onSelectionChange, t]);
+  }, [file, onSelectionChange]);
 
   const pageNumbers = useMemo(() => {
     if (!pdfDoc) return [];

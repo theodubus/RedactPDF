@@ -34,15 +34,6 @@ export default function App() {
 
   const [submitting, setSubmitting] = useState(false);
 
-  const [successInfo, setSuccessInfo] = useState<{
-    auditStatus?: string;
-    auditMatches?: string;
-    occurrencesSearch: number;
-    occurrencesRegex: number;
-    occurrencesPresets: number;
-    occurrencesTotal: number;
-    lastBlob?: Blob;
-  } | null>(null);
 
   const [errorInfo, setErrorInfo] = useState<{
     status?: number;
@@ -53,7 +44,6 @@ export default function App() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const clearNotices = () => {
-    setSuccessInfo(null);
     setErrorInfo(null);
   };
 
@@ -147,7 +137,6 @@ export default function App() {
 
   const handleSubmit: React.FormEventHandler<HTMLFormElement> = async (e) => {
     e.preventDefault();
-    setSuccessInfo(null);
     setErrorInfo(null);
 
     if (!file) {
@@ -168,22 +157,6 @@ export default function App() {
         rects: rectsForApi,
         rules: rulesForApi,
         presets: selectedPresets,
-      });
-
-      const occSearch = Number(r.headers.occurrencesSearch ?? "0") || 0;
-      const occRegex = Number(r.headers.occurrencesRegex ?? "0") || 0;
-      const occPresets = Number(r.headers.occurrencesPresets ?? "0") || 0;
-      const occTotal =
-        Number(r.headers.occurrencesTotal ?? "0") || occSearch + occRegex + occPresets;
-
-      setSuccessInfo({
-        auditStatus: r.headers.auditStatus,
-        auditMatches: r.headers.auditMatches,
-        occurrencesSearch: occSearch,
-        occurrencesRegex: occRegex,
-        occurrencesPresets: occPresets,
-        occurrencesTotal: occTotal,
-        lastBlob: r.pdfBlob,
       });
 
       downloadBlob(r.pdfBlob, "redacted.pdf");
@@ -265,16 +238,19 @@ export default function App() {
             {submitting ? t("form.submitting") : t("form.submit")}
           </button>
 
-          <ResultPanel
-            t={t}
-            successInfo={successInfo}
-            errorInfo={errorInfo}
-            onDownload={() => {
-              if (successInfo?.lastBlob) downloadBlob(successInfo.lastBlob, "redacted.pdf");
-            }}
-          />
         </aside>
       </form>
+
+      {errorInfo ? (
+        <div className="auditModalOverlay" onMouseDown={() => setErrorInfo(null)}>
+          <div className="auditModalPanel" onMouseDown={(e) => e.stopPropagation()}>
+            <ResultPanel t={t} errorInfo={errorInfo} />
+            <button type="button" className="buttonSecondary" onClick={() => setErrorInfo(null)}>
+              {t("modal.cancel")}
+            </button>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

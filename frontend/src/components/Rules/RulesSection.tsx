@@ -14,10 +14,10 @@ function kindLabel(t: (k: string) => string, kind: RuleKind | "selection") {
 
 function summarizeSelection(text: string) {
   const clean = text.trim();
-  const maxLen = 80;
+  const maxLen = 40;
   if (clean.length <= maxLen) return clean;
-  const keep = 35;
-  return `${clean.slice(0, keep)} [...] ${clean.slice(-keep)}`;
+  const keep = 14;
+  return `${clean.slice(0, keep)} ... ${clean.slice(-keep)}`;
 }
 
 export function RulesSection(props: {
@@ -153,7 +153,7 @@ export function RulesSection(props: {
             onKeyDown={onDraftKeyDown}
           />
 
-          <details style={{ marginTop: 8 }}>
+          <details style={{ marginTop: 4 }}>
             <summary className="optionsSummary">{t("rules.options.summary")}</summary>
             <RuleOptionsRow
               kind={draftKind}
@@ -182,6 +182,15 @@ export function RulesSection(props: {
           </details>
         </>
       )}
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 10 }}>
+        <button type="button" className="buttonSecondary" disabled style={{ marginTop: 0 }}>
+          {t("rules.action.drawSelection")}
+        </button>
+        <button type="button" className="buttonSecondary" disabled style={{ marginTop: 0 }}>
+          {t("rules.action.censorPage")}
+        </button>
+      </div>
 
       <RulesList
         t={t}
