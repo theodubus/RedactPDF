@@ -39,6 +39,15 @@ export function RulesSection(props: {
   const [draftAllowSubwords, setDraftAllowSubwords] = useState(false);
   const [draftIgnoreAccents, setDraftIgnoreAccents] = useState(false);
 
+
+  const resetDraftOptions = () => {
+    setDraftKind("exact");
+    setDraftCaseSensitive(false);
+    setDraftMultiline(false);
+    setDraftAllowSubwords(false);
+    setDraftIgnoreAccents(true);
+  };
+
   const [editingId, setEditingId] = useState<string | null>(null);
   const editingRule = useMemo(
     () => (editingId ? rules.find((r) => r.id === editingId && r.kind !== "selection") ?? null : null),
@@ -85,12 +94,8 @@ export function RulesSection(props: {
           };
 
     setRules((prev) => [...prev, rule]);
-    setDraftKind("exact");
+    resetDraftOptions();
     setDraftValue("");
-    setDraftCaseSensitive(false);
-    setDraftMultiline(false);
-    setDraftAllowSubwords(false);
-    setDraftIgnoreAccents(false);
   };
 
   const deleteRule = (id: string) => {
@@ -161,7 +166,15 @@ export function RulesSection(props: {
             onKeyDown={onDraftKeyDown}
           />
 
-          <details style={{ marginTop: 4 }}>
+          <details
+            style={{ marginTop: 4 }}
+            onToggle={(e) => {
+              const details = e.currentTarget;
+              if (details.open && draftValue.trim().length === 0) {
+                resetDraftOptions();
+              }
+            }}
+          >
             <summary className="optionsSummary">{t("rules.options.summary")}</summary>
             <RuleOptionsRow
               kind={draftKind}
