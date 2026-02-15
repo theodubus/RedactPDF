@@ -38,4 +38,12 @@ export type UiRule =
       value: string;
       pageNumber: number;
       rect: UiRect;
+    }
+  | {
+      id: string;
+      kind: "rectangle";
+      value: string;
+      rectangleNumber: number;
+      pageNumber: number;
+      rect: UiRect;
     };

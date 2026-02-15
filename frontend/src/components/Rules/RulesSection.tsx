@@ -7,9 +7,10 @@ import { RuleAddBar } from "./RuleAddBar";
 import { RulesList } from "./RulesList";
 import { EditRuleModal } from "./EditRuleModal";
 
-function kindLabel(t: (k: string) => string, kind: RuleKind | "selection" | "page") {
+function kindLabel(t: (k: string) => string, kind: RuleKind | "selection" | "page" | "rectangle") {
   if (kind === "selection") return t("rules.badge.selection");
   if (kind === "page") return t("rules.badge.page");
+  if (kind === "rectangle") return t("rules.badge.rectangle");
   return t("rules.badge.request");
 }
 
@@ -29,10 +30,12 @@ export function RulesSection(props: {
   pendingSelectionText: string;
   canAddSelection: boolean;
   onAddSelection: () => void;
+  isDrawingRect: boolean;
+  onToggleDrawSelection: () => void;
   canCensorPage: boolean;
   onCensorPage: () => void;
 }) {
-  const { t, rules, setRules, onUserChange, pendingSelectionText, canAddSelection, onAddSelection, canCensorPage, onCensorPage } = props;
+  const { t, rules, setRules, onUserChange, pendingSelectionText, canAddSelection, onAddSelection, isDrawingRect, onToggleDrawSelection, canCensorPage, onCensorPage } = props;
 
   const [draftKind, setDraftKind] = useState<RuleKind>("exact");
   const [draftValue, setDraftValue] = useState("");
@@ -63,7 +66,7 @@ export function RulesSection(props: {
   );
 
   const openEdit = (r: UiRule) => {
-    if (r.kind === "selection" || r.kind === "page") return;
+    if (r.kind === "selection" || r.kind === "page" || r.kind === "rectangle") return;
     setEditingId(r.id);
   };
   const closeEdit = () => setEditingId(null);
@@ -213,8 +216,16 @@ export function RulesSection(props: {
       )}
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 10 }}>
-        <button type="button" className="buttonSecondary" disabled style={{ marginTop: 0 }}>
-          {t("rules.action.drawSelection")}
+        <button
+          type="button"
+          className="buttonSecondary"
+          style={{ marginTop: 0 }}
+          onClick={() => {
+            onUserChange();
+            onToggleDrawSelection();
+          }}
+        >
+          {isDrawingRect ? t("rules.action.stopDrawingSelection") : t("rules.action.drawSelection")}
         </button>
         <button
           type="button"

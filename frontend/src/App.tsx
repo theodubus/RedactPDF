@@ -31,6 +31,7 @@ export default function App() {
   const [pendingSelection, setPendingSelection] = useState<PendingSelection | null>(null);
   const [currentPage, setCurrentPage] = useState<number | null>(null);
   const [pageSizes, setPageSizes] = useState<Record<number, { width: number; height: number }>>({});
+  const [isDrawingRect, setIsDrawingRect] = useState(false);
   const [presets, setPresets] = useState<Record<PresetKey, boolean>>(EMPTY_PRESETS);
   const [isDragOver, setIsDragOver] = useState(false);
 
@@ -44,6 +45,7 @@ export default function App() {
   } | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const nextRectangleNumberRef = useRef(1);
 
   const clearNotices = () => {
     setErrorInfo(null);
@@ -81,7 +83,9 @@ export default function App() {
   }, [rules]);
 
   const rectsForApi = useMemo(() => {
-    return rules.flatMap((r) => (r.kind === "selection" ? r.rects : r.kind === "page" ? [r.rect] : []));
+    return rules.flatMap((r) =>
+      r.kind === "selection" ? r.rects : r.kind === "page" || r.kind === "rectangle" ? [r.rect] : []
+    );
   }, [rules]);
 
   const hasAnythingToDo = rules.length > 0 || selectedPresets.length > 0;
@@ -104,6 +108,8 @@ export default function App() {
       setPendingSelection(null);
       setCurrentPage(null);
       setPageSizes({});
+      setIsDrawingRect(false);
+      nextRectangleNumberRef.current = 1;
       return;
     }
 
@@ -113,6 +119,8 @@ export default function App() {
       setFile(null);
       setCurrentPage(null);
       setPageSizes({});
+      setIsDrawingRect(false);
+      nextRectangleNumberRef.current = 1;
       setErrorInfo({ rawMessage: t("form.file.invalidType") });
       return;
     }
@@ -121,6 +129,8 @@ export default function App() {
     setPendingSelection(null);
     setCurrentPage(1);
     setPageSizes({});
+    setIsDrawingRect(false);
+    nextRectangleNumberRef.current = 1;
     setRules([]);
     setPresets(EMPTY_PRESETS);
   };
@@ -178,6 +188,24 @@ export default function App() {
         x1: pageSize.width,
         y1: pageSize.height,
       },
+    };
+
+    setRules((prev) => [...prev, newRule]);
+  };
+
+
+  const addDrawnRectangleRule = (params: { pageNumber: number; rect: UiRect }) => {
+    clearNotices();
+    const rectangleNumber = nextRectangleNumberRef.current;
+    nextRectangleNumberRef.current += 1;
+
+    const newRule: UiRule = {
+      id: newId(),
+      kind: "rectangle",
+      value: `${t("rules.rectangle.title")} ${rectangleNumber} (${t("rules.page.title")} ${params.pageNumber})`,
+      rectangleNumber,
+      pageNumber: params.pageNumber,
+      rect: params.rect,
     };
 
     setRules((prev) => [...prev, newRule]);
@@ -244,6 +272,8 @@ export default function App() {
               onSelectionChange={setPendingSelection}
               onCurrentPageChange={setCurrentPage}
               onPageSizeChange={handlePageSizeChange}
+              isDrawingRect={isDrawingRect}
+              onAddDrawnRect={addDrawnRectangleRule}
             />
           ) : (
             <div
@@ -283,6 +313,8 @@ export default function App() {
               pendingSelectionText={pendingSelection?.text ?? ""}
               canAddSelection={!!pendingSelection && pendingSelection.rects.length > 0}
               onAddSelection={addPendingSelection}
+              isDrawingRect={isDrawingRect}
+              onToggleDrawSelection={() => setIsDrawingRect((prev) => !prev)}
               canCensorPage={!!currentPage && !!pageSizes[currentPage]}
               onCensorPage={addCurrentPageRule}
             />

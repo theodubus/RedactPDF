@@ -73,5 +73,8 @@
   "rules.action.censorPage": "Censurer la page",
   "rules.option.respectAccents": "Respecter les accents",
   "rules.badge.page": "Page complète",
-  "rules.page.title": "Page"
+  "rules.page.title": "Page",
+  "rules.badge.rectangle": "Rectangle",
+  "rules.rectangle.title": "Rectangle",
+  "rules.action.stopDrawingSelection": "Arrêter dessin"
 }
