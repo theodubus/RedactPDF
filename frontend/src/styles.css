@@ -74,24 +74,11 @@ body,
   background: #dfe8ff;
   color: #1f2f6b;
   font-weight: 700;
-}
-
-
-
-.ruleOptionPill {
-  border-color: #bfc9e8;
-  background: #f8faff;
-  color: #1f2937;
-  font-weight: 500;
-}
-
-.ruleOptionPillActive {
-  border-color: #2f4aa0;
-  background: #dfe8ff;
-  color: #1f2f6b;
-  font-weight: 700;
   box-shadow: inset 0 0 0 1px rgba(47, 74, 160, 0.18);
 }
+
+
+
 
 
 .mainColumns {
