@@ -85,6 +85,8 @@ export default function App() {
 
   const hasAnythingToDo = rules.length > 0 || selectedPresets.length > 0;
 
+  const hasFullPageRule = useMemo(() => rules.some((r) => r.kind === "page"), [rules]);
+
   const loadPdfFile = (pickedFile: File | null) => {
     clearNotices();
 
@@ -186,6 +188,8 @@ export default function App() {
         rects: rectsForApi,
         rules: rulesForApi,
         presets: selectedPresets,
+        applyImages: hasFullPageRule,
+        applyGraphics: hasFullPageRule,
       });
 
       downloadBlob(r.pdfBlob, "redacted.pdf");
