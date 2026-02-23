@@ -1,29 +1,50 @@
-# Security Model (Draft)
+# Security Model
 
 ## Scope
-This project provides a local PDF redaction tool intended to permanently remove sensitive content from PDF files while preserving normal selection/search for non-redacted text.
+
+RedactPDF is a local PDF redaction tool intended to produce a **new exported PDF** where targeted sensitive content is no longer recoverable through standard extraction paths.
 
 ## Security Invariants (Non-negotiable)
-1. **Never modify the original file**  
-   The tool must always export a new PDF and must not overwrite the input.
 
-2. **No visual-only masking**  
-   Overlays/black rectangles that merely cover content are not acceptable. Redaction must remove underlying data.
+1. **Never modify the original file**
+   - Input PDF must remain untouched.
+2. **No fake success**
+   - If post-export audit fails, export must be blocked.
+3. **Prefer real removal over visual masking**
+   - Visual black overlays alone are not sufficient for sensitive workflows.
+4. **Operator preview before apply**
+   - UI preview is required to reduce human targeting mistakes.
 
-3. **Post-export verification is required**  
-   The tool must run an automated audit after redaction (at minimum, text extraction + pattern checking).  
-   If a forbidden pattern is still found, the tool must fail clearly and must not produce a “successful” output.
+## Current Guarantees (high level)
 
-4. **Preview before apply (UI requirement)**  
-   The UI must provide a preview of the redaction areas before applying changes (to reduce operator errors).
+- Export is done as a new file.
+- Redaction is followed by automated audit checks.
+- Backend supports strict options for images/graphics + sanitation.
 
-## Out of Scope / Limitations (for now)
-- Perfect detection of sensitive data in all PDFs is not guaranteed.
-- OCR on scanned PDFs is not in scope initially.
-- Multi-line / complex-layout matching will be improved iteratively and must be covered by tests.
+## Important Limitations
 
-## Reporting
-If you believe you found a redaction bypass or data leakage issue, please open a security issue with:
-- a minimal reproduction PDF (if shareable),
-- steps to reproduce,
-- expected vs actual behavior.
+1. **Flattened / scanned PDFs**
+   - Fine-grained redaction can be constrained.
+2. **Partial irrecoverable image/vector editing**
+   - Not a fully general “pixel/segment-only rewrite” pipeline at this stage.
+3. **OCR completeness**
+   - Not guaranteed for all scan/layout conditions.
+
+## Operational Recommendations
+
+For sensitive usage, prefer strict settings:
+
+- remove touched images/graphics,
+- sanitize metadata,
+- remove annotations,
+- remove attachments,
+- verify audit output before sharing exported files.
+
+## Reporting Security Issues
+
+Please open a security issue with:
+
+- minimal reproduction document (if shareable),
+- exact steps,
+- expected vs actual behavior,
+- platform/runtime info.
