@@ -91,6 +91,7 @@ export default function App() {
   const hasAnythingToDo = rules.length > 0 || selectedPresets.length > 0;
 
   const hasFullPageRule = useMemo(() => rules.some((r) => r.kind === "page"), [rules]);
+  const hasRectangleRule = useMemo(() => rules.some((r) => r.kind === "rectangle"), [rules]);
 
   const handlePageSizeChange = useCallback((pageNumber: number, size: { width: number; height: number }) => {
     setPageSizes((prev) => {
@@ -233,8 +234,11 @@ export default function App() {
         rects: rectsForApi,
         rules: rulesForApi,
         presets: selectedPresets,
-        applyImages: hasFullPageRule,
-        applyGraphics: hasFullPageRule,
+        applyImages: hasFullPageRule || hasRectangleRule,
+        applyGraphics: hasFullPageRule || hasRectangleRule,
+        sanitizeMetadata: true,
+        removeAnnotations: true,
+        removeAttachments: true,
       });
 
       downloadBlob(r.pdfBlob, "redacted.pdf");

@@ -72,6 +72,9 @@ export async function redactApply(params: {
   presets: PresetKey[];
   applyImages?: boolean;
   applyGraphics?: boolean;
+  sanitizeMetadata?: boolean;
+  removeAnnotations?: boolean;
+  removeAttachments?: boolean;
 }): Promise<RedactSuccess> {
   const form = new FormData();
   form.append("file", params.file);
@@ -116,6 +119,9 @@ export async function redactApply(params: {
     options: {
       apply_images: !!params.applyImages,
       apply_graphics: !!params.applyGraphics,
+      sanitize_metadata: !!params.sanitizeMetadata,
+      remove_annotations: !!params.removeAnnotations,
+      remove_attachments: !!params.removeAttachments,
     },
     // audit additionnel facultatif : on laisse null (audit_plan gère déjà search/regex/presets)
     audit: null,
