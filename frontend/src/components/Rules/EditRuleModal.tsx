@@ -21,7 +21,7 @@ type UiRuleNoId =
 
 export function EditRuleModal(props: {
   t: (k: string) => string;
-  rule: UiRule | null;
+  rule: Extract<UiRule, { kind: "exact" | "regex" }> | null;
   onClose: () => void;
   onSave: (updated: UiRuleNoId) => void;
 }) {
@@ -35,10 +35,10 @@ export function EditRuleModal(props: {
   const [editAllowSubwords, setEditAllowSubwords] = useState(false);
   const [editIgnoreAccents, setEditIgnoreAccents] = useState(false);
 
-  const isOpen = !!rule && rule.kind !== "selection";
+  const isOpen = !!rule;
 
   useEffect(() => {
-    if (!rule || rule.kind === "selection") return;
+    if (!rule) return;
 
     setEditKind(rule.kind);
     setEditValue(rule.value);
