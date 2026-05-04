@@ -1,11 +1,12 @@
 import React, { useCallback, useMemo, useRef, useState } from "react";
 import { useI18n } from "./i18n";
 import { redactApply } from "./api";
-import type { PresetKey, RuleInput } from "./api";
+import type { ImageMode, PresetKey, RuleInput } from "./api";
 
 import { HeaderBar } from "./components/HeaderBar";
 import { RulesSection } from "./components/Rules/RulesSection";
 import { PresetsSection } from "./components/PresetsSection";
+import { ImageModeSection } from "./components/ImageModeSection";
 import { ResultPanel } from "./components/ResultPanel";
 import { PdfViewer } from "./components/PdfViewer";
 
@@ -33,6 +34,7 @@ export default function App() {
   const [pageSizes, setPageSizes] = useState<Record<number, { width: number; height: number }>>({});
   const [isDrawingRect, setIsDrawingRect] = useState(false);
   const [presets, setPresets] = useState<Record<PresetKey, boolean>>(EMPTY_PRESETS);
+  const [imageMode, setImageMode] = useState<ImageMode>("pixels");
   const [isDragOver, setIsDragOver] = useState(false);
 
   const [submitting, setSubmitting] = useState(false);
@@ -84,14 +86,15 @@ export default function App() {
 
   const rectsForApi = useMemo(() => {
     return rules.flatMap((r) =>
-      r.kind === "selection" ? r.rects : r.kind === "page" || r.kind === "rectangle" ? [r.rect] : []
+      r.kind === "selection" ? r.rects : r.kind === "rectangle" ? [r.rect] : []
     );
   }, [rules]);
 
-  const hasAnythingToDo = rules.length > 0 || selectedPresets.length > 0;
+  const fullPageRectsForApi = useMemo(() => {
+    return rules.flatMap((r) => (r.kind === "page" ? [r.rect] : []));
+  }, [rules]);
 
-  const hasFullPageRule = useMemo(() => rules.some((r) => r.kind === "page"), [rules]);
-  const hasRectangleRule = useMemo(() => rules.some((r) => r.kind === "rectangle"), [rules]);
+  const hasAnythingToDo = rules.length > 0 || selectedPresets.length > 0;
 
   const handlePageSizeChange = useCallback((pageNumber: number, size: { width: number; height: number }) => {
     setPageSizes((prev) => {
@@ -134,6 +137,7 @@ export default function App() {
     nextRectangleNumberRef.current = 1;
     setRules([]);
     setPresets(EMPTY_PRESETS);
+    setImageMode("pixels");
   };
 
   const onPickFile: React.ChangeEventHandler<HTMLInputElement> = (e) => {
@@ -232,10 +236,11 @@ export default function App() {
       const r = await redactApply({
         file,
         rects: rectsForApi,
+        fullPageRects: fullPageRectsForApi,
         rules: rulesForApi,
         presets: selectedPresets,
-        applyImages: hasFullPageRule || hasRectangleRule,
-        applyGraphics: hasFullPageRule || hasRectangleRule,
+        imageMode,
+        applyGraphics: imageMode !== "none",
         sanitizeMetadata: true,
         removeAnnotations: true,
         removeAttachments: true,
@@ -324,6 +329,8 @@ export default function App() {
             />
 
             <PresetsSection t={t} presets={presets} togglePreset={togglePreset} />
+
+            <ImageModeSection t={t} mode={imageMode} setMode={setImageMode} />
           </div>
 
           <button className="button toolsSubmitButton" type="submit" disabled={submitting}>

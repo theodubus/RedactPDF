@@ -15,7 +15,7 @@ from app.search import SearchOptions, find_redaction_rectangles
 
 @dataclass(frozen=True)
 class RedactionOptions:
-    apply_images: bool = False
+    image_mode: str = "none"
     apply_graphics: bool = False
     sanitize_metadata: bool = True
     remove_annotations: bool = True
@@ -52,6 +52,7 @@ class PlanResult:
     search: list[RedactionRect]
     regex: list[RedactionRect]
     presets: list[RedactionRect]
+    full_page: list[RedactionRect]
     all_rects: list[RedactionRect]
 
 
@@ -74,11 +75,13 @@ def plan_redactions(
     searches: Sequence[SearchRequest] | None = None,
     regexes: Sequence[RegexRequest] | None = None,
     presets: PresetsRequest | None = None,
+    full_page_rects: list[RedactionRect] | None = None,
 ) -> PlanResult:
     if not pdf_bytes:
         raise ValueError("Empty PDF bytes")
 
     manual_out = list(manual_rects or [])
+    full_page_out = list(full_page_rects or [])
 
     search_rects: list[RedactionRect] = []
     regex_rects: list[RedactionRect] = []
@@ -126,15 +129,36 @@ def plan_redactions(
         search=search_rects,
         regex=regex_rects,
         presets=presets_rects,
+        full_page=full_page_out,
         all_rects=all_rects,
     )
 
 
 def apply_plan(pdf_bytes: bytes, plan: PlanResult, *, options: RedactionOptions) -> bytes:
+    """
+    Apply the plan in two passes when full-page rules exist:
+      1. Strict pass on full-page rects (remove images + graphics, irrespective
+         of the user's chosen image_mode). A page-wide rule is always meant to
+         wipe everything.
+      2. User-mode pass on every other rect.
+    Sanitisation (metadata / annotations / attachments) runs on the final pass.
+    """
+    if plan.full_page:
+        pdf_bytes = redact_pdf_by_rectangles(
+            pdf_bytes,
+            plan.full_page,
+            image_mode="remove",
+            apply_graphics=True,
+            # Defer sanitisation to the second pass so it's applied once on the final PDF.
+            sanitize_metadata=False,
+            remove_annotations=False,
+            remove_attachments=False,
+        )
+
     return redact_pdf_by_rectangles(
         pdf_bytes,
         plan.all_rects,
-        apply_images=options.apply_images,
+        image_mode=options.image_mode,
         apply_graphics=options.apply_graphics,
         sanitize_metadata=options.sanitize_metadata,
         remove_annotations=options.remove_annotations,

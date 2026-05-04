@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
@@ -58,7 +58,10 @@ class RectModel(BaseModel):
 
 
 class OptionsModel(BaseModel):
-    apply_images: bool = False
+    # "none"   : ne touche pas aux images
+    # "remove" : supprime entièrement les images intersectées (mode strict)
+    # "pixels" : noircit uniquement la zone intersectée (caviardage partiel)
+    image_mode: Literal["none", "remove", "pixels"] = "none"
     apply_graphics: bool = False
 
     # Sanitation "anti-fuites hors visuel" : ON par défaut (secure-by-default).
@@ -164,6 +167,10 @@ class ApplyPresetsModel(BaseModel):
 
 class ApplyPayload(BaseModel):
     rects: list[RectModel] = Field(default_factory=list)
+    # Page-wide rules. Always processed in strict mode (full image + graphics
+    # removal) regardless of options.image_mode, a page-wide rule is meant
+    # to wipe the page completely.
+    full_page_rects: list[RectModel] = Field(default_factory=list)
 
     # Compat existante (single)
     search: ApplySearchModel | None = None
@@ -196,6 +203,10 @@ async def redact_apply(
 
     manual_rects = [
         RedactionRect(page=r.page, x0=r.x0, y0=r.y0, x1=r.x1, y1=r.y1) for r in data.rects
+    ]
+    full_page_rects = [
+        RedactionRect(page=r.page, x0=r.x0, y0=r.y0, x1=r.x1, y1=r.y1)
+        for r in data.full_page_rects
     ]
 
     # ----------------------------
@@ -255,13 +266,14 @@ async def redact_apply(
             searches=searches_req or None,
             regexes=regexes_req or None,
             presets=presets_req,
+            full_page_rects=full_page_rects or None,
         )
 
         out_pdf = apply_plan(
             pdf_bytes,
             plan,
             options=RedactionOptions(
-                apply_images=data.options.apply_images,
+                image_mode=data.options.image_mode,
                 apply_graphics=data.options.apply_graphics,
                 sanitize_metadata=data.options.sanitize_metadata,
                 remove_annotations=data.options.remove_annotations,
@@ -303,7 +315,8 @@ async def redact_apply(
         "X-Redaction-Search-Occurrences": str(len(plan.search)),
         "X-Redaction-Regex-Occurrences": str(len(plan.regex)),
         "X-Redaction-Presets-Occurrences": str(len(plan.presets)),
-        "X-Redaction-Total-Occurrences": str(len(plan.all_rects)),
+        "X-Redaction-Full-Page-Occurrences": str(len(plan.full_page)),
+        "X-Redaction-Total-Occurrences": str(len(plan.all_rects) + len(plan.full_page)),
     }
     _add_report_headers(headers, composite)
     return Response(content=out_pdf, media_type="application/pdf", headers=headers)

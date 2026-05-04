@@ -3,7 +3,7 @@
 Local web app for redacting sensitive content from PDF files. Targets manual
 rectangles, text search, regex (single- or multi-line), and presets (email,
 phone, credit card). Every export passes a post-redaction audit before being
-returned — if any targeted content remains in the output, the export is
+returned, if any targeted content remains in the output, the export is
 blocked with a structured failure report.
 
 For the security model and limitations, see [docs/SECURITY.md](docs/SECURITY.md).
@@ -53,7 +53,7 @@ npm ci
 
 You need two terminals.
 
-**Terminal 1 — backend:**
+**Terminal 1 - backend:**
 
 ```bash
 cd backend
@@ -61,7 +61,7 @@ source .venv/bin/activate
 uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
-**Terminal 2 — frontend:**
+**Terminal 2 - frontend:**
 
 ```bash
 cd frontend
@@ -79,16 +79,38 @@ worry about CORS in development.
 
 1. Drop a PDF into the upload area.
 2. Add redaction rules in the right pane:
-   - **Selection** — select text in the viewer and click "Add as rule".
-   - **Manual rectangle** — toggle the draw tool and trace rectangles.
-   - **Whole page** — censor the current page.
-   - **Exact / regex** — typed rules with options (case sensitivity,
+   - **Selection** : select text in the viewer and click "Add as rule".
+   - **Manual rectangle** : toggle the draw tool and trace rectangles.
+   - **Whole page** : censor the current page.
+   - **Exact / regex** : typed rules with options (case sensitivity,
      whole-word, ignore accents, multiline).
-   - **Presets** — email, phone (libphonenumber-validated, default region
+   - **Presets** : email, phone (libphonenumber-validated, default region
      `FR`), credit card (Luhn-filtered).
-3. Click the submit button. The redacted PDF downloads automatically.
-4. If the post-redaction audit finds any targeted content remaining, you
-   get a 400 with a JSON report instead — fix the rule and retry.
+3. Pick an **image redaction mode** in the right pane (segmented control):
+   - **Aucune** (None) : images and vector graphics are not modified, even
+     if a redaction rectangle overlaps them. Only the text under the
+     redaction is removed; visually a black overlay is drawn on top, but
+     the underlying images/graphics still exist in the PDF and are
+     recoverable by anyone who removes the overlay.
+   - **Totale** (Full) : any image touched by a rectangle is removed
+     entirely; any vector path touched is removed.
+   - **Précise** (Precise) *(default)* : only the pixels inside the
+     redaction rectangle are blackened in the underlying bitmap; the rest
+     of the image stays visible. Vector paths touched by the rectangle are
+     removed (per-path, not pixel-level, vector partial redaction is not
+     supported). **This is the mode that makes flattened / scanned PDFs
+     redactable**, without it, the only options on a scan would be "lose
+     the whole page" or draw a fake black overlay. Re-encoding may be
+     lossy on JPEG-backed images.
+
+   The mode applies globally to the redaction request. **Exception**: any
+   "Censurer la page" rule (full-page redaction) always uses strict mode
+   for the page it covers, regardless of the chosen image mode, so a
+   full-page rule cannot accidentally leave images or graphics under a
+   black overlay. See [docs/SECURITY.md](docs/SECURITY.md) for details.
+4. Click the submit button. The redacted PDF downloads automatically.
+5. If the post-redaction audit finds any targeted content remaining, you
+   get a 400 with a JSON report instead, fix the rule and retry.
 
 ### Phone preset region
 
@@ -111,7 +133,7 @@ ruff check .
 pytest
 ```
 
-The test suite uses **versioned PDF fixtures** — see
+The test suite uses **versioned PDF fixtures** : see
 [backend/tests/fixtures/README.md](backend/tests/fixtures/README.md). Do not
 edit the generated PDFs by hand. If you change the fixture generator,
 regenerate all of them in one go:
@@ -125,7 +147,7 @@ python -m backend.tests.fixtures.generate_fixtures
 ## Production deployment
 
 This project is built for local single-user usage. **Exposing the API to
-untrusted networks or multiple users is unsafe out of the box** — there is
+untrusted networks or multiple users is unsafe out of the box**, there is
 no auth, no rate limiting, no upload size cap, no regex timeout. If you
 plan to host it for others, read
 [docs/SECURITY.md → Production / Multi-user Deployment](docs/SECURITY.md)

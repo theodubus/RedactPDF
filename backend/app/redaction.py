@@ -68,11 +68,26 @@ def _tighten_rect_vertical(rect: pymupdf.Rect) -> pymupdf.Rect:
 
 
 
+_IMAGE_MODE_MAP = {
+    "none": pymupdf.PDF_REDACT_IMAGE_NONE,
+    "remove": pymupdf.PDF_REDACT_IMAGE_REMOVE,
+    "pixels": pymupdf.PDF_REDACT_IMAGE_PIXELS,
+}
+
+
+def _resolve_image_mode(mode: str) -> int:
+    try:
+        return _IMAGE_MODE_MAP[mode]
+    except KeyError as e:
+        allowed = ", ".join(sorted(_IMAGE_MODE_MAP))
+        raise ValueError(f"Invalid image_mode {mode!r}. Allowed: {allowed}.") from e
+
+
 def redact_pdf_by_rectangles(
     pdf_bytes: bytes,
     rects: Iterable[RedactionRect],
     *,
-    apply_images: bool = False,
+    image_mode: str = "none",
     apply_graphics: bool = False,
     sanitize_metadata: bool = False,
     remove_annotations: bool = False,
@@ -81,18 +96,16 @@ def redact_pdf_by_rectangles(
     """
     Applique des redactions à partir d'une liste de rectangles.
 
-    Par défaut, ce comportement reste conservateur :
-    - images OFF
-    - vector graphics OFF
-    - text removal ON
-    - sanitize OFF
+    Modes images :
+    - "none"    -> ne touche pas aux images (défaut)
+    - "remove"  -> retire intégralement les images intersectées par un rect
+    - "pixels"  -> noircit uniquement les pixels intersectés (caviardage partiel)
 
-    Si activé :
-    - apply_images=True        -> suppression des images chevauchant les zones redigées
-    - apply_graphics=True      -> suppression des dessins vectoriels chevauchant les zones redigées
-    - sanitize_metadata=True   -> nettoyage des métadonnées (Info dict + XMP si possible)
+    Autres options :
+    - apply_graphics=True      -> suppression des dessins vectoriels touchés
+    - sanitize_metadata=True   -> nettoyage métadonnées (Info dict + XMP si possible)
     - remove_annotations=True  -> suppression des annotations/liens/widgets
-    - remove_attachments=True  -> suppression des fichiers embarqués (embedded files)
+    - remove_attachments=True  -> suppression des fichiers embarqués
 
     Retourne le PDF redigé (bytes).
     """
@@ -107,14 +120,11 @@ def redact_pdf_by_rectangles(
             if rect.is_empty:
                 raise ValueError(f"Empty rectangle: {rect}")
 
-            # Option A: amélioration de précision (inset vertical léger)
             rect = _tighten_rect_vertical(rect)
 
             by_page.setdefault(r.page, []).append(rect)
 
-        images_mode = (
-            pymupdf.PDF_REDACT_IMAGE_REMOVE if apply_images else pymupdf.PDF_REDACT_IMAGE_NONE
-        )
+        images_mode = _resolve_image_mode(image_mode)
         graphics_mode = (
             pymupdf.PDF_REDACT_LINE_ART_REMOVE_IF_TOUCHED
             if apply_graphics

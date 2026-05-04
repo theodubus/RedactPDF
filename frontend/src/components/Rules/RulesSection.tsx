@@ -144,9 +144,17 @@ export function RulesSection(props: {
 
       {canAddSelection ? (
         <>
+          <div className="selectionInfoSlot" aria-live="polite">
+            <div className="selectionInfoText">
+              <strong>{t("rules.selection.current")}: </strong>
+              {summarizeSelection(pendingSelectionText)}
+            </div>
+          </div>
+
           <button
             type="button"
             className="buttonSecondary buttonInline"
+            style={{ marginTop: 8 }}
             onClick={() => {
               onUserChange();
               onAddSelection();
@@ -155,13 +163,6 @@ export function RulesSection(props: {
           >
             {t("rules.selection.add")}
           </button>
-
-          <div className="selectionInfoSlot" aria-live="polite">
-            <div className="selectionInfoText">
-              <strong>{t("rules.selection.current")}: </strong>
-              {summarizeSelection(pendingSelectionText)}
-            </div>
-          </div>
         </>
       ) : (
         <>

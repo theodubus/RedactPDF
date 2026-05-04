@@ -76,5 +76,12 @@
   "rules.page.title": "Page",
   "rules.badge.rectangle": "Rectangle",
   "rules.rectangle.title": "Rectangle",
-  "rules.action.stopDrawingSelection": "Arrêter dessin"
+  "rules.action.stopDrawingSelection": "Arrêter dessin",
+  "form.section.imageMode": "Censure des images",
+  "form.imageMode.none": "Aucune",
+  "form.imageMode.remove": "Totale",
+  "form.imageMode.pixels": "Précise",
+  "form.imageMode.none.help": "Les images ne sont pas modifiées, même si une zone de censure les recouvre.",
+  "form.imageMode.remove.help": "Toute image touchée par une zone de censure est retirée intégralement.",
+  "form.imageMode.pixels.help": "Seule la zone intersectée de l'image est noircie ; le reste de l'image reste visible. Recompression possiblement avec perte."
 }

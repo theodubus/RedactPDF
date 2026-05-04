@@ -76,5 +76,12 @@
   "rules.page.title": "Page",
   "rules.badge.rectangle": "Rectangle",
   "rules.rectangle.title": "Rectangle",
-  "rules.action.stopDrawingSelection": "Stop drawing"
+  "rules.action.stopDrawingSelection": "Stop drawing",
+  "form.section.imageMode": "Image redaction",
+  "form.imageMode.none": "None",
+  "form.imageMode.remove": "Full",
+  "form.imageMode.pixels": "Precise",
+  "form.imageMode.none.help": "Images are never modified, even when a redaction rectangle overlaps them.",
+  "form.imageMode.remove.help": "Any image touched by a redaction rectangle is removed entirely.",
+  "form.imageMode.pixels.help": "Only the area intersected by the redaction is blackened. The rest of the image stays visible (possibly with lossy re-encoding)."
 }
