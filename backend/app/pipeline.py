@@ -17,9 +17,9 @@ from app.search import SearchOptions, find_redaction_rectangles
 class RedactionOptions:
     apply_images: bool = False
     apply_graphics: bool = False
-    sanitize_metadata: bool = False
-    remove_annotations: bool = False
-    remove_attachments: bool = False
+    sanitize_metadata: bool = True
+    remove_annotations: bool = True
+    remove_attachments: bool = True
 
 
 @dataclass(frozen=True)
@@ -142,7 +142,7 @@ def apply_plan(pdf_bytes: bytes, plan: PlanResult, *, options: RedactionOptions)
     )
 
 
-def _presets_internal_audit(out_pdf: bytes, *, presets: PresetsRequest) -> dict[str, Any] | None:
+def presets_internal_audit(out_pdf: bytes, *, presets: PresetsRequest) -> dict[str, Any] | None:
     """
     Internal presets audit: rerun presets detection on OUT PDF.
     If leaks remain -> return a structured fail report, else None.
@@ -270,7 +270,7 @@ def audit_plan(
 
     # --- Presets internal audit
     if presets is not None:
-        leak_report = _presets_internal_audit(out_pdf, presets=presets)
+        leak_report = presets_internal_audit(out_pdf, presets=presets)
         if leak_report is not None:
             failures["presets"] = leak_report
 

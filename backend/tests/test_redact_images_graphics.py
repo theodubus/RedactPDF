@@ -81,7 +81,6 @@ def _post_redact_rectangles(
             "apply_images": apply_images,
             "apply_graphics": apply_graphics,
         },
-        # L'audit est obligatoire : on met un pattern improbable qui ne matche pas.
         "audit": {
             "patterns": ["__NEVER_MATCH_123456789__"],
             "regex": False,
@@ -93,7 +92,7 @@ def _post_redact_rectangles(
         "file": ("input.pdf", pdf_in, "application/pdf"),
         "payload": (None, json.dumps(payload), "application/json"),
     }
-    return client.post("/redact/rectangles", files=files)
+    return client.post("/redact/apply", files=files)
 
 
 @pytest.mark.integration

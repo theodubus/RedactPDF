@@ -1,178 +1,144 @@
 # RedactPDF
 
-Outil de caviardage PDF **local et vérifiable** : l’objectif est de **retirer réellement** les données sensibles d’un PDF exporté, et pas seulement de les masquer visuellement.
+Local web app for redacting sensitive content from PDF files. Targets manual
+rectangles, text search, regex (single- or multi-line), and presets (email,
+phone, credit card). Every export passes a post-redaction audit before being
+returned — if any targeted content remains in the output, the export is
+blocked with a structured failure report.
+
+For the security model and limitations, see [docs/SECURITY.md](docs/SECURITY.md).
 
 ---
 
-## Pourquoi ce projet ?
+## Requirements
 
-Le mot “censure PDF” peut vouloir dire plusieurs choses très différentes en pratique.
-
-- **Masquage visuel (overlay / rectangle noir dessiné)**
-  - On voit du noir à l’écran.
-  - Mais le texte, l’image ou l’objet d’origine peut rester récupérable.
-- **Aplatissement / rasterisation**
-  - On convertit la page en image (ou en forme “figée”).
-  - Peut réduire la récupérabilité du texte, mais dégrade souvent la qualité et l’accessibilité.
-- **Caviardage réel (redaction)**
-  - Le contenu ciblé est supprimé de la structure PDF exportée.
-  - C’est le mode visé par RedactPDF.
-
-RedactPDF suit une approche “sécurité d’abord” : appliquer la redaction, puis auditer le résultat avant de livrer le PDF exporté.
+- **Python 3.10 or newer** (CI runs 3.11)
+- **Node.js 20 or newer** (for the frontend dev server / build)
+- A POSIX-like shell (Linux, macOS, WSL). Windows native is not officially
+  tested.
 
 ---
 
-## Fonctionnalités actuelles
+## Install
 
-### Censure par requêtes
-- Recherche exacte
-- Regex
-- Options de matching (casse, sous-mot/mot entier, accents, etc.)
+Clone the repo and set up the two halves:
 
-### Presets
-- Emails
-- Téléphones
-- Cartes bancaires
-
-### Censure visuelle guidée
-- Sélection texte au curseur
-- Censure de page complète
-- Dessin de rectangles (click-glisser)
-
-### Prévisualisation
-- Surcouches de preview avant export
-- Numérotation des rectangles dessinés pour faciliter le contrôle opérateur
-
-### Durcissement de l’export
-- Audit post-redaction (bloque la sortie si fuite détectée)
-- Support options de sanitation (métadonnées, annotations, pièces jointes) selon configuration
-
----
-
-## Limites connues (importantes)
-
-1. **PDF “aplatis” / scans / pages-image**
-   - Si le document est essentiellement une image, les stratégies de redaction fine sont plus limitées.
-   - Dans certains scénarios, un rectangle qui chevauche une image peut conduire à retirer un objet image entier (si mode strict), ou à un masquage partiel visuel (si mode non strict).
-
-2. **Censure partielle irréversible d’image/vectoriel (fine-grain)**
-   - Pas encore implémentée comme workflow natif robuste.
-   - Aujourd’hui, on est plutôt sur des modes “supprimer l’objet touché” vs “ne pas le supprimer”, selon options.
-
-3. **OCR hors périmètre de base**
-   - Le pipeline de base ne reconstruit pas automatiquement du texte OCR pour scans complexes.
-
----
-
-## Démarrage rapide (développeurs)
-
-### Prérequis
-- Python 3.10+
-- Node.js 20+
-- npm
-
-### 1) Cloner
 ```bash
-git clone <URL_DU_REPO>
+git clone https://github.com/theodubus/RedactPDF.git
 cd RedactPDF
 ```
 
-### 2) Backend
-```bash
-pip install -e "backend[dev]"
-cd backend
-uvicorn app.main:app --reload
-```
-Backend dispo sur `http://127.0.0.1:8000` (par défaut).
+### Backend (FastAPI + PyMuPDF)
 
-### 3) Frontend
-Dans un second terminal:
+```bash
+cd backend
+python -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev]"
+```
+
+`.[dev]` pulls runtime deps (FastAPI, PyMuPDF, `phonenumbers`, …) plus dev
+tooling (pytest, ruff, reportlab, httpx, pypdf).
+
+### Frontend (React + Vite)
+
+```bash
+cd ../frontend
+npm ci
+```
+
+---
+
+## Run locally
+
+You need two terminals.
+
+**Terminal 1 — backend:**
+
+```bash
+cd backend
+source .venv/bin/activate
+uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+```
+
+**Terminal 2 — frontend:**
+
 ```bash
 cd frontend
-npm install
 npm run dev
 ```
-Frontend dispo sur `http://127.0.0.1:5173` (ou port affiché par Vite).
+
+Open the URL Vite prints (default: `http://localhost:5173`). The Vite dev
+server proxies `/api/*` to the backend on `127.0.0.1:8000` (configured in
+[frontend/vite.config.ts](frontend/vite.config.ts)), so you do not need to
+worry about CORS in development.
 
 ---
 
-## Utilisation (opérateur)
+## Use it
 
-1. Charger un PDF.
-2. Ajouter des règles (requêtes/regex/presets), ou utiliser:
-   - **Censurer la page**
-   - **Dessiner sélection** (rectangle)
-   - **Sélection texte**
-3. Vérifier la preview.
-4. Cliquer **Censurer et télécharger**.
-5. Si audit KO: corriger les règles et recommencer.
+1. Drop a PDF into the upload area.
+2. Add redaction rules in the right pane:
+   - **Selection** — select text in the viewer and click "Add as rule".
+   - **Manual rectangle** — toggle the draw tool and trace rectangles.
+   - **Whole page** — censor the current page.
+   - **Exact / regex** — typed rules with options (case sensitivity,
+     whole-word, ignore accents, multiline).
+   - **Presets** — email, phone (libphonenumber-validated, default region
+     `FR`), credit card (Luhn-filtered).
+3. Click the submit button. The redacted PDF downloads automatically.
+4. If the post-redaction audit finds any targeted content remaining, you
+   get a 400 with a JSON report instead — fix the rule and retry.
 
----
+### Phone preset region
 
-## Installation via Docker (sans build local complexe)
+The `phone` preset uses `phonenumbers` to validate candidates. Numbers
+without a leading `+` are parsed against a default region. To change it:
 
-Voir le guide détaillé: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
-
-Résumé:
-- Construire les images backend+frontend,
-- Exposer les ports,
-- Lancer les services via `docker compose up -d`.
-
----
-
-## Installation via installeur / exécutable (utilisateur non technique)
-
-Voir le plan détaillé: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
-
-Résumé:
-- Fournir un package “un clic” qui:
-  - embarque backend + frontend,
-  - démarre les services localement,
-  - ouvre automatiquement l’URL locale dans le navigateur.
-
----
-
-## Médias de documentation (placeholders)
-
-Tu peux déposer ici des captures/gifs/vidéos, puis les référencer dans ce README.
-
-Exemples recommandés:
-
-- `docs/media/01-upload-and-preview.gif`
-  - Montrer: chargement d’un PDF + preview.
-- `docs/media/02-text-selection-redaction.gif`
-  - Montrer: sélection texte au curseur puis ajout de règle.
-- `docs/media/03-draw-rectangle.gif`
-  - Montrer: bouton “Dessiner sélection”, click-glisser, apparition `Rectangle X (Page Y)`.
-- `docs/media/04-full-page-redaction.gif`
-  - Montrer: “Censurer la page” + preview pleine page.
-- `docs/media/05-audit-fail-example.png`
-  - Montrer: modal d’échec audit avec détails.
-- `docs/media/06-audit-pass-download.png`
-  - Montrer: succès + téléchargement.
-
-Tu pourras ensuite ajouter des sections du type:
-
-```md
-![Draw rectangle demo](docs/media/03-draw-rectangle.gif)
+```bash
+export REDACT_DEFAULT_REGION=US
+uvicorn app.main:app ...
 ```
 
 ---
 
-## Roadmap / idées d’amélioration
+## Run the tests
 
-- Censure partielle **irréversible** d’image et de graphiques (sans supprimer l’objet entier)
-- Import/export de listes de requêtes de censure (profils réutilisables)
-- OCR avancé pour PDFs scannés
-- Plus d’outils visuels (édition de rectangles, regroupement, templates)
-- E2E tests de bout en bout sur workflows UI complets
+```bash
+cd backend
+source .venv/bin/activate
+ruff check .
+pytest
+```
+
+The test suite uses **versioned PDF fixtures** — see
+[backend/tests/fixtures/README.md](backend/tests/fixtures/README.md). Do not
+edit the generated PDFs by hand. If you change the fixture generator,
+regenerate all of them in one go:
+
+```bash
+python -m backend.tests.fixtures.generate_fixtures
+```
 
 ---
 
-## Documentation complémentaire
+## Production deployment
 
-- Sécurité: [docs/SECURITY.md](docs/SECURITY.md)
-- Tests: [docs/TESTING.md](docs/TESTING.md)
-- Contribution: [CONTRIBUTING.md](CONTRIBUTING.md)
-- Déploiement / packaging: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)
-- Fixtures PDF de test: [backend/tests/fixtures/README.md](backend/tests/fixtures/README.md)
+This project is built for local single-user usage. **Exposing the API to
+untrusted networks or multiple users is unsafe out of the box** — there is
+no auth, no rate limiting, no upload size cap, no regex timeout. If you
+plan to host it for others, read
+[docs/SECURITY.md → Production / Multi-user Deployment](docs/SECURITY.md)
+first and put the recommended protections in your reverse proxy /
+container.
+
+A typical setup is: build the frontend (`npm run build` produces a static
+bundle in `frontend/dist`), serve it from a reverse proxy that also
+proxies `/api/*` to the backend (Uvicorn or Gunicorn-with-Uvicorn-workers
+behind nginx/Caddy). With same-origin serving, you do not need CORS.
+
+---
+
+## License
+
+See repository root.
