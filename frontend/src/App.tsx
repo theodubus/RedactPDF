@@ -1,40 +1,44 @@
-import React, { useMemo, useState } from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import { useI18n } from "./i18n";
 import { redactApply } from "./api";
-import type { PresetKey, RuleInput } from "./api";
+import type { ImageMode, PresetKey, RuleInput } from "./api";
 
 import { HeaderBar } from "./components/HeaderBar";
-import { FilePickerSection } from "./components/FilePickerSection";
 import { RulesSection } from "./components/Rules/RulesSection";
 import { PresetsSection } from "./components/PresetsSection";
+import { ImageModeSection } from "./components/ImageModeSection";
 import { ResultPanel } from "./components/ResultPanel";
 import { PdfViewer } from "./components/PdfViewer";
 
-import type { UiRule } from "./types/uiRules";
-import { downloadBlob } from "./utils/redactionUtils";
+import type { UiRect, UiRule } from "./types/uiRules";
+import { downloadBlob, newId } from "./utils/redactionUtils";
+
+type PendingSelection = {
+  text: string;
+  rects: UiRect[];
+};
+
+const EMPTY_PRESETS: Record<PresetKey, boolean> = {
+  email: false,
+  phone: false,
+  credit_card: false,
+};
 
 export default function App() {
   const { lang, setLang, t } = useI18n();
 
   const [file, setFile] = useState<File | null>(null);
   const [rules, setRules] = useState<UiRule[]>([]);
-  const [presets, setPresets] = useState<Record<PresetKey, boolean>>({
-    email: false,
-    phone: false,
-    credit_card: false,
-  });
+  const [pendingSelection, setPendingSelection] = useState<PendingSelection | null>(null);
+  const [currentPage, setCurrentPage] = useState<number | null>(null);
+  const [pageSizes, setPageSizes] = useState<Record<number, { width: number; height: number }>>({});
+  const [isDrawingRect, setIsDrawingRect] = useState(false);
+  const [presets, setPresets] = useState<Record<PresetKey, boolean>>(EMPTY_PRESETS);
+  const [imageMode, setImageMode] = useState<ImageMode>("pixels");
+  const [isDragOver, setIsDragOver] = useState(false);
 
   const [submitting, setSubmitting] = useState(false);
 
-  const [successInfo, setSuccessInfo] = useState<{
-    auditStatus?: string;
-    auditMatches?: string;
-    occurrencesSearch: number;
-    occurrencesRegex: number;
-    occurrencesPresets: number;
-    occurrencesTotal: number;
-    lastBlob?: Blob;
-  } | null>(null);
 
   const [errorInfo, setErrorInfo] = useState<{
     status?: number;
@@ -42,8 +46,10 @@ export default function App() {
     rawMessage?: string;
   } | null>(null);
 
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const nextRectangleNumberRef = useRef(1);
+
   const clearNotices = () => {
-    setSuccessInfo(null);
     setErrorInfo(null);
   };
 
@@ -52,46 +58,91 @@ export default function App() {
   }, [presets]);
 
   const rulesForApi: RuleInput[] = useMemo(() => {
-    return rules.map((r) => {
+    const mapped: RuleInput[] = [];
+    for (const r of rules) {
       if (r.kind === "exact") {
-        return {
+        mapped.push({
           kind: "exact",
           query: r.value,
           caseSensitive: r.caseSensitive,
           allowSubwords: r.allowSubwords,
           ignoreAccents: r.ignoreAccents,
-        };
+        });
+        continue;
       }
-      return {
-        kind: "regex",
-        pattern: r.value,
-        caseSensitive: r.caseSensitive,
-        multiline: r.multiline,
-        allowSubwords: r.allowSubwords,
-        ignoreAccents: r.ignoreAccents,
-      };
-    });
+      if (r.kind === "regex") {
+        mapped.push({
+          kind: "regex",
+          pattern: r.value,
+          caseSensitive: r.caseSensitive,
+          multiline: r.multiline,
+          allowSubwords: r.allowSubwords,
+          ignoreAccents: r.ignoreAccents,
+        });
+      }
+    }
+    return mapped;
+  }, [rules]);
+
+  const rectsForApi = useMemo(() => {
+    return rules.flatMap((r) =>
+      r.kind === "selection" ? r.rects : r.kind === "rectangle" ? [r.rect] : []
+    );
+  }, [rules]);
+
+  const fullPageRectsForApi = useMemo(() => {
+    return rules.flatMap((r) => (r.kind === "page" ? [r.rect] : []));
   }, [rules]);
 
   const hasAnythingToDo = rules.length > 0 || selectedPresets.length > 0;
 
-  const onPickFile: React.ChangeEventHandler<HTMLInputElement> = (e) => {
+  const handlePageSizeChange = useCallback((pageNumber: number, size: { width: number; height: number }) => {
+    setPageSizes((prev) => {
+      const existing = prev[pageNumber];
+      if (existing && existing.width === size.width && existing.height === size.height) return prev;
+      return { ...prev, [pageNumber]: size };
+    });
+  }, []);
+
+  const loadPdfFile = (pickedFile: File | null) => {
     clearNotices();
 
-    const f = e.target.files?.[0] ?? null;
-    if (!f) {
+    if (!pickedFile) {
       setFile(null);
+      setPendingSelection(null);
+      setCurrentPage(null);
+      setPageSizes({});
+      setIsDrawingRect(false);
+      nextRectangleNumberRef.current = 1;
       return;
     }
 
-    const isPdf = f.type === "application/pdf" || f.name.toLowerCase().endsWith(".pdf");
+    const isPdf =
+      pickedFile.type === "application/pdf" || pickedFile.name.toLowerCase().endsWith(".pdf");
     if (!isPdf) {
       setFile(null);
+      setCurrentPage(null);
+      setPageSizes({});
+      setIsDrawingRect(false);
+      nextRectangleNumberRef.current = 1;
       setErrorInfo({ rawMessage: t("form.file.invalidType") });
       return;
     }
 
-    setFile(f);
+    setFile(pickedFile);
+    setPendingSelection(null);
+    setCurrentPage(1);
+    setPageSizes({});
+    setIsDrawingRect(false);
+    nextRectangleNumberRef.current = 1;
+    setRules([]);
+    setPresets(EMPTY_PRESETS);
+    setImageMode("pixels");
+  };
+
+  const onPickFile: React.ChangeEventHandler<HTMLInputElement> = (e) => {
+    loadPdfFile(e.target.files?.[0] ?? null);
+    e.currentTarget.value = "";
   };
 
   const togglePreset = (key: PresetKey) => {
@@ -99,9 +150,74 @@ export default function App() {
     setPresets((p) => ({ ...p, [key]: !p[key] }));
   };
 
+  const addPendingSelection = () => {
+    if (!pendingSelection) return;
+    clearNotices();
+
+    const trimmed = pendingSelection.text.trim();
+    if (!trimmed || pendingSelection.rects.length === 0) return;
+
+
+    const newRule: UiRule = {
+      id: newId(),
+      kind: "selection",
+      value: trimmed,
+      rects: pendingSelection.rects,
+    };
+
+    setRules((prev) => [...prev, newRule]);
+    setPendingSelection(null);
+  };
+
+
+  const addCurrentPageRule = () => {
+    const pageNumber = currentPage;
+    if (!pageNumber) return;
+    clearNotices();
+
+    const exists = rules.some((rule) => rule.kind === "page" && rule.pageNumber === pageNumber);
+    if (exists) return;
+
+    const pageSize = pageSizes[pageNumber];
+    if (!pageSize) return;
+
+    const newRule: UiRule = {
+      id: newId(),
+      kind: "page",
+      value: `${t("rules.page.title")} ${pageNumber}`,
+      pageNumber,
+      rect: {
+        page: pageNumber - 1,
+        x0: 0,
+        y0: 0,
+        x1: pageSize.width,
+        y1: pageSize.height,
+      },
+    };
+
+    setRules((prev) => [...prev, newRule]);
+  };
+
+
+  const addDrawnRectangleRule = (params: { pageNumber: number; rect: UiRect }) => {
+    clearNotices();
+    const rectangleNumber = nextRectangleNumberRef.current;
+    nextRectangleNumberRef.current += 1;
+
+    const newRule: UiRule = {
+      id: newId(),
+      kind: "rectangle",
+      value: `${t("rules.rectangle.title")} ${rectangleNumber} (${t("rules.page.title")} ${params.pageNumber})`,
+      rectangleNumber,
+      pageNumber: params.pageNumber,
+      rect: params.rect,
+    };
+
+    setRules((prev) => [...prev, newRule]);
+  };
+
   const handleSubmit: React.FormEventHandler<HTMLFormElement> = async (e) => {
     e.preventDefault();
-    setSuccessInfo(null);
     setErrorInfo(null);
 
     if (!file) {
@@ -119,24 +235,15 @@ export default function App() {
     try {
       const r = await redactApply({
         file,
+        rects: rectsForApi,
+        fullPageRects: fullPageRectsForApi,
         rules: rulesForApi,
         presets: selectedPresets,
-      });
-
-      const occSearch = Number(r.headers.occurrencesSearch ?? "0") || 0;
-      const occRegex = Number(r.headers.occurrencesRegex ?? "0") || 0;
-      const occPresets = Number(r.headers.occurrencesPresets ?? "0") || 0;
-      const occTotal =
-        Number(r.headers.occurrencesTotal ?? "0") || occSearch + occRegex + occPresets;
-
-      setSuccessInfo({
-        auditStatus: r.headers.auditStatus,
-        auditMatches: r.headers.auditMatches,
-        occurrencesSearch: occSearch,
-        occurrencesRegex: occRegex,
-        occurrencesPresets: occPresets,
-        occurrencesTotal: occTotal,
-        lastBlob: r.pdfBlob,
+        imageMode,
+        applyGraphics: imageMode !== "none",
+        sanitizeMetadata: true,
+        removeAnnotations: true,
+        removeAttachments: true,
       });
 
       downloadBlob(r.pdfBlob, "redacted.pdf");
@@ -152,56 +259,96 @@ export default function App() {
   };
 
   return (
-    <div className="page">
-      <HeaderBar lang={lang} setLang={setLang} t={t} />
+    <div className="page pageLayout">
+      <input ref={fileInputRef} type="file" accept="application/pdf" onChange={onPickFile} hidden />
 
-      <form className="workspace" onSubmit={handleSubmit}>
-        <section className="card viewerCard">
-          <FilePickerSection t={t} file={file} onPickFile={onPickFile} />
+      <HeaderBar
+        lang={lang}
+        setLang={setLang}
+        t={t}
+        fileName={file?.name}
+        onChangeFile={file ? () => fileInputRef.current?.click() : undefined}
+      />
 
-          <div className={`pdfPlaceholder ${file ? "pdfPlaceholderHasFile" : ""}`.trim()}>
-            {file ? (
-              <PdfViewer file={file} rules={rules} t={t} />
-            ) : (
-              <>
-                <div className="sectionTitle">{t("viewer.placeholder.title")}</div>
-                <p className="muted">{t("viewer.placeholder.body")}</p>
-              </>
-            )}
-          </div>
+      <form className="mainColumns" onSubmit={handleSubmit}>
+        <section className="viewerPane">
+          {file ? (
+            <PdfViewer
+              file={file}
+              rules={rules}
+              presetKeys={selectedPresets}
+              t={t}
+              onSelectionChange={setPendingSelection}
+              onCurrentPageChange={setCurrentPage}
+              onPageSizeChange={handlePageSizeChange}
+              isDrawingRect={isDrawingRect}
+              onAddDrawnRect={addDrawnRectangleRule}
+            />
+          ) : (
+            <div
+              className={`uploadDropZone ${isDragOver ? "uploadDropZoneActive" : ""}`.trim()}
+              onDragOver={(e) => {
+                e.preventDefault();
+                setIsDragOver(true);
+              }}
+              onDragLeave={() => setIsDragOver(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setIsDragOver(false);
+                loadPdfFile(e.dataTransfer.files?.[0] ?? null);
+              }}
+            >
+              <div className="sectionTitle">{t("viewer.drop.title")}</div>
+              <p className="muted">{t("viewer.drop.body")}</p>
+              <button
+                type="button"
+                className="button"
+                style={{ width: "min(260px, 100%)" }}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                {t("form.file.choose")}
+              </button>
+            </div>
+          )}
         </section>
 
-        <aside className="sidePanel">
-          <div className="card">
+        <aside className="toolsPane">
+          <div className="toolsPaneContent">
             <RulesSection
               t={t}
               rules={rules}
               setRules={setRules}
               onUserChange={clearNotices}
+              pendingSelectionText={pendingSelection?.text ?? ""}
+              canAddSelection={!!pendingSelection && pendingSelection.rects.length > 0}
+              onAddSelection={addPendingSelection}
+              isDrawingRect={isDrawingRect}
+              onToggleDrawSelection={() => setIsDrawingRect((prev) => !prev)}
+              canCensorPage={!!currentPage && !!pageSizes[currentPage]}
+              onCensorPage={addCurrentPageRule}
             />
 
             <PresetsSection t={t} presets={presets} togglePreset={togglePreset} />
 
-            <div className="hint">{t("form.hint")}</div>
-
-            <button className="button" type="submit" disabled={submitting}>
-              {submitting ? t("form.submitting") : t("form.submit")}
-            </button>
+            <ImageModeSection t={t} mode={imageMode} setMode={setImageMode} />
           </div>
 
-          <div className="card">
-            <ResultPanel
-              t={t}
-              hintText={t("form.hint")}
-              successInfo={successInfo}
-              errorInfo={errorInfo}
-              onDownload={() => {
-                if (successInfo?.lastBlob) downloadBlob(successInfo.lastBlob, "redacted.pdf");
-              }}
-            />
-          </div>
+          <button className="button toolsSubmitButton" type="submit" disabled={submitting}>
+            {submitting ? t("form.submitting") : t("form.submit")}
+          </button>
         </aside>
       </form>
+
+      {errorInfo ? (
+        <div className="auditModalOverlay" onMouseDown={() => setErrorInfo(null)}>
+          <div className="auditModalPanel" onMouseDown={(e) => e.stopPropagation()}>
+            <ResultPanel t={t} errorInfo={errorInfo} />
+            <button type="button" className="buttonSecondary" onClick={() => setErrorInfo(null)}>
+              {t("modal.cancel")}
+            </button>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { UiRule } from "../types/uiRules";
+import type { PointerEvent as ReactPointerEvent } from "react";
+import type { PresetKey } from "../api";
+import type { UiRect, UiRule } from "../types/uiRules";
 
 type PdfViewport = {
   width: number;
@@ -27,6 +29,15 @@ type PdfDocumentProxy = {
   destroy: () => void;
 };
 
+
+type DrawDraft = {
+  pageIndex: number;
+  startX: number;
+  startY: number;
+  currentX: number;
+  currentY: number;
+};
+
 type PdfJsLib = {
   GlobalWorkerOptions: { workerSrc: string };
   getDocument: (params: { data: Uint8Array }) => { promise: Promise<PdfDocumentProxy> };
@@ -49,9 +60,15 @@ async function ensurePdfJsLoaded(): Promise<PdfJsLib> {
 export function PdfViewer(props: {
   file: File;
   rules: UiRule[];
+  presetKeys: PresetKey[];
   t: (k: string) => string;
+  onSelectionChange: (selection: { text: string; rects: UiRect[] } | null) => void;
+  onCurrentPageChange: (pageNumber: number | null) => void;
+  onPageSizeChange: (pageNumber: number, size: { width: number; height: number }) => void;
+  isDrawingRect: boolean;
+  onAddDrawnRect: (params: { pageNumber: number; rect: UiRect }) => void;
 }) {
-  const { file, rules, t } = props;
+  const { file, rules, presetKeys, t, onSelectionChange, onCurrentPageChange, onPageSizeChange, isDrawingRect, onAddDrawnRect } = props;
 
   const [pdfDoc, setPdfDoc] = useState<PdfDocumentProxy | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -62,7 +79,10 @@ export function PdfViewer(props: {
   const canvasRefs = useRef<Array<HTMLCanvasElement | null>>([]);
   const textLayerRefs = useRef<Array<HTMLDivElement | null>>([]);
   const previewLayerRefs = useRef<Array<HTMLDivElement | null>>([]);
+  const pageRefs = useRef<Array<HTMLDivElement | null>>([]);
+  const pageScalesRef = useRef<Array<number>>([]);
   const pdfjsRef = useRef<PdfJsLib | null>(null);
+  const [drawDraft, setDrawDraft] = useState<DrawDraft | null>(null);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -84,9 +104,13 @@ export function PdfViewer(props: {
     let active = true;
     let loadedDoc: PdfDocumentProxy | null = null;
 
+    onSelectionChange(null);
+    onCurrentPageChange(null);
+    pageScalesRef.current = [];
     setPdfDoc(null);
     setError(null);
     setIsLoading(true);
+    setDrawDraft(null);
 
     (async () => {
       try {
@@ -103,6 +127,7 @@ export function PdfViewer(props: {
         }
 
         setPdfDoc(doc);
+        onCurrentPageChange(1);
       } catch {
         if (!active) return;
         setError(t("viewer.error.load"));
@@ -115,7 +140,7 @@ export function PdfViewer(props: {
       active = false;
       if (loadedDoc) loadedDoc.destroy();
     };
-  }, [file, t]);
+  }, [file, onSelectionChange, onCurrentPageChange]);
 
   const pageNumbers = useMemo(() => {
     if (!pdfDoc) return [];
@@ -134,8 +159,11 @@ export function PdfViewer(props: {
 
         const page = await pdfDoc.getPage(pageNumber);
         const baseViewport = page.getViewport({ scale: 1 });
+        onPageSizeChange(pageNumber, { width: baseViewport.width, height: baseViewport.height });
         const scale = containerWidth / baseViewport.width;
         const viewport = page.getViewport({ scale });
+
+        pageScalesRef.current[pageNumber - 1] = scale;
 
         const canvas = canvasRefs.current[pageNumber - 1];
         const textLayer = textLayerRefs.current[pageNumber - 1];
@@ -179,22 +207,198 @@ export function PdfViewer(props: {
           viewport,
         });
         await textLayerTask.render();
-        applyPreviewHighlights(textLayer, previewLayer, rules);
+        applyPreviewHighlights(textLayer, previewLayer, rules, presetKeys, pageNumber - 1, scale);
       }
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [pdfDoc, pageNumbers, containerWidth, rules]);
+  }, [pdfDoc, pageNumbers, containerWidth, rules, presetKeys, onPageSizeChange]);
 
   useEffect(() => {
     for (const [index, textLayer] of textLayerRefs.current.entries()) {
       const previewLayer = previewLayerRefs.current[index];
+      const scale = pageScalesRef.current[index] ?? 1;
       if (!textLayer || !previewLayer) continue;
-      applyPreviewHighlights(textLayer, previewLayer, rules);
+      applyPreviewHighlights(textLayer, previewLayer, rules, presetKeys, index, scale);
     }
-  }, [rules]);
+  }, [rules, presetKeys]);
+
+  useEffect(() => {
+    if (!containerRef.current || pageNumbers.length === 0) return;
+
+    const container = containerRef.current;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        let bestPage: number | null = null;
+        let bestRatio = 0;
+
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          const page = Number((entry.target as HTMLElement).dataset.pageNumber ?? "0");
+          if (!page) continue;
+          if (entry.intersectionRatio > bestRatio) {
+            bestRatio = entry.intersectionRatio;
+            bestPage = page;
+          }
+        }
+
+        if (bestPage) onCurrentPageChange(bestPage);
+      },
+      { root: container, threshold: [0.25, 0.5, 0.75] },
+    );
+
+    for (const pageEl of pageRefs.current) {
+      if (pageEl) observer.observe(pageEl);
+    }
+
+    return () => observer.disconnect();
+  }, [pageNumbers, onCurrentPageChange]);
+
+  useEffect(() => {
+    const computeSelection = () => {
+      if (isDrawingRect) {
+        onSelectionChange(null);
+        return;
+      }
+
+      const selection = window.getSelection();
+      if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
+        onSelectionChange(null);
+        return;
+      }
+
+      const selectedText = selection.toString().trim();
+      if (!selectedText) {
+        onSelectionChange(null);
+        return;
+      }
+
+      const range = selection.getRangeAt(0);
+      const anchorNode = range.commonAncestorContainer;
+      if (!anchorNode) {
+        onSelectionChange(null);
+        return;
+      }
+
+      const pageIndex = textLayerRefs.current.findIndex((layer) => layer?.contains(anchorNode) ?? false);
+      if (pageIndex < 0) {
+        onSelectionChange(null);
+        return;
+      }
+
+      const textLayer = textLayerRefs.current[pageIndex];
+      const scale = pageScalesRef.current[pageIndex] ?? 1;
+      if (!textLayer || scale <= 0) {
+        onSelectionChange(null);
+        return;
+      }
+
+      const layerBounds = textLayer.getBoundingClientRect();
+      const rects: UiRect[] = [];
+
+      for (const rect of range.getClientRects()) {
+        const localLeft = rect.left - layerBounds.left;
+        const localRight = rect.right - layerBounds.left;
+        const localTop = rect.top - layerBounds.top;
+        const localBottom = rect.bottom - layerBounds.top;
+
+        if (localRight <= localLeft || localBottom <= localTop) continue;
+
+        rects.push({
+          page: pageIndex,
+          x0: localLeft / scale,
+          y0: localTop / scale,
+          x1: localRight / scale,
+          y1: localBottom / scale,
+        });
+      }
+
+      if (rects.length === 0) {
+        onSelectionChange(null);
+        return;
+      }
+
+      onSelectionChange({ text: selectedText, rects });
+      onCurrentPageChange(pageIndex + 1);
+    };
+
+    document.addEventListener("selectionchange", computeSelection);
+    return () => {
+      document.removeEventListener("selectionchange", computeSelection);
+    };
+  }, [onSelectionChange, onCurrentPageChange, isDrawingRect]);
+
+
+  const clampPoint = (value: number, max: number) => Math.max(0, Math.min(value, max));
+
+  const beginDraw = (pageIndex: number, event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!isDrawingRect) return;
+
+    const layer = event.currentTarget;
+    const bounds = layer.getBoundingClientRect();
+    const x = clampPoint(event.clientX - bounds.left, bounds.width);
+    const y = clampPoint(event.clientY - bounds.top, bounds.height);
+
+    layer.setPointerCapture(event.pointerId);
+    setDrawDraft({ pageIndex, startX: x, startY: y, currentX: x, currentY: y });
+    event.preventDefault();
+  };
+
+  const moveDraw = (pageIndex: number, event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!isDrawingRect || !drawDraft || drawDraft.pageIndex !== pageIndex) return;
+
+    const layer = event.currentTarget;
+    const bounds = layer.getBoundingClientRect();
+    const x = clampPoint(event.clientX - bounds.left, bounds.width);
+    const y = clampPoint(event.clientY - bounds.top, bounds.height);
+
+    setDrawDraft((prev) => (prev && prev.pageIndex === pageIndex ? { ...prev, currentX: x, currentY: y } : prev));
+    event.preventDefault();
+  };
+
+  const endDraw = (pageIndex: number, event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!isDrawingRect || !drawDraft || drawDraft.pageIndex !== pageIndex) return;
+
+    const layer = event.currentTarget;
+    if (layer.hasPointerCapture(event.pointerId)) {
+      layer.releasePointerCapture(event.pointerId);
+    }
+
+    const bounds = layer.getBoundingClientRect();
+    const x = clampPoint(event.clientX - bounds.left, bounds.width);
+    const y = clampPoint(event.clientY - bounds.top, bounds.height);
+
+    const left = Math.min(drawDraft.startX, x);
+    const right = Math.max(drawDraft.startX, x);
+    const top = Math.min(drawDraft.startY, y);
+    const bottom = Math.max(drawDraft.startY, y);
+
+    const minSize = 4;
+    if (right - left >= minSize && bottom - top >= minSize) {
+      const scale = pageScalesRef.current[pageIndex] ?? 1;
+      if (scale > 0) {
+        onAddDrawnRect({
+          pageNumber: pageIndex + 1,
+          rect: {
+            page: pageIndex,
+            x0: left / scale,
+            y0: top / scale,
+            x1: right / scale,
+            y1: bottom / scale,
+          },
+        });
+      }
+    }
+
+    setDrawDraft(null);
+    event.preventDefault();
+  };
+
+  const cancelDraw = () => {
+    if (drawDraft) setDrawDraft(null);
+  };
 
   if (error) {
     return <div className="pdfViewerMessage bad">{error}</div>;
@@ -206,7 +410,14 @@ export function PdfViewer(props: {
 
       <div className="pdfCanvasStack" aria-live="polite">
         {pageNumbers.map((pageNumber) => (
-          <div key={pageNumber} className="pdfPage">
+          <div
+            key={pageNumber}
+            className="pdfPage"
+            data-page-number={pageNumber}
+            ref={(el) => {
+              pageRefs.current[pageNumber - 1] = el;
+            }}
+          >
             <canvas
               className="pdfCanvas"
               ref={(el) => {
@@ -220,7 +431,26 @@ export function PdfViewer(props: {
               }}
             />
             <div
-              className="pdfTextLayer textLayer"
+              className={`pdfDrawLayer ${isDrawingRect ? "pdfDrawLayerActive" : ""}`.trim()}
+              onPointerDown={(event) => beginDraw(pageNumber - 1, event)}
+              onPointerMove={(event) => moveDraw(pageNumber - 1, event)}
+              onPointerUp={(event) => endDraw(pageNumber - 1, event)}
+              onPointerCancel={cancelDraw}
+            >
+              {drawDraft && drawDraft.pageIndex === pageNumber - 1 ? (
+                <div
+                  className="redactionPreviewRect"
+                  style={{
+                    left: `${Math.min(drawDraft.startX, drawDraft.currentX)}px`,
+                    top: `${Math.min(drawDraft.startY, drawDraft.currentY)}px`,
+                    width: `${Math.abs(drawDraft.currentX - drawDraft.startX)}px`,
+                    height: `${Math.abs(drawDraft.currentY - drawDraft.startY)}px`,
+                  }}
+                />
+              ) : null}
+            </div>
+            <div
+              className={`pdfTextLayer textLayer ${isDrawingRect ? "pdfTextLayerNoPointer" : ""}`.trim()}
               ref={(el) => {
                 textLayerRefs.current[pageNumber - 1] = el;
               }}
@@ -236,9 +466,11 @@ function applyPreviewHighlights(
   textLayer: HTMLDivElement,
   previewLayer: HTMLDivElement,
   rules: UiRule[],
+  presetKeys: PresetKey[],
+  pageIndex: number,
+  scale: number,
 ) {
   previewLayer.replaceChildren();
-  if (!rules.length) return;
 
   const layerBounds = textLayer.getBoundingClientRect();
   if (!layerBounds.width || !layerBounds.height) return;
@@ -251,7 +483,7 @@ function applyPreviewHighlights(
     const raw = textNode.textContent ?? "";
     if (!raw) continue;
 
-    const ranges = collectMatches(raw, rules);
+    const ranges = collectMatches(raw, rules, presetKeys);
     if (ranges.length === 0) continue;
 
     for (const rangeDef of ranges) {
@@ -260,27 +492,92 @@ function applyPreviewHighlights(
       range.setEnd(textNode, rangeDef.end);
 
       for (const rect of range.getClientRects()) {
-        const width = rect.width;
-        const height = rect.height;
-        if (!width || !height) continue;
-
-        const highlight = document.createElement("div");
-        highlight.className = "redactionPreviewRect";
-        highlight.style.left = `${rect.left - layerBounds.left}px`;
-        highlight.style.top = `${rect.top - layerBounds.top}px`;
-        highlight.style.width = `${width}px`;
-        highlight.style.height = `${height}px`;
-        previewLayer.appendChild(highlight);
+        drawPreviewRect(previewLayer, {
+          left: rect.left - layerBounds.left,
+          top: rect.top - layerBounds.top,
+          width: rect.width,
+          height: rect.height,
+        });
       }
 
       range.detach();
     }
   }
+
+  if (presetKeys.includes("phone")) {
+    highlightPhonePresetMatches(textLayer, previewLayer, layerBounds);
+  }
+
+  const pageRules = rules.filter((r): r is Extract<UiRule, { kind: "page" }> => r.kind === "page");
+  for (const pageRule of pageRules) {
+    if (pageRule.pageNumber !== pageIndex + 1) continue;
+    drawPreviewRect(previewLayer, {
+      left: 0,
+      top: 0,
+      width: layerBounds.width,
+      height: layerBounds.height,
+    });
+  }
+
+  const rectangleRules = rules.filter((r): r is Extract<UiRule, { kind: "rectangle" }> => r.kind === "rectangle");
+  for (const rectangleRule of rectangleRules) {
+    if (rectangleRule.pageNumber !== pageIndex + 1) continue;
+    const rect = rectangleRule.rect;
+    drawPreviewRect(previewLayer, {
+      left: rect.x0 * scale,
+      top: rect.y0 * scale,
+      width: (rect.x1 - rect.x0) * scale,
+      height: (rect.y1 - rect.y0) * scale,
+    }, String(rectangleRule.rectangleNumber));
+  }
+
+  const selectionRules = rules.filter((r): r is Extract<UiRule, { kind: "selection" }> => r.kind === "selection");
+  for (const selectionRule of selectionRules) {
+    for (const rect of selectionRule.rects) {
+      if (rect.page !== pageIndex) continue;
+      drawPreviewRect(previewLayer, {
+        left: rect.x0 * scale,
+        top: rect.y0 * scale,
+        width: (rect.x1 - rect.x0) * scale,
+        height: (rect.y1 - rect.y0) * scale,
+      });
+    }
+  }
 }
 
-function collectMatches(text: string, rules: UiRule[]): Array<{ start: number; end: number }> {
+function drawPreviewRect(
+  previewLayer: HTMLDivElement,
+  rect: { left: number; top: number; width: number; height: number },
+  label?: string,
+) {
+  const width = rect.width;
+  const height = rect.height;
+  if (!width || !height) return;
+
+  const highlight = document.createElement("div");
+  highlight.className = "redactionPreviewRect";
+  highlight.style.left = `${rect.left}px`;
+  highlight.style.top = `${rect.top}px`;
+  highlight.style.width = `${width}px`;
+  highlight.style.height = `${height}px`;
+  if (label) {
+    const badge = document.createElement("div");
+    badge.className = "redactionPreviewRectLabel";
+    badge.textContent = label;
+    highlight.appendChild(badge);
+  }
+
+  previewLayer.appendChild(highlight);
+}
+
+function collectMatches(
+  text: string,
+  rules: UiRule[],
+  presetKeys: PresetKey[],
+): Array<{ start: number; end: number }> {
   const matches: Array<{ start: number; end: number }> = [];
   for (const rule of rules) {
+    if (rule.kind === "selection" || rule.kind === "page" || rule.kind === "rectangle") continue;
     const value = rule.value.trim();
     if (!value) continue;
     const ranges =
@@ -289,7 +586,122 @@ function collectMatches(text: string, rules: UiRule[]): Array<{ start: number; e
         : findRegexMatches(text, value, rule.caseSensitive, rule.ignoreAccents, rule.allowSubwords);
     matches.push(...ranges);
   }
+  matches.push(...findPresetMatches(text, presetKeys));
   return mergeRanges(matches);
+}
+
+
+const PHONE_PRESET_REGEX = /\b(?:\+|00)?\s*(?:\d[\s().-]?){6,20}\d\b/gi;
+
+function findPresetMatches(text: string, presetKeys: PresetKey[]) {
+  const ranges: Array<{ start: number; end: number }> = [];
+
+  for (const key of presetKeys) {
+    if (key === "phone") continue;
+
+    const regex =
+      key === "email"
+        ? /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/gi
+        : /\b(?:\d[ -]*?){13,19}\b/gi;
+
+    for (const match of text.matchAll(regex)) {
+      if (typeof match.index !== "number") continue;
+      const value = match[0] ?? "";
+      if (!value) continue;
+      ranges.push({ start: match.index, end: match.index + value.length });
+    }
+  }
+
+  return ranges;
+}
+
+function isLikelyPhonePresetMatch(rawMatch: string) {
+  const value = rawMatch.trim();
+  if (!value) return false;
+  if (/[A-Za-z/]/.test(value)) return false;
+
+  const hasIntlPrefix = /^\s*(?:\+|00)/.test(value);
+  const digits = value.replace(/\D+/g, "");
+  const minDigits = hasIntlPrefix ? 8 : 10;
+  if (digits.length < minDigits || digits.length > 15) return false;
+
+  if (!hasIntlPrefix && !digits.startsWith("0")) return false;
+  if (!/[+\s().-]/.test(value)) return false;
+
+  return true;
+}
+
+type LayerTextNode = {
+  node: Text;
+  start: number;
+  end: number;
+};
+
+function highlightPhonePresetMatches(
+  textLayer: HTMLDivElement,
+  previewLayer: HTMLDivElement,
+  layerBounds: DOMRect,
+) {
+  const { fullText, nodes } = collectLayerTextNodes(textLayer);
+  if (!fullText || nodes.length === 0) return;
+
+  const phoneRegex = new RegExp(PHONE_PRESET_REGEX.source, PHONE_PRESET_REGEX.flags);
+  for (const match of fullText.matchAll(phoneRegex)) {
+    if (typeof match.index !== "number") continue;
+    const value = match[0] ?? "";
+    if (!value) continue;
+    if (!isLikelyPhonePresetMatch(value)) continue;
+
+    const matchStart = match.index;
+    const matchEnd = match.index + value.length;
+
+    for (const item of nodes) {
+      const localStart = Math.max(matchStart, item.start) - item.start;
+      const localEnd = Math.min(matchEnd, item.end) - item.start;
+      if (localEnd <= localStart) continue;
+
+      const range = document.createRange();
+      range.setStart(item.node, localStart);
+      range.setEnd(item.node, localEnd);
+
+      for (const rect of range.getClientRects()) {
+        drawPreviewRect(previewLayer, {
+          left: rect.left - layerBounds.left,
+          top: rect.top - layerBounds.top,
+          width: rect.width,
+          height: rect.height,
+        });
+      }
+      range.detach();
+    }
+  }
+}
+
+function collectLayerTextNodes(textLayer: HTMLDivElement) {
+  const nodes: LayerTextNode[] = [];
+  let fullText = "";
+  let cursor = 0;
+
+  const spans = textLayer.querySelectorAll("span");
+  for (const span of spans) {
+    const textNode = span.firstChild;
+    if (!textNode || textNode.nodeType !== Node.TEXT_NODE) continue;
+
+    const value = textNode.textContent ?? "";
+    if (!value) continue;
+
+    const start = cursor;
+    const end = start + value.length;
+    nodes.push({ node: textNode as Text, start, end });
+
+    fullText += value;
+    cursor = end;
+
+    fullText += "\n";
+    cursor += 1;
+  }
+
+  return { fullText, nodes };
 }
 
 function findExactMatches(

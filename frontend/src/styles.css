@@ -3,96 +3,214 @@
     "Segoe UI Emoji";
   line-height: 1.4;
   color: #111;
-  background: #f6f7fb;
+  background: #edf2ff;
 }
 
 * { box-sizing: border-box; }
 
-.page {
-  min-height: 100vh;
-  padding: 20px;
-  max-width: 1320px;
-  margin: 0 auto;
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
 }
 
-.header {
+.page {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+}
+
+.pageLayout {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 0;
+}
+
+.topBand {
+  padding: 10px 12px;
+  background: linear-gradient(90deg, #1f2f6b 0%, #2f4aa0 100%);
   display: flex;
   justify-content: space-between;
   gap: 12px;
-  align-items: flex-start;
-  margin-bottom: 16px;
+  align-items: center;
+  min-height: 56px;
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  border-bottom: 1px solid #23346f;
 }
 
-.title {
-  font-size: 20px;
-  font-weight: 700;
+.topBandLeft {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
 }
 
-.subtitle {
-  margin-top: 4px;
-  color: #444;
-  font-size: 13px;
+.topBandFileName {
+  font-size: 14px;
+  color: #e5ebff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 60vw;
 }
 
 .headerRight { display: flex; gap: 8px; }
 
 .pill {
-  border: 1px solid #ddd;
-  background: #fff;
+  border: 1px solid #c4cce3;
+  background: #f8faff;
+  color: #4b5878;
   padding: 6px 10px;
   border-radius: 999px;
   cursor: pointer;
+  font-weight: 500;
 }
 .pillActive {
-  border-color: #aaa;
+  border-color: #2f4aa0;
+  background: #dbe5ff;
+  color: #1f2f6b;
   font-weight: 700;
+  box-shadow: inset 0 0 0 1px rgba(43, 72, 165, 0.2);
 }
 
-.workspace {
+.segmented {
+  display: flex;
+  border: 1px solid #c4cce3;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #f8faff;
+  width: 100%;
+}
+.segmentedItem {
+  flex: 1;
+  border: none;
+  background: transparent;
+  padding: 6px 10px;
+  cursor: pointer;
+  font-weight: 500;
+  color: #4b5878;
+  font-size: 0.92em;
+  border-right: 1px solid #c4cce3;
+  transition: background-color 80ms ease;
+}
+.segmentedItem:last-child {
+  border-right: none;
+}
+.segmentedItem:hover:not(.segmentedItemActive) {
+  background: #eef2ff;
+}
+.segmentedItemActive {
+  background: #dbe5ff;
+  color: #1f2f6b;
+  font-weight: 700;
+  cursor: default;
+}
+
+
+
+
+
+.mainColumns {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 360px;
-  gap: 14px;
-  align-items: start;
+  grid-template-columns: minmax(0, 1fr) 420px;
+  gap: 0;
+  align-items: stretch;
+  background: #f7f9ff;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
 }
 
-.card {
-  background: #fff;
-  border: 1px solid #e5e7ee;
-  border-radius: 12px;
-  padding: 14px;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+.viewerPane {
+  min-height: 0;
+  padding: 10px;
+  border-right: 1px solid #d4dbf0;
+  display: flex;
+  overflow: auto;
+}
+
+.toolsPane {
+  padding: 10px;
+  overflow: hidden;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.toolsPaneContent {
+  min-height: 0;
+  overflow: auto;
+  padding-bottom: 10px;
+}
+
+.toolsSubmitButton {
+  margin-top: auto;
+  flex: 0 0 auto;
 }
 
 .section { margin-bottom: 14px; }
 
-.viewerCard {
-  min-height: 72vh;
-  height: 72vh;
-  display: flex;
-  flex-direction: column;
-}
 
-.pdfPlaceholder {
+
+.selectionInfoSlot {
   margin-top: 6px;
-  flex: 1;
-  min-height: 0;
-  border: 1px dashed #d8dce8;
-  border-radius: 10px;
-  background: #fafbff;
-  padding: 16px;
+  min-height: 44px;
+  max-height: 44px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid #e1e6f3;
+  background: #f7f9ff;
   display: flex;
-  flex-direction: column;
-  justify-content: center;
   align-items: center;
-  text-align: center;
   overflow: hidden;
+  white-space: normal;
+  line-height: 1.2;
 }
 
-.pdfPlaceholderHasFile {
-  padding: 0;
-  align-items: stretch;
-  justify-content: stretch;
-  min-height: 0;
+.selectionInfoText {
+  color: #111827;
+  font-size: 13px;
+  line-height: 1.2;
+  width: 100%;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  word-break: break-word;
+}
+
+.selectionInfoText strong {
+  color: #4b5563;
+  font-weight: 700;
+}
+
+.optionsSummary {
+  margin-top: 6px;
+  min-height: 44px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  color: #4b5563;
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+  display: list-item;
+  list-style-position: inside;
+}
+
+.optionsSummary:hover {
+  background: #eef2ff;
+  color: #2f3f86;
+  text-decoration: underline;
+}
+
+.optionsSummary::marker {
+  color: #4b5563;
 }
 
 .pdfViewer {
@@ -102,7 +220,29 @@
   flex: 1;
   overflow: auto;
   background: #f2f4fa;
+  border: 1px dashed #d8dce8;
+  border-radius: 8px;
   padding: 10px;
+}
+
+.uploadDropZone {
+  width: 100%;
+  flex: 1;
+  border: 2px dashed #c7cfdf;
+  border-radius: 10px;
+  background: #f7f9ff;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 8px;
+  padding: 16px;
+}
+
+.uploadDropZoneActive {
+  border-color: #3b5bcc;
+  background: #eef3ff;
 }
 
 .pdfCanvasStack {
@@ -174,6 +314,44 @@
   box-shadow: inset 0 0 0 1px rgba(32, 93, 220, 0.24);
 }
 
+
+.pdfDrawLayer {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+}
+
+.pdfDrawLayerActive {
+  pointer-events: auto;
+  cursor: crosshair;
+}
+
+.pdfTextLayerNoPointer {
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.redactionPreviewRectLabel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  min-width: 26px;
+  height: 26px;
+  padding: 2px 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 20px;
+  color: #1e66c2;
+  background: rgba(255, 255, 255, 0.6);
+  border-left: 1px solid rgba(32, 93, 220, 0.5);
+  border-bottom: 1px solid rgba(32, 93, 220, 0.5);
+}
+
+
 .pdfTextLayer br,
 .textLayer br {
   position: absolute;
@@ -190,12 +368,6 @@
   text-align: center;
 }
 
-.sidePanel {
-  display: grid;
-  gap: 14px;
-}
-
-
 .sectionTitle {
   font-weight: 700;
   margin-bottom: 8px;
@@ -211,13 +383,13 @@
 
 .input {
   width: 100%;
-  border: 1px solid #ddd;
+  border: 1px solid #cbd5ea;
   border-radius: 10px;
   padding: 10px 12px;
   outline: none;
 }
 .input:focus {
-  border-color: #aaa;
+  border-color: #5773cf;
 }
 
 .row {
@@ -245,7 +417,7 @@
   border: 0;
   border-radius: 10px;
   padding: 10px 12px;
-  background: #111;
+  background: linear-gradient(90deg, #1b2f6d 0%, #2747a2 100%);
   color: #fff;
   cursor: pointer;
   font-weight: 700;
@@ -258,12 +430,32 @@
 .buttonSecondary {
   margin-top: 10px;
   width: 100%;
-  border: 1px solid #ddd;
+  border: 1px solid #cbd5ea;
   border-radius: 10px;
   padding: 10px 12px;
   background: #fff;
   cursor: pointer;
   font-weight: 700;
+}
+
+
+.buttonInline {
+  margin-top: 0;
+}
+
+.buttonStretch {
+  width: 100%;
+  margin-top: 0;
+}
+
+.modalActions {
+  display: flex;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.modalActions > button {
+  flex: 1 1 0;
 }
 
 .resultTitle {
@@ -319,38 +511,26 @@
 
 .muted { color: #666; font-size: 13px; }
 
-.buttonInline {
-  width: auto;
-  margin-top: 0;
-  flex: 0 0 auto;
-}
 
-.buttonStretch {
-  flex: 1;
-  margin-top: 0;
+.auditModalOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  z-index: 240;
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 44px;
+  padding: 16px;
 }
 
-
-.buttonInline {
-  width: auto;
-  margin-top: 0;
-  height: 48px;
-  padding-inline: 14px;
-  font-size: 13px;
-  white-space: nowrap;
+.auditModalPanel {
+  width: min(720px, 100%);
+  max-height: 85vh;
+  overflow: auto;
+  background: #fff;
+  border: 1px solid #d8dce8;
+  border-radius: 12px;
+  box-shadow: 0 10px 24px rgba(0,0,0,0.22);
+  padding: 14px;
 }
 
-@media (max-width: 1024px) {
-  .workspace {
-    grid-template-columns: 1fr;
-  }
-
-  .viewerCard {
-    min-height: 52vh;
-    height: 52vh;
-  }
-}

@@ -70,10 +70,15 @@ def test_sanitize_metadata_and_annotations_via_regex_endpoint() -> None:
     client = TestClient(app)
 
     payload = {
-        "patterns": [r"THIS_WILL_NOT_MATCH_123456789"],
-        "case_sensitive": True,
-        "multiline": False,
-        "scope": {"pages": None},
+        "rects": [],
+        "regexes": [
+            {
+                "patterns": [r"THIS_WILL_NOT_MATCH_123456789"],
+                "case_sensitive": True,
+                "multiline": False,
+                "scope": {"pages": None},
+            }
+        ],
         "options": {
             "apply_images": False,
             "apply_graphics": False,
@@ -94,7 +99,7 @@ def test_sanitize_metadata_and_annotations_via_regex_endpoint() -> None:
         "payload": (None, json.dumps(payload), "application/json"),
     }
 
-    resp = client.post("/redact/regex", files=files)
+    resp = client.post("/redact/apply", files=files)
     assert resp.status_code == 200
     assert resp.headers.get("content-type", "").startswith("application/pdf")
 
