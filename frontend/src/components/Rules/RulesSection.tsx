@@ -7,8 +7,10 @@ import { RuleAddBar } from "./RuleAddBar";
 import { RulesList } from "./RulesList";
 import { EditRuleModal } from "./EditRuleModal";
 
-function kindLabel(t: (k: string) => string, kind: RuleKind | "selection") {
+function kindLabel(t: (k: string) => string, kind: RuleKind | "selection" | "page" | "rectangle") {
   if (kind === "selection") return t("rules.badge.selection");
+  if (kind === "page") return t("rules.badge.page");
+  if (kind === "rectangle") return t("rules.badge.rectangle");
   return t("rules.badge.request");
 }
 
@@ -28,8 +30,12 @@ export function RulesSection(props: {
   pendingSelectionText: string;
   canAddSelection: boolean;
   onAddSelection: () => void;
+  isDrawingRect: boolean;
+  onToggleDrawSelection: () => void;
+  canCensorPage: boolean;
+  onCensorPage: () => void;
 }) {
-  const { t, rules, setRules, onUserChange, pendingSelectionText, canAddSelection, onAddSelection } = props;
+  const { t, rules, setRules, onUserChange, pendingSelectionText, canAddSelection, onAddSelection, isDrawingRect, onToggleDrawSelection, canCensorPage, onCensorPage } = props;
 
   const [draftKind, setDraftKind] = useState<RuleKind>("exact");
   const [draftValue, setDraftValue] = useState("");
@@ -39,14 +45,28 @@ export function RulesSection(props: {
   const [draftAllowSubwords, setDraftAllowSubwords] = useState(false);
   const [draftIgnoreAccents, setDraftIgnoreAccents] = useState(true);
 
+
+  const resetDraftOptions = () => {
+    setDraftKind("exact");
+    setDraftCaseSensitive(false);
+    setDraftMultiline(false);
+    setDraftAllowSubwords(false);
+    setDraftIgnoreAccents(true);
+  };
+
   const [editingId, setEditingId] = useState<string | null>(null);
-  const editingRule = useMemo(
-    () => (editingId ? rules.find((r) => r.id === editingId && r.kind !== "selection") ?? null : null),
+  const editingRule = useMemo<Extract<UiRule, { kind: "exact" | "regex" }> | null>(
+    () =>
+      (editingId
+        ? (rules.find((r): r is Extract<UiRule, { kind: "exact" | "regex" }> =>
+            r.id === editingId && (r.kind === "exact" || r.kind === "regex")
+          ) ?? null)
+        : null),
     [editingId, rules]
   );
 
   const openEdit = (r: UiRule) => {
-    if (r.kind === "selection") return;
+    if (r.kind === "selection" || r.kind === "page" || r.kind === "rectangle") return;
     setEditingId(r.id);
   };
   const closeEdit = () => setEditingId(null);
@@ -85,12 +105,8 @@ export function RulesSection(props: {
           };
 
     setRules((prev) => [...prev, rule]);
-    setDraftKind("exact");
+    resetDraftOptions();
     setDraftValue("");
-    setDraftCaseSensitive(false);
-    setDraftMultiline(false);
-    setDraftAllowSubwords(false);
-    setDraftIgnoreAccents(true);
   };
 
   const deleteRule = (id: string) => {
@@ -98,7 +114,7 @@ export function RulesSection(props: {
     setRules((prev) => prev.filter((r) => r.id !== id));
   };
 
-  const saveEdit = (updated: Omit<UiRule, "id">) => {
+  const saveEdit = (updated: Omit<Extract<UiRule, { kind: "exact" | "regex" }>, "id">) => {
     if (!editingRule) return;
     onUserChange();
 
@@ -128,9 +144,17 @@ export function RulesSection(props: {
 
       {canAddSelection ? (
         <>
+          <div className="selectionInfoSlot" aria-live="polite">
+            <div className="selectionInfoText">
+              <strong>{t("rules.selection.current")}: </strong>
+              {summarizeSelection(pendingSelectionText)}
+            </div>
+          </div>
+
           <button
             type="button"
             className="buttonSecondary buttonInline"
+            style={{ marginTop: 8 }}
             onClick={() => {
               onUserChange();
               onAddSelection();
@@ -139,13 +163,6 @@ export function RulesSection(props: {
           >
             {t("rules.selection.add")}
           </button>
-
-          <div className="selectionInfoSlot" aria-live="polite">
-            <div className="selectionInfoText">
-              <strong>{t("rules.selection.current")}: </strong>
-              {summarizeSelection(pendingSelectionText)}
-            </div>
-          </div>
         </>
       ) : (
         <>
@@ -161,7 +178,15 @@ export function RulesSection(props: {
             onKeyDown={onDraftKeyDown}
           />
 
-          <details style={{ marginTop: 4 }}>
+          <details
+            style={{ marginTop: 4 }}
+            onToggle={(e) => {
+              const details = e.currentTarget;
+              if (details.open && draftValue.trim().length === 0) {
+                resetDraftOptions();
+              }
+            }}
+          >
             <summary className="optionsSummary">{t("rules.options.summary")}</summary>
             <RuleOptionsRow
               kind={draftKind}
@@ -192,10 +217,27 @@ export function RulesSection(props: {
       )}
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 10 }}>
-        <button type="button" className="buttonSecondary" disabled style={{ marginTop: 0 }}>
-          {t("rules.action.drawSelection")}
+        <button
+          type="button"
+          className="buttonSecondary"
+          style={{ marginTop: 0 }}
+          onClick={() => {
+            onUserChange();
+            onToggleDrawSelection();
+          }}
+        >
+          {isDrawingRect ? t("rules.action.stopDrawingSelection") : t("rules.action.drawSelection")}
         </button>
-        <button type="button" className="buttonSecondary" disabled style={{ marginTop: 0 }}>
+        <button
+          type="button"
+          className="buttonSecondary"
+          disabled={!canCensorPage}
+          style={{ marginTop: 0 }}
+          onClick={() => {
+            onUserChange();
+            onCensorPage();
+          }}
+        >
           {t("rules.action.censorPage")}
         </button>
       </div>

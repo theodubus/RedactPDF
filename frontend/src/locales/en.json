@@ -26,7 +26,6 @@
   "rules.option.multiline": "Multiline",
   "rules.options.label": "Options",
   "rules.option.subword": "Subword",
-  "rules.option.ignoreAccents": "Ignore accents",
   "rules.label.searchType": "Search type",
   "rules.label.options": "Options",
   "modal.edit.title": "Edit item",
@@ -71,5 +70,18 @@
   "rules.badge.request": "Request",
   "rules.options.summary": "Options",
   "rules.action.drawSelection": "Draw selection",
-  "rules.action.censorPage": "Redact page"
+  "rules.action.censorPage": "Redact page",
+  "rules.option.respectAccents": "Respect accents",
+  "rules.badge.page": "Full page",
+  "rules.page.title": "Page",
+  "rules.badge.rectangle": "Rectangle",
+  "rules.rectangle.title": "Rectangle",
+  "rules.action.stopDrawingSelection": "Stop drawing",
+  "form.section.imageMode": "Image redaction",
+  "form.imageMode.none": "None",
+  "form.imageMode.remove": "Full",
+  "form.imageMode.pixels": "Precise",
+  "form.imageMode.none.help": "Images are never modified, even when a redaction rectangle overlaps them.",
+  "form.imageMode.remove.help": "Any image touched by a redaction rectangle is removed entirely.",
+  "form.imageMode.pixels.help": "Only the area intersected by the redaction is blackened. The rest of the image stays visible (possibly with lossy re-encoding)."
 }

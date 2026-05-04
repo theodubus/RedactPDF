@@ -18,6 +18,7 @@ EMAIL_RX = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
 CC_DIGITS_VALID = "4111111111111111"
 CC_DIGITS_INVALID = "4111111111111112"
 
+
 def _digits_only(s: str) -> str:
     return re.sub(r"\D+", "", s)
 
@@ -27,10 +28,16 @@ def _load_fixture(name: str) -> bytes:
     return path.read_bytes()
 
 
-def _post_presets(pdf_bytes: bytes, payload: dict) -> TestClient.Response:
+def _post_apply_presets(pdf_bytes: bytes, *, presets: list[str], audit: dict | None):
+    payload = {
+        "rects": [],
+        "presets": {"presets": presets, "scope": {"pages": None}},
+        "options": {"apply_images": False, "apply_graphics": False},
+        "audit": audit,
+    }
     files = {"file": ("input.pdf", pdf_bytes, "application/pdf")}
     data = {"payload": json.dumps(payload)}
-    return client.post("/redact/presets", files=files, data=data)
+    return client.post("/redact/apply", files=files, data=data)
 
 
 def _extract_first_phone(text: str, region: str = "FR") -> str | None:
@@ -54,13 +61,11 @@ def test_presets_email_removes_email_keeps_phone(monkeypatch: pytest.MonkeyPatch
     phone = _extract_first_phone(text_in, region="FR")
     assert phone is not None, "Expected a phone number in fixture 002."
 
-    payload = {
-        "presets": ["email"],
-        "options": {"apply_images": False, "apply_graphics": False},
-        "audit": {"patterns": [email], "regex": False, "case_sensitive": True},
-    }
-
-    resp = _post_presets(pdf_in, payload)
+    resp = _post_apply_presets(
+        pdf_in,
+        presets=["email"],
+        audit={"patterns": [email], "regex": False, "case_sensitive": True},
+    )
     assert resp.status_code == 200, resp.text
     assert resp.headers.get("X-Redaction-Audit-Status") == "pass"
     assert int(resp.headers.get("X-Redaction-Audit-Matches", "999")) == 0
@@ -85,13 +90,11 @@ def test_presets_phone_removes_phone_keeps_email(monkeypatch: pytest.MonkeyPatch
     phone = _extract_first_phone(text_in, region="FR")
     assert phone is not None, "Expected a phone number in fixture 002."
 
-    payload = {
-        "presets": ["phone"],
-        "options": {"apply_images": False, "apply_graphics": False},
-        "audit": {"patterns": [phone], "regex": False, "case_sensitive": True},
-    }
-
-    resp = _post_presets(pdf_in, payload)
+    resp = _post_apply_presets(
+        pdf_in,
+        presets=["phone"],
+        audit={"patterns": [phone], "regex": False, "case_sensitive": True},
+    )
     assert resp.status_code == 200, resp.text
     assert resp.headers.get("X-Redaction-Audit-Status") == "pass"
     assert int(resp.headers.get("X-Redaction-Audit-Matches", "999")) == 0
@@ -111,17 +114,15 @@ def test_presets_credit_card_luhn_filters_invalid() -> None:
     assert CC_DIGITS_VALID in digits_in
     assert CC_DIGITS_INVALID in digits_in
 
-    payload = {
-        "presets": ["credit_card"],
-        "options": {"apply_images": False, "apply_graphics": False},
-        "audit": {
+    resp = _post_apply_presets(
+        pdf_in,
+        presets=["credit_card"],
+        audit={
             "patterns": [r"\b4111[ -]*1111[ -]*1111[ -]*1111\b"],
             "regex": True,
             "case_sensitive": True,
         },
-    }
-
-    resp = _post_presets(pdf_in, payload)
+    )
     assert resp.status_code == 200, resp.text
     assert resp.headers.get("X-Redaction-Audit-Status") == "pass"
     assert int(resp.headers.get("X-Redaction-Audit-Matches", "999")) == 0
@@ -141,13 +142,11 @@ def test_presets_email_no_false_positive_on_secret_fixture(monkeypatch: pytest.M
     text_in = extract_text(pdf_in)
     assert "SECRET_ABC123" in text_in
 
-    payload = {
-        "presets": ["email"],
-        "options": {"apply_images": False, "apply_graphics": False},
-        "audit": {"patterns": ["SHOULD_NOT_EXIST_123"], "regex": False, "case_sensitive": True},
-    }
-
-    resp = _post_presets(pdf_in, payload)
+    resp = _post_apply_presets(
+        pdf_in,
+        presets=["email"],
+        audit={"patterns": ["SHOULD_NOT_EXIST_123"], "regex": False, "case_sensitive": True},
+    )
     assert resp.status_code == 200, resp.text
     assert resp.headers.get("X-Redaction-Audit-Status") == "pass"
     assert int(resp.headers.get("X-Redaction-Presets-Occurrences", "999")) == 0

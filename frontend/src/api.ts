@@ -2,6 +2,8 @@ export type AuditReport = unknown;
 
 export type PresetKey = "email" | "phone" | "credit_card";
 
+export type ImageMode = "none" | "remove" | "pixels";
+
 export type RectInput = {
   page: number;
   x0: number;
@@ -68,8 +70,14 @@ function wrapWholeWordRegex(pattern: string): string {
 export async function redactApply(params: {
   file: File;
   rects: RectInput[];
+  fullPageRects?: RectInput[];
   rules: RuleInput[];
   presets: PresetKey[];
+  imageMode?: ImageMode;
+  applyGraphics?: boolean;
+  sanitizeMetadata?: boolean;
+  removeAnnotations?: boolean;
+  removeAttachments?: boolean;
 }): Promise<RedactSuccess> {
   const form = new FormData();
   form.append("file", params.file);
@@ -108,10 +116,17 @@ export async function redactApply(params: {
 
   const payload = {
     rects: params.rects,
+    full_page_rects: params.fullPageRects ?? [],
     searches,
     regexes,
     presets: hasPresets ? { presets: params.presets, scope: { pages: null as null } } : null,
-    options: {},
+    options: {
+      image_mode: params.imageMode ?? "none",
+      apply_graphics: !!params.applyGraphics,
+      sanitize_metadata: !!params.sanitizeMetadata,
+      remove_annotations: !!params.removeAnnotations,
+      remove_attachments: !!params.removeAttachments,
+    },
     // audit additionnel facultatif : on laisse null (audit_plan gère déjà search/regex/presets)
     audit: null,
   };

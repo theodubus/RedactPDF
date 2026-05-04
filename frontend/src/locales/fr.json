@@ -26,7 +26,6 @@
   "rules.option.multiline": "Multilignes",
   "rules.options.label": "Options",
   "rules.option.subword": "Sous-mot",
-  "rules.option.ignoreAccents": "Ignorer les accents",
   "rules.label.searchType": "Type de recherche",
   "rules.label.options": "Options",
   "modal.edit.title": "Modifier l’élément",
@@ -71,5 +70,18 @@
   "rules.badge.request": "Requête",
   "rules.options.summary": "Options",
   "rules.action.drawSelection": "Dessiner sélection",
-  "rules.action.censorPage": "Censurer la page"
+  "rules.action.censorPage": "Censurer la page",
+  "rules.option.respectAccents": "Respecter les accents",
+  "rules.badge.page": "Page complète",
+  "rules.page.title": "Page",
+  "rules.badge.rectangle": "Rectangle",
+  "rules.rectangle.title": "Rectangle",
+  "rules.action.stopDrawingSelection": "Arrêter dessin",
+  "form.section.imageMode": "Censure des images",
+  "form.imageMode.none": "Aucune",
+  "form.imageMode.remove": "Totale",
+  "form.imageMode.pixels": "Précise",
+  "form.imageMode.none.help": "Les images ne sont pas modifiées, même si une zone de censure les recouvre.",
+  "form.imageMode.remove.help": "Toute image touchée par une zone de censure est retirée intégralement.",
+  "form.imageMode.pixels.help": "Seule la zone intersectée de l'image est noircie ; le reste de l'image reste visible. Recompression possiblement avec perte."
 }
