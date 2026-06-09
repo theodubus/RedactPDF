@@ -9,8 +9,8 @@ blocked with a structured failure report.
 For the security model and limitations, see [docs/SECURITY.md](docs/SECURITY.md).
 
 <p align="center">
-  <video src="https://github.com/theodubus/RedactPDF/raw/main/docs/demo.mp4" controls width="820">
-    <a href="docs/demo.mp4">▶ Watch the demo (docs/demo.mp4)</a>
+  <video src="https://github.com/user-attachments/assets/db585e59-6a00-43cc-ab6d-9ce19031541b" controls width="820">
+    <a href="https://github.com/user-attachments/assets/db585e59-6a00-43cc-ab6d-9ce19031541b">▶ Watch the demo</a>
   </video>
 </p>
 
