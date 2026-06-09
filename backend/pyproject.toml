@@ -2,21 +2,24 @@
 name = "redactpdf-backend"
 version = "0.1.0"
 requires-python = ">=3.10"
+# Pinned to the versions the test suite + CI are validated against.
+# Bump deliberately (especially pymupdf, which drives redaction behaviour),
+# then re-run `ruff check . && pytest`.
 dependencies = [
-  "fastapi",
-  "uvicorn",
-  "pymupdf",
-  "python-multipart",
-  "phonenumbers",
+  "fastapi==0.128.0",
+  "uvicorn==0.40.0",
+  "pymupdf==1.26.7",
+  "python-multipart==0.0.22",
+  "phonenumbers==9.0.22",
 ]
 
 [project.optional-dependencies]
 dev = [
-  "pytest",
-  "httpx",
-  "ruff",
-  "reportlab",
-  "pypdf",
+  "pytest==9.0.2",
+  "httpx==0.28.1",
+  "ruff==0.14.14",
+  "reportlab==4.4.9",
+  "pypdf==6.6.2",
 ]
 
 [tool.pytest.ini_options]

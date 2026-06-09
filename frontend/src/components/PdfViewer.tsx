@@ -3,6 +3,9 @@ import type { PointerEvent as ReactPointerEvent } from "react";
 import type { PresetKey } from "../api";
 import type { UiRect, UiRule } from "../types/uiRules";
 
+// pdf.js worker, bundled locally via Vite (?url) instead of a remote CDN.
+import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+
 type PdfViewport = {
   width: number;
   height: number;
@@ -48,12 +51,12 @@ type PdfJsLib = {
   }) => { render: () => Promise<void> };
 };
 
-const PDFJS_SCRIPT_URL = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.8.69/pdf.min.mjs";
-const PDFJS_WORKER_URL = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.8.69/pdf.worker.min.mjs";
-
+// pdf.js is vendored (npm `pdfjs-dist`, pinned) and bundled locally — no
+// third-party CDN at runtime. Works offline and removes the privacy /
+// supply-chain exposure of importing executable JS from a remote host.
 async function ensurePdfJsLoaded(): Promise<PdfJsLib> {
-  const lib = (await import(/* @vite-ignore */ PDFJS_SCRIPT_URL)) as unknown as PdfJsLib;
-  lib.GlobalWorkerOptions.workerSrc = PDFJS_WORKER_URL;
+  const lib = (await import("pdfjs-dist")) as unknown as PdfJsLib;
+  lib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
   return lib;
 }
 
