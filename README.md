@@ -8,6 +8,12 @@ blocked with a structured failure report.
 
 For the security model and limitations, see [docs/SECURITY.md](docs/SECURITY.md).
 
+<p align="center">
+  <video src="https://github.com/theodubus/RedactPDF/raw/main/docs/demo.mp4" controls width="820">
+    <a href="docs/demo.mp4">▶ Watch the demo (docs/demo.mp4)</a>
+  </video>
+</p>
+
 ---
 
 ## Requirements
