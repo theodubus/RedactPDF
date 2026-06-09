@@ -163,4 +163,11 @@ behind nginx/Caddy). With same-origin serving, you do not need CORS.
 
 ## License
 
-See repository root.
+RedactPDF is licensed under the **GNU Affero General Public License v3.0**
+(AGPL-3.0) — see [LICENSE.md](LICENSE.md) for the full text.
+
+In short: you may use, study, modify, and redistribute it freely, but any
+redistributed or network-hosted (SaaS) version, including modified ones,
+must make its **complete corresponding source available under the same
+AGPL-3.0 terms**. This copyleft is also required by the core dependency
+PyMuPDF, which is itself AGPL-3.0 (or commercial).
