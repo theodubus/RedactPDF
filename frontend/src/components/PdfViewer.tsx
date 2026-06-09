@@ -651,12 +651,22 @@ function highlightPhonePresetMatches(
   const phoneRegex = new RegExp(PHONE_PRESET_REGEX.source, PHONE_PRESET_REGEX.flags);
   for (const match of fullText.matchAll(phoneRegex)) {
     if (typeof match.index !== "number") continue;
-    const value = match[0] ?? "";
+    let value = match[0] ?? "";
     if (!value) continue;
-    if (!isLikelyPhonePresetMatch(value)) continue;
 
-    const matchStart = match.index;
+    let matchStart = match.index;
     const matchEnd = match.index + value.length;
+
+    // The phone regex's leading \b can't capture a preceding "+" (e.g. "+33 …"),
+    // so the match looks national and gets rejected below. Re-attach an
+    // immediately-preceding "+" so the preview matches what the backend redacts.
+    const intlPrefix = /\+\s*$/.exec(fullText.slice(0, matchStart));
+    if (intlPrefix) {
+      matchStart -= intlPrefix[0].length;
+      value = "+" + value;
+    }
+
+    if (!isLikelyPhonePresetMatch(value)) continue;
 
     for (const item of nodes) {
       const localStart = Math.max(matchStart, item.start) - item.start;
