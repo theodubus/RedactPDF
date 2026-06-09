@@ -1,4 +1,4 @@
-# RedactPDF
+# <img src="frontend/public/logo.png" alt="RedactPDF" width="40" align="center" /> RedactPDF
 
 Local web app for redacting sensitive content from PDF files. Targets manual
 rectangles, text search, regex (single- or multi-line), and presets (email,
@@ -79,7 +79,7 @@ worry about CORS in development.
 
 1. Drop a PDF into the upload area.
 2. Add redaction rules in the right pane:
-   - **Selection** : select text in the viewer and click "Add as rule".
+   - **Selection** : select text in the viewer and click "Redact selection" / "Censurer la sélection".
    - **Manual rectangle** : toggle the draw tool and trace rectangles.
    - **Whole page** : censor the current page.
    - **Exact / regex** : typed rules with options (case sensitivity,
