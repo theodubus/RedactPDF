@@ -93,6 +93,14 @@ jobs:
           path: artifacts
           merge-multiple: true
 
+      # The table links straight to the assets: the download URL of a release
+      # asset is predictable from the tag and the file name, so it can be written
+      # before the release exists. The links 404 while the release is a draft and
+      # resolve the moment it is published.
+      #
+      # No generated per-PR changelog on purpose: this page is read by people who
+      # just want the app, and the generated list is the full history of internal
+      # UI churn. The one-line link below covers anyone who wants the detail.
       - name: Write the release notes
         shell: bash
         run: |
@@ -101,10 +109,10 @@ jobs:
           install needed -- the app opens in your browser and stops when you
           close the tab.
 
-          | System | File |
+          | System | Download |
           | --- | --- |
-          | Windows | `redactpdf-windows-x86_64.exe` |
-          | Linux (x86-64) | `redactpdf-linux-x86_64` -- `chmod +x` it first |
+          | Windows | **[redactpdf-windows-x86_64.exe](https://github.com/__REPO__/releases/download/__TAG__/redactpdf-windows-x86_64.exe)** |
+          | Linux (x86-64) | **[redactpdf-linux-x86_64](https://github.com/__REPO__/releases/download/__TAG__/redactpdf-linux-x86_64)** -- `chmod +x` it first |
 
           **Windows shows "Windows protected your PC" on first run.** The app is
           not signed with a paid code-signing certificate, so SmartScreen warns
@@ -114,7 +122,13 @@ jobs:
 
           RedactPDF runs entirely on your machine: no upload, no network calls,
           no telemetry.
+
+          **Full changelog:** https://github.com/__REPO__/commits/__TAG__
           NOTES
+
+          # Substituted rather than interpolated: the heredoc is quoted so the
+          # backticks in the markdown stay literal.
+          sed -i -e "s|__REPO__|${GITHUB_REPOSITORY}|g" -e "s|__TAG__|${GITHUB_REF_NAME}|g" notes.md
 
       - name: Draft the release
         env:
