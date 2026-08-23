@@ -34,7 +34,7 @@ Standalone build (needs the `packaging` extra: `pip install -e "backend[dev,pack
 ```bash
 python scripts/build_app.py                    # npm build + PyInstaller -> dist/redactpdf
 python scripts/build_app.py --skip-frontend    # reuse the existing frontend/dist
-python scripts/smoke_test_app.py               # 19 end-to-end checks on the built app
+python scripts/smoke_test_app.py               # end-to-end checks on the built app (one extra on Windows)
 python scripts/smoke_test_app.py --source      # same checks against `python launch.py`
 ```
 
