@@ -34,10 +34,14 @@ Standalone build (needs the `packaging` extra: `pip install -e "backend[dev,pack
 ```bash
 python scripts/build_app.py                    # npm build + PyInstaller -> dist/redactpdf
 python scripts/build_app.py --skip-frontend    # reuse the existing frontend/dist
+python scripts/smoke_test_app.py               # 19 end-to-end checks on the built app
+python scripts/smoke_test_app.py --source      # same checks against `python launch.py`
 ```
 
 PyInstaller does not cross-compile — one build per target OS, and the Linux binary
-requires a glibc at least as new as the build machine's.
+requires a glibc at least as new as the build machine's. **Working on the Windows
+build? Read [docs/WINDOWS_BUILD.md](docs/WINDOWS_BUILD.md) first** — it covers the
+failure modes that produce no output at all, which is most of the difficulty.
 
 Fixture regeneration (from **repo root**, not `backend/`):
 
@@ -76,6 +80,8 @@ Never add a path that returns a PDF without passing the audit.
 [packaging/redactpdf.spec](packaging/redactpdf.spec) freezes `launch.py` into one executable. Three things there are load-bearing and easy to break: `phonenumbers` region metadata and uvicorn's protocol/loop implementations are both resolved by string at runtime, so they are pulled in with `collect_submodules`; and `frontend/dist` is embedded as data under that same relative name. Anything else resolved dynamically needs the same treatment, and the symptom is always a runtime `ModuleNotFoundError` in the frozen binary only — never in the test suite.
 
 Because of that embedding, **no module may locate the UI from `__file__`**: once frozen, the code lives in a temporary extraction tree, not the repo. [app/paths.py](backend/app/paths.py) is the single place that knows both layouts (`frontend_dist()`, `is_frozen()`); `main.py` and `launch.py` go through it.
+
+The release build is windowed (`console=False`), so on Windows a frozen app has no `sys.stdout`/`sys.stderr` at all and a crash would be completely silent. [launch.py](launch.py) therefore routes every startup failure through `_fatal()` (GUI dialog, falling back to a stream when there is one) and wraps `main()` in a catch-all. Never replace those with a bare `print`/`sys.exit(str)`. `REDACT_PORT` and `REDACT_NO_BROWSER` exist so the smoke test can drive the app deterministically without hijacking a browser.
 
 ### Routing and serving
 
