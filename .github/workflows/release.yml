@@ -1,0 +1,127 @@
+name: release
+
+# Builds the standalone app on every target OS and attaches the results to a
+# GitHub Release. PyInstaller does not cross-compile, so each binary has to be
+# produced on its own runner.
+#
+#   git tag v0.1.0 && git push origin v0.1.0    -> builds, verifies, drafts a release
+#   Actions -> release -> Run workflow          -> builds and verifies only
+#
+# The release is created as a DRAFT: nothing is public until it is published by
+# hand from the Releases page. That is deliberate -- downloading the asset from
+# the draft is the only way to see what SmartScreen really says about a released
+# file, before users do.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write # required to create the release
+
+jobs:
+  build:
+    name: build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false # one OS failing should not hide the other's result
+      matrix:
+        include:
+          # Not ubuntu-latest: a PyInstaller binary needs a glibc at least as new
+          # as the build machine's, so building on an older runner widens the
+          # range of distributions the result will run on.
+          - os: ubuntu-22.04
+            built: dist/redactpdf
+            asset: redactpdf-linux-x86_64
+          - os: windows-latest
+            built: dist/redactpdf.exe
+            asset: redactpdf-windows-x86_64.exe
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+        working-directory: frontend
+
+      - name: Install backend and packaging tooling
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e "./backend[dev,packaging]"
+
+      - name: Build the standalone app
+        run: python scripts/build_app.py
+
+      # The gate: a binary that cannot serve its own UI, redact a PDF or shut
+      # itself down never reaches a release.
+      - name: Smoke test the built app
+        run: python scripts/smoke_test_app.py
+
+      - name: Name the artifact per platform
+        shell: bash
+        run: mv "${{ matrix.built }}" "dist/${{ matrix.asset }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: dist/${{ matrix.asset }}
+          if-no-files-found: error
+
+  release:
+    name: draft release
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+
+    steps:
+      # gh resolves which repository to act on from the git remote.
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Write the release notes
+        shell: bash
+        run: |
+          cat > notes.md <<'NOTES'
+          Download the file for your system, then run it. No Python, Node or
+          install needed -- the app opens in your browser and stops when you
+          close the tab.
+
+          | System | File |
+          | --- | --- |
+          | Windows | `redactpdf-windows-x86_64.exe` |
+          | Linux (x86-64) | `redactpdf-linux-x86_64` -- `chmod +x` it first |
+
+          **Windows shows "Windows protected your PC" on first run.** The app is
+          not signed with a paid code-signing certificate, so SmartScreen warns
+          about it. Click **More info**, then **Run anyway**.
+
+          On Linux the binary needs a glibc at least as recent as Ubuntu 22.04's.
+
+          RedactPDF runs entirely on your machine: no upload, no network calls,
+          no telemetry.
+          NOTES
+
+      - name: Draft the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            --draft \
+            --title "RedactPDF ${GITHUB_REF_NAME}" \
+            --notes-file notes.md \
+            artifacts/*

@@ -49,7 +49,7 @@ Fixture regeneration (from **repo root**, not `backend/`):
 python -m backend.tests.fixtures.generate_fixtures
 ```
 
-CI: `backend-ci` runs `ruff check .` + `pytest` on Python 3.11; `frontend-ci` runs `npm run build` on Node 20.
+CI: `backend-ci` runs `ruff check .` + `pytest` on Python 3.11; `frontend-ci` runs `npm run build` on Node 20. `release` builds the standalone app on Linux and Windows when a `v*` tag is pushed, gates it on `smoke_test_app.py`, and drafts a GitHub Release with both binaries — it never publishes on its own.
 
 ## Architecture
 
