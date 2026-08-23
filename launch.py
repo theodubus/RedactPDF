@@ -22,12 +22,14 @@ from pathlib import Path
 
 import uvicorn
 
-ROOT = Path(__file__).resolve().parent
-# Make the backend package importable without installing it.
-sys.path.insert(0, str(ROOT / "backend"))
+if not getattr(sys, "frozen", False):
+    # Source checkout: make the backend package importable without installing it.
+    # In a PyInstaller bundle the package is already on the frozen import path.
+    sys.path.insert(0, str(Path(__file__).resolve().parent / "backend"))
 
 from app.heartbeat import start_watchdog  # noqa: E402  (must follow sys.path tweak)
 from app.main import app  # noqa: E402
+from app.paths import frontend_dist, is_frozen  # noqa: E402
 
 
 def _free_port(host: str) -> int:
@@ -37,9 +39,13 @@ def _free_port(host: str) -> int:
 
 
 def main() -> None:
-    if not (ROOT / "frontend" / "dist" / "index.html").is_file():
+    if not (frontend_dist() / "index.html").is_file():
+        # In a bundle this means the build forgot to embed the UI, which the user
+        # can do nothing about; in a checkout it is just a missing npm build.
         sys.exit(
-            "Frontend build not found (frontend/dist).\n"
+            "Frontend build missing from this bundle -- rebuild it with scripts/build_app.py"
+            if is_frozen()
+            else "Frontend build not found (frontend/dist).\n"
             "Build it once:  cd frontend && npm run build"
         )
 

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import base64
 import json
-from pathlib import Path
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, FastAPI, File, Form, HTTPException, UploadFile
@@ -13,6 +12,7 @@ from starlette.responses import Response
 
 from app.audit import AuditOptions
 from app.heartbeat import heartbeat
+from app.paths import frontend_dist
 from app.pipeline import (
     PresetsRequest,
     RedactionOptions,
@@ -351,6 +351,6 @@ app.include_router(router, prefix="/api")
 # Serve the built frontend (same-origin) when it exists, so one process can host
 # UI + API (desktop launcher / production). Mounted AFTER the API routes so it
 # never shadows them; skipped in dev, where Vite serves the UI and dist is absent.
-_FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
+_FRONTEND_DIST = frontend_dist()
 if _FRONTEND_DIST.is_dir():
     app.mount("/", StaticFiles(directory=_FRONTEND_DIST, html=True), name="frontend")

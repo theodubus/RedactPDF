@@ -29,6 +29,16 @@ Desktop / single-process mode (from repo root, after `npm run build`):
 python launch.py                  # free port + same-origin UI + heartbeat auto-shutdown
 ```
 
+Standalone build (needs the `packaging` extra: `pip install -e "backend[dev,packaging]"`):
+
+```bash
+python scripts/build_app.py                    # npm build + PyInstaller -> dist/redactpdf
+python scripts/build_app.py --skip-frontend    # reuse the existing frontend/dist
+```
+
+PyInstaller does not cross-compile — one build per target OS, and the Linux binary
+requires a glibc at least as new as the build machine's.
+
 Fixture regeneration (from **repo root**, not `backend/`):
 
 ```bash
@@ -60,6 +70,12 @@ Never add a path that returns a PDF without passing the audit.
 - [audit.py](backend/app/audit.py) — text-level audit primitives and `build_whole_word_pattern`, shared with `search.py` so search semantics and audit semantics cannot drift apart.
 - [sanitize.py](backend/app/sanitize.py) — metadata / annotations / widgets / attachments, on by default.
 - [heartbeat.py](backend/app/heartbeat.py) — liveness singleton; inert unless `launch.py` started a watchdog thread.
+
+### Packaging
+
+[packaging/redactpdf.spec](packaging/redactpdf.spec) freezes `launch.py` into one executable. Three things there are load-bearing and easy to break: `phonenumbers` region metadata and uvicorn's protocol/loop implementations are both resolved by string at runtime, so they are pulled in with `collect_submodules`; and `frontend/dist` is embedded as data under that same relative name. Anything else resolved dynamically needs the same treatment, and the symptom is always a runtime `ModuleNotFoundError` in the frozen binary only — never in the test suite.
+
+Because of that embedding, **no module may locate the UI from `__file__`**: once frozen, the code lives in a temporary extraction tree, not the repo. [app/paths.py](backend/app/paths.py) is the single place that knows both layouts (`frontend_dist()`, `is_frozen()`); `main.py` and `launch.py` go through it.
 
 ### Routing and serving
 
