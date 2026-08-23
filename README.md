@@ -57,7 +57,32 @@ npm ci
 
 ## Run locally
 
-You need two terminals.
+Two ways: one command to just use the app, two terminals to work on it.
+
+### Just use it
+
+Build the UI once:
+
+```bash
+cd frontend
+npm run build
+```
+
+Then, from the repo root, with the backend venv active:
+
+```bash
+python launch.py
+```
+
+This picks a free local port, serves the UI and the API from a single process
+(same-origin, so no CORS and no proxy), opens your default browser, and stops
+the server a few seconds after you close the tab. Re-run `python launch.py`
+whenever you want it again; you only need to rebuild the frontend after
+changing the UI source.
+
+### Work on it
+
+Hot reload needs two terminals.
 
 **Terminal 1 - backend:**
 
