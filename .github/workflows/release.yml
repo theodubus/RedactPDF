@@ -39,13 +39,13 @@ jobs:
             asset: redactpdf-windows-x86_64.exe
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "20"
           cache: "npm"
@@ -72,7 +72,7 @@ jobs:
         shell: bash
         run: mv "${{ matrix.built }}" "dist/${{ matrix.asset }}"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.asset }}
           path: dist/${{ matrix.asset }}
@@ -86,9 +86,9 @@ jobs:
 
     steps:
       # gh resolves which repository to act on from the git remote.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: artifacts
           merge-multiple: true
