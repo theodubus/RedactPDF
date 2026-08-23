@@ -45,7 +45,7 @@ from app.paths import frontend_dist, is_frozen  # noqa: E402
 def _write(message: str) -> None:
     """Print without assuming a usable stream.
 
-    A windowed PyInstaller build (console=False, the Windows/macOS release) has
+    A windowed PyInstaller build (console=False, how the release is built) has
     sys.stdout and sys.stderr set to None, where a bare print() raises.
     """
     stream = sys.stderr or sys.stdout

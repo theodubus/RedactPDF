@@ -1,23 +1,18 @@
-# Windows Build Playbook
+# Windows Build
 
-Everything needed to produce and validate the Windows executable. The Linux
-build already works; this is the second target.
+How to produce and validate the Windows executable, and what shipping it
+unsigned means for users.
 
-**Read this whole file before starting.** The tricky parts of a Windows
-PyInstaller build are not the compilation, they are the failure modes that
-produce no output at all.
+The hard parts of a Windows PyInstaller build are not the compilation, they are
+the failure modes that produce no output at all — a double-click that appears to
+do nothing. Read the whole file before changing anything here, and change code
+only in response to an actual failure: the codebase is OS-agnostic by design, so
+a pre-emptive rewrite is far more likely to break Linux than to fix Windows.
 
-## State of play
+## Status
 
-Done and verified on Linux:
-
-- `python launch.py` runs the app as one process (UI + API, same origin), opens
-  the browser, stops a few seconds after the tab closes.
-- `python scripts/build_app.py` freezes it into a single ~44 MB executable.
-- `python scripts/smoke_test_app.py` drives 19 checks against the built app and
-  passes on both the source launcher and the frozen binary.
-
-Done and verified on Windows 11 (23 August 2026, Python 3.11.9, Node 22.23.2):
+Verified on Windows 11 (23 August 2026, Python 3.11.9, Node 22.23.2,
+PyInstaller 6.22.2):
 
 - `pytest` (47 tests) and `ruff check .` pass in `backend/`.
 - The smoke test passes all 20 checks (one is Windows-only) against both
@@ -26,18 +21,18 @@ Done and verified on Windows 11 (23 August 2026, Python 3.11.9, Node 22.23.2):
   its processes exit on the close beacon.
 - Manual checks 1, 2, 5 and 6 below pass. Check 3, SmartScreen, was reproduced
   with a hand-attached Mark-of-the-Web: the prompt appears and *Run anyway*
-  starts the app -- see "Shipping unsigned" below for what that means for
-  releases. Defender, with real-time protection on, does not flag the file on
-  the build machine.
+  starts the app — see "Shipping unsigned" for what that means for releases.
+  Defender, with real-time protection on, does not flag the file on the build
+  machine.
 
-Still open: the SmartScreen verdict on a genuinely downloaded release, and
-antivirus behaviour on a machine other than the build one. macOS is still
-unbuilt, and it is windowed too -- read the `console=False` trap below before
-starting it.
+Two things cannot be answered without publishing a release: SmartScreen's
+reputation verdict on a genuinely downloaded file, and antivirus behaviour on a
+machine other than the one that built it. Both are cloud- and
+machine-dependent, so the first release is itself the test.
 
-The code was expected to be OS-agnostic already, so **start by simply building
-it**. Do not pre-emptively rewrite things. Change code only in response to an
-actual failure, and prefer the smallest fix.
+macOS is deliberately not built: no Mac is available to the project. Should that
+change, the `console=False` trap documented below applies there too — a windowed
+macOS build has the same missing standard streams.
 
 ## Setup
 
@@ -66,7 +61,6 @@ Then, in a **new** shell so those PATH changes are visible:
 ```powershell
 git clone <repo-url>
 cd RedactPDF
-git checkout distribution
 
 py -m venv .venv        # `python -m venv .venv` if the py launcher is missing
 .\.venv\Scripts\Activate.ps1
@@ -109,8 +103,8 @@ part of the validation.
 
 ## What the smoke test cannot check
 
-These need a human looking at a screen. They are the reason this work is being
-done on a real Windows install rather than in CI.
+These need a human looking at a screen, which is why the first Windows build
+was done on a real install rather than in CI.
 
 1. **Double-click from Explorer.** Not from a terminal — that is a different
    working directory and a different console situation, and it is how the actual
@@ -302,5 +296,3 @@ What a real download would add is the reputation verdict itself, which is a clou
 lookup on the released file — see "Shipping unsigned" above. Check 4, antivirus,
 is only meaningful on a machine other than the one that built the file, so it
 stays open too.
-
-The branch is `distribution`; review, push and PR happen from the Linux machine.
