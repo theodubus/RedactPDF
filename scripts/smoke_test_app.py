@@ -13,8 +13,9 @@ Exits non-zero if any check fails. Needs the dev extra (httpx, pypdf) and the
 generated test fixtures, so run it from a checkout.
 
 What this cannot cover, and a human must still check on Windows: SmartScreen and
-antivirus behaviour, launching by double-click from Explorer, and whether the
-browser really opens. See docs/WINDOWS_BUILD.md.
+antivirus behaviour, and whether a double-click from Explorer really opens the
+browser -- only the console-less start it relies on is checked here. See
+docs/WINDOWS_BUILD.md.
 """
 from __future__ import annotations
 
@@ -235,6 +236,39 @@ def run_checks(client: httpx.Client) -> None:
         )
 
 
+def check_no_stdio_start(cmd: list[str], env: dict, timeout: float) -> None:
+    """Start the app the way Explorer does: with no standard streams at all.
+
+    A windowed build (console=False) started from a double-click has sys.stdout
+    and sys.stderr set to None, and that is a genuinely different path -- uvicorn's
+    default log config asks sys.stdout.isatty() which colours to use and used to
+    crash there, silently, before the server started. Windows only: console=False
+    has no effect elsewhere, and STARTF_USESTDHANDLES with NULL handles is what
+    reproduces it. Inheriting a terminal's streams does not.
+    """
+    startupinfo = subprocess.STARTUPINFO()
+    startupinfo.dwFlags |= subprocess.STARTF_USESTDHANDLES  # hStd* stay None -> NULL
+
+    port = free_port()
+    proc = subprocess.Popen(
+        cmd,
+        cwd=str(ROOT),
+        env={**env, "REDACT_PORT": str(port)},
+        startupinfo=startupinfo,
+    )
+    client = httpx.Client(base_url=f"http://127.0.0.1:{port}")
+    try:
+        started = wait_until_up(client, proc, timeout)
+        check("starts with no console (double-click path)", started, f"exit={proc.returncode}")
+        if started:
+            client.post("/api/heartbeat/close")
+    finally:
+        client.close()
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait(timeout=10)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--exe", type=Path, help="executable to test (default: dist/redactpdf)")
@@ -302,6 +336,9 @@ def main() -> int:
                 break
             time.sleep(0.1)
         check("close beacon stops the app", stopped, f"exit code {proc.returncode}")
+
+        if sys.platform == "win32":
+            check_no_stdio_start(cmd, env, args.startup_timeout)
     finally:
         client.close()
         if proc.poll() is None:

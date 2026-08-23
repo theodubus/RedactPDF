@@ -30,6 +30,7 @@ from pathlib import Path
 from typing import NoReturn
 
 import uvicorn
+from uvicorn.config import LOGGING_CONFIG
 
 if not getattr(sys, "frozen", False):
     # Source checkout: make the backend package importable without installing it.
@@ -119,7 +120,20 @@ def main() -> None:
     port = _resolve_port(host)
     url = f"http://{host}:{port}"
 
-    server = uvicorn.Server(uvicorn.Config(app, host=host, port=port, log_level="warning"))
+    # A windowed build (console=False) has no sys.stdout, and uvicorn's default
+    # log config asks sys.stdout.isatty() which colours to use -- which raises
+    # before the server ever starts. Nothing could read those logs anyway, so
+    # skip the logging setup entirely when there is no stream to write to.
+    has_streams = sys.stdout is not None and sys.stderr is not None
+    server = uvicorn.Server(
+        uvicorn.Config(
+            app,
+            host=host,
+            port=port,
+            log_level="warning",
+            log_config=LOGGING_CONFIG if has_streams else None,
+        )
+    )
 
     def _open_when_ready() -> None:
         for _ in range(100):  # wait up to ~10s for uvicorn to accept connections

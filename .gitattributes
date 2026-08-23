@@ -1,2 +1,9 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Binary assets: never line-ending-converted.
+# The generated fixtures contain no NUL byte, so git's auto-detection classifies
+# them as text and a Windows checkout (core.autocrlf=true) rewrites their LFs to
+# CRLF -- which corrupts bytes that test_fixtures.py asserts by SHA-256.
+*.pdf binary
+*.png binary

@@ -70,7 +70,8 @@ def build_executable(clean: bool) -> Path:
         cmd.append("--clean")
     _run(cmd, cwd=ROOT)
 
-    exe = DIST / "redactpdf"
+    # The spec's `name` carries no extension; PyInstaller appends .exe on Windows.
+    exe = DIST / ("redactpdf.exe" if sys.platform == "win32" else "redactpdf")
     if not exe.is_file():
         _fail(f"expected executable not found at {exe}")
     return exe
@@ -99,8 +100,9 @@ def main() -> None:
 
     exe = build_executable(clean=args.clean)
     size_mb = exe.stat().st_size / (1024 * 1024)
+    prefix = ".\\" if sys.platform == "win32" else "./"
     print(f"\nBuilt {exe.relative_to(ROOT)} ({size_mb:.1f} MB)")
-    print("Run it with:  ./dist/redactpdf")
+    print(f"Run it with:  {prefix}{exe.relative_to(ROOT)}")
 
 
 if __name__ == "__main__":

@@ -20,8 +20,10 @@ For the security model and limitations, see [docs/SECURITY.md](docs/SECURITY.md)
 
 - **Python 3.10 or newer** (CI runs 3.11)
 - **Node.js 20 or newer** (for the frontend dev server / build)
-- A POSIX-like shell (Linux, macOS, WSL). Windows native is not officially
-  tested.
+- Linux, macOS, or Windows. The commands below assume a POSIX shell; on
+  Windows, activate the venv with `.\.venv\Scripts\Activate.ps1` and use
+  backslashes in paths. The test suite and the desktop launcher are exercised
+  on Linux and on Windows.
 
 ---
 
@@ -79,6 +81,27 @@ This picks a free local port, serves the UI and the API from a single process
 the server a few seconds after you close the tab. Re-run `python launch.py`
 whenever you want it again; you only need to rebuild the frontend after
 changing the UI source.
+
+### Standalone executable
+
+To get a single file that runs without a Python environment — what a
+non-technical user should be handed:
+
+```bash
+pip install -e "backend[dev,packaging]"
+python scripts/build_app.py
+```
+
+This builds the frontend, then freezes it together with the launcher and the
+backend into `dist/redactpdf` (`dist\redactpdf.exe` on Windows). PyInstaller
+does not cross-compile, so build on the OS you are targeting.
+`python scripts/smoke_test_app.py` drives the result end-to-end to check it.
+
+**On Windows the first launch shows "Windows protected your PC"**: the
+executable is not signed with a paid code-signing certificate, so SmartScreen
+warns about it. Click **More info → Run anyway**. Every user sees this, on
+every version — the reasons and the alternatives are in
+[docs/WINDOWS_BUILD.md](docs/WINDOWS_BUILD.md).
 
 ### Work on it
 
