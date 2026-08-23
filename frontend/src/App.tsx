@@ -12,6 +12,7 @@ import { PdfViewer } from "./components/PdfViewer";
 
 import type { UiRect, UiRule } from "./types/uiRules";
 import { downloadBlob, newId } from "./utils/redactionUtils";
+import { useHeartbeat } from "./useHeartbeat";
 
 type PendingSelection = {
   text: string;
@@ -26,6 +27,7 @@ const EMPTY_PRESETS: Record<PresetKey, boolean> = {
 
 export default function App() {
   const { lang, setLang, t } = useI18n();
+  useHeartbeat();
 
   const [file, setFile] = useState<File | null>(null);
   const [rules, setRules] = useState<UiRule[]>([]);

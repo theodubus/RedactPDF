@@ -4,12 +4,15 @@ import base64
 import json
 from typing import Annotated, Any, Literal
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ValidationError, field_validator
 from starlette.responses import Response
 
 from app.audit import AuditOptions
+from app.heartbeat import heartbeat
+from app.paths import frontend_dist
 from app.pipeline import (
     PresetsRequest,
     RedactionOptions,
@@ -23,11 +26,28 @@ from app.presets import available_presets
 from app.redaction import RedactionRect
 
 app = FastAPI()
+router = APIRouter()
 
 
-@app.get("/health")
+@router.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@router.post("/heartbeat")
+def heartbeat_ping() -> Response:
+    """Liveness ping from the desktop UI. Inert unless the app was started via
+    launch.py, where the watchdog uses it to auto-stop after the tab closes."""
+    heartbeat.touch()
+    return Response(status_code=204)
+
+
+@router.post("/heartbeat/close")
+def heartbeat_close() -> Response:
+    """Sent by the page (sendBeacon) when the tab is closing, for a prompt
+    shutdown in launcher mode; a no-op otherwise."""
+    heartbeat.request_close()
+    return Response(status_code=204)
 
 
 # ----------------------------
@@ -185,7 +205,7 @@ class ApplyPayload(BaseModel):
     audit: AuditModel | None = None
 
 
-@app.post("/redact/apply")
+@router.post("/redact/apply")
 async def redact_apply(
     file: Annotated[UploadFile, File(...)],
     payload: Annotated[str, Form(...)],
@@ -320,3 +340,17 @@ async def redact_apply(
     }
     _add_report_headers(headers, composite)
     return Response(content=out_pdf, media_type="application/pdf", headers=headers)
+
+
+# Expose the API both bare (/redact/apply -- tests + Vite dev proxy) and under
+# /api (same-origin production / desktop launcher). Including the router twice
+# avoids touching the tests, api.ts or vite.config.ts.
+app.include_router(router)
+app.include_router(router, prefix="/api")
+
+# Serve the built frontend (same-origin) when it exists, so one process can host
+# UI + API (desktop launcher / production). Mounted AFTER the API routes so it
+# never shadows them; skipped in dev, where Vite serves the UI and dist is absent.
+_FRONTEND_DIST = frontend_dist()
+if _FRONTEND_DIST.is_dir():
+    app.mount("/", StaticFiles(directory=_FRONTEND_DIST, html=True), name="frontend")
