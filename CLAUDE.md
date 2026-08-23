@@ -60,7 +60,6 @@ Never add a path that returns a PDF without passing the audit.
 - [audit.py](backend/app/audit.py) — text-level audit primitives and `build_whole_word_pattern`, shared with `search.py` so search semantics and audit semantics cannot drift apart.
 - [sanitize.py](backend/app/sanitize.py) — metadata / annotations / widgets / attachments, on by default.
 - [heartbeat.py](backend/app/heartbeat.py) — liveness singleton; inert unless `launch.py` started a watchdog thread.
-- `regex_engine.py` and `inspect_pdf.py` are currently unreferenced (superseded / debug helper).
 
 ### Routing and serving
 
@@ -78,7 +77,7 @@ Never add a path that returns a PDF without passing the audit.
 
 `backend/tests/fixtures/generated/*.pdf` are a **contract**: deterministic ReportLab-generated PDFs whose exact bytes are asserted by `test_fixtures.py` (SHA-256 against a fresh regeneration). Do not hand-edit them; if you change `generate_fixtures.py`, regenerate and commit all of them in the same change. Each fixture targets a specific trap (whole-word `CAT`/`CATCH`, phone split across lines vs across columns, Luhn-invalid cards, accents, metadata+annotation…), so prefer extending the corpus over inventing PDFs inside a test.
 
-Tests import the app directly (`from app.main import app`) with `fastapi.testclient`, and use `pypdf` in `tests/utils_pdf.py` for output text extraction — deliberately a different library than the one that produced the redaction.
+Tests import the app directly (`from app.main import app`) with `fastapi.testclient`. `tests/utils_pdf.py` holds the two output inspectors: `extract_text` (via `pypdf` — deliberately a different library than the one that produced the redaction) and `inspect_pdf` (via PyMuPDF — metadata, XMP xref, links/annots/widgets, attachments), used by the sanitation tests.
 
 ## Conventions
 
