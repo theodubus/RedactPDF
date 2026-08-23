@@ -16,6 +16,28 @@ For the security model and limitations, see [docs/SECURITY.md](docs/SECURITY.md)
 
 ---
 
+## Download
+
+The quickest way to use RedactPDF: take the file for your system from the
+[latest release](https://github.com/theodubus/RedactPDF/releases/latest) and run
+it. No Python, no Node, nothing to install — the app opens in your browser and
+stops when you close the tab.
+
+| System | File |
+| --- | --- |
+| Windows | `redactpdf-windows-x86_64.exe` |
+| Linux (x86-64) | `redactpdf-linux-x86_64`, `chmod +x` it first |
+
+**Windows shows "Windows protected your PC" on first run**, because the
+executable is not signed with a paid code-signing certificate. Click **More
+info**, then **Run anyway** — see
+[docs/WINDOWS_BUILD.md](docs/WINDOWS_BUILD.md) for why. On Linux the binary
+needs a glibc at least as recent as Ubuntu 22.04's.
+
+Everything below is for running RedactPDF from source, or working on it.
+
+---
+
 ## Requirements
 
 - **Python 3.10 or newer** (CI runs 3.11)
@@ -84,8 +106,8 @@ changing the UI source.
 
 ### Standalone executable
 
-To get a single file that runs without a Python environment — what a
-non-technical user should be handed:
+Prebuilt binaries are attached to every release (see [Download](#download)).
+To build your own single file, one that runs without a Python environment:
 
 ```bash
 pip install -e "backend[dev,packaging]"
