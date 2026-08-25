@@ -247,3 +247,9 @@ redistributed or network-hosted (SaaS) version, including modified ones,
 must make its **complete corresponding source available under the same
 AGPL-3.0 terms**. This copyleft is also required by the core dependency
 PyMuPDF, which is itself AGPL-3.0 (or commercial).
+
+<div align="right" style="display: flex">
+    <img src="https://api.visitorbadge.io/api/visitors?path=https%3A%2F%2Fgithub.com%2Ftheodubus%2FRedactPDF&countColor=%231182c2" height="20"/>
+    <a href="https://github.com/theodubus" alt="https://github.com/theodubus"><img height="20" style="border-radius: 5px" src="https://img.shields.io/static/v1?style=for-the-badge&label=CREE%20PAR&message=theodubus&color=1182c2"></a>
+    <a href="LICENSE.md" alt="licence"><img style="border-radius: 5px" height="20" src="https://img.shields.io/static/v1?style=for-the-badge&label=LICENSE&message=GNU+AGPL+V3&color=1182c2"></a>
+</div>
