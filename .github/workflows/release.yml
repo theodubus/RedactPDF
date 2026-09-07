@@ -24,6 +24,17 @@ jobs:
   build:
     name: build (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+
+    # L'attestation de provenance lie le binaire au commit et au workflow qui
+    # l'ont produit. C'est la seule garantie vérifiable qu'on puisse offrir sans
+    # certificat de signature de code : elle ne fait pas taire SmartScreen, mais
+    # elle permet à qui le veut de prouver que le fichier téléchargé sort bien de
+    # ce dépôt, à ce commit.
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+
     strategy:
       fail-fast: false # one OS failing should not hide the other's result
       matrix:
@@ -72,6 +83,11 @@ jobs:
         shell: bash
         run: mv "${{ matrix.built }}" "dist/${{ matrix.asset }}"
 
+      - name: Attest the binary's provenance
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: dist/${{ matrix.asset }}
+
       - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.asset }}
@@ -81,6 +97,11 @@ jobs:
   wheel:
     name: build the Python distributions
     runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
 
     steps:
       - uses: actions/checkout@v7
@@ -131,6 +152,11 @@ jobs:
           /tmp/wheelcheck/bin/pip install --quiet backend/dist/*.whl
           python scripts/smoke_test_app.py --exe /tmp/wheelcheck/bin/redactpdf
 
+      - name: Attest the distributions' provenance
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: backend/dist/*
+
       - uses: actions/upload-artifact@v7
         with:
           name: python-distributions
@@ -139,7 +165,10 @@ jobs:
 
   release:
     name: draft release
-    needs: build
+    # `wheel` aussi : le téléchargement sans filtre récupère tous les artefacts du
+    # run, donc la roue et la sdist rejoignent la page de release. Sans cette
+    # dépendance, elles y seraient ou non selon qui finit le premier.
+    needs: [build, wheel]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
 
@@ -151,6 +180,16 @@ jobs:
         with:
           path: artifacts
           merge-multiple: true
+
+      # Un binaire non signé qu'on demande d'exécuter sur des documents
+      # confidentiels doit au minimum être vérifiable. Les sommes sont calculées
+      # ici, sur les artefacts qui seront réellement attachés à la release.
+      - name: Checksum every asset
+        shell: bash
+        working-directory: artifacts
+        run: |
+          sha256sum * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
 
       # The table links straight to the assets: the download URL of a release
       # asset is predictable from the tag and the file name, so it can be written
@@ -181,6 +220,35 @@ jobs:
 
           RedactPDF runs entirely on your machine: no upload, no network calls,
           no telemetry.
+
+          ### With Python installed -- any OS, and the recommended path on macOS
+
+          ```
+          pipx install redactpdf
+          redactpdf
+          ```
+
+          ### Verify what you downloaded
+
+          Neither binary is signed with a paid code-signing certificate, so
+          verifying is on you -- and both commands below are one line.
+
+          Check the file matches what was built, using `SHA256SUMS.txt` from
+          this page:
+
+          ```
+          sha256sum --ignore-missing -c SHA256SUMS.txt
+          ```
+
+          Check it was really built by this repository, from this commit, by
+          GitHub's runners -- not by someone who re-uploaded a file with the
+          right name (needs the GitHub CLI):
+
+          ```
+          gh attestation verify redactpdf-linux-x86_64 --repo __REPO__
+          ```
+
+          The same works for the Windows executable, the wheel and the sdist.
 
           **Full changelog:** https://github.com/__REPO__/commits/__TAG__
           NOTES
