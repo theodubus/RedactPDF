@@ -1,6 +1,6 @@
-import React, { useCallback, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useI18n } from "./i18nContext";
-import { redactApply, RedactApiError } from "./api";
+import { fetchConfig, FALLBACK_REGION, redactApply, RedactApiError } from "./api";
 import type { ImageMode, PresetKey, RuleInput } from "./api";
 
 import { HeaderBar } from "./components/HeaderBar";
@@ -40,6 +40,25 @@ export default function App() {
   const [isDragOver, setIsDragOver] = useState(false);
 
   const [submitting, setSubmitting] = useState(false);
+
+  // L'aperçu du preset téléphone valide les candidats comme le backend, ce qui
+  // suppose la même région par défaut. Tant qu'elle n'est pas connue on retient
+  // celle du backend : se tromper de région ferait mentir le surlignage.
+  const [defaultRegion, setDefaultRegion] = useState(FALLBACK_REGION);
+
+  useEffect(() => {
+    let active = true;
+    fetchConfig()
+      .then((cfg) => {
+        if (active) setDefaultRegion(cfg.defaultRegion);
+      })
+      .catch(() => {
+        // Le repli sur FALLBACK_REGION est déjà en place.
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
 
   const [errorInfo, setErrorInfo] = useState<{
@@ -279,6 +298,7 @@ export default function App() {
               file={file}
               rules={rules}
               presetKeys={selectedPresets}
+              defaultRegion={defaultRegion}
               t={t}
               onSelectionChange={setPendingSelection}
               onCurrentPageChange={setCurrentPage}

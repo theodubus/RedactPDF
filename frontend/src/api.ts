@@ -13,6 +13,22 @@ export class RedactApiError extends Error {
   }
 }
 
+/** Réglages serveur dont l'aperçu a besoin pour dire la même chose que le backend. */
+export type ServerConfig = {
+  defaultRegion: string;
+};
+
+/** Région par défaut du backend (`REDACT_DEFAULT_REGION`), FR sauf configuration. */
+export const FALLBACK_REGION = "FR";
+
+export async function fetchConfig(): Promise<ServerConfig> {
+  const resp = await fetch("/api/config");
+  if (!resp.ok) throw new Error(`config: HTTP ${resp.status}`);
+  const data = (await resp.json()) as { default_region?: unknown };
+  const region = typeof data.default_region === "string" ? data.default_region : FALLBACK_REGION;
+  return { defaultRegion: region };
+}
+
 export type PresetKey = "email" | "phone" | "credit_card";
 
 export type ImageMode = "none" | "remove" | "pixels";

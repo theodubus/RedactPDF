@@ -1,3 +1,4 @@
+import { backendWouldRedactPhone } from "../utils/phonePreview";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import type { PresetKey } from "../api";
@@ -64,6 +65,7 @@ export function PdfViewer(props: {
   file: File;
   rules: UiRule[];
   presetKeys: PresetKey[];
+  defaultRegion: string;
   t: (k: string) => string;
   onSelectionChange: (selection: { text: string; rects: UiRect[] } | null) => void;
   onCurrentPageChange: (pageNumber: number | null) => void;
@@ -71,7 +73,7 @@ export function PdfViewer(props: {
   isDrawingRect: boolean;
   onAddDrawnRect: (params: { pageNumber: number; rect: UiRect }) => void;
 }) {
-  const { file, rules, presetKeys, t, onSelectionChange, onCurrentPageChange, onPageSizeChange, isDrawingRect, onAddDrawnRect } = props;
+  const { file, rules, presetKeys, defaultRegion, t, onSelectionChange, onCurrentPageChange, onPageSizeChange, isDrawingRect, onAddDrawnRect } = props;
 
   const [pdfDoc, setPdfDoc] = useState<PdfDocumentProxy | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -213,23 +215,27 @@ export function PdfViewer(props: {
           viewport,
         });
         await textLayerTask.render();
-        applyPreviewHighlights(textLayer, previewLayer, rules, presetKeys, pageNumber - 1, scale);
+        applyPreviewHighlights(
+          textLayer, previewLayer, rules, presetKeys, pageNumber - 1, scale, defaultRegion,
+        );
       }
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [pdfDoc, pageNumbers, containerWidth, rules, presetKeys, onPageSizeChange]);
+  }, [pdfDoc, pageNumbers, containerWidth, rules, presetKeys, defaultRegion, onPageSizeChange]);
 
   useEffect(() => {
     for (const [index, textLayer] of textLayerRefs.current.entries()) {
       const previewLayer = previewLayerRefs.current[index];
       const scale = pageScalesRef.current[index] ?? 1;
       if (!textLayer || !previewLayer) continue;
-      applyPreviewHighlights(textLayer, previewLayer, rules, presetKeys, index, scale);
+      applyPreviewHighlights(
+        textLayer, previewLayer, rules, presetKeys, index, scale, defaultRegion,
+      );
     }
-  }, [rules, presetKeys]);
+  }, [rules, presetKeys, defaultRegion]);
 
   useEffect(() => {
     if (!containerRef.current || pageNumbers.length === 0) return;
@@ -475,6 +481,7 @@ function applyPreviewHighlights(
   presetKeys: PresetKey[],
   pageIndex: number,
   scale: number,
+  defaultRegion: string,
 ) {
   previewLayer.replaceChildren();
 
@@ -511,7 +518,7 @@ function applyPreviewHighlights(
   }
 
   if (presetKeys.includes("phone")) {
-    highlightPhonePresetMatches(textLayer, previewLayer, layerBounds);
+    highlightPhonePresetMatches(textLayer, previewLayer, layerBounds, defaultRegion);
   }
 
   const pageRules = rules.filter((r): r is Extract<UiRule, { kind: "page" }> => r.kind === "page");
@@ -621,22 +628,6 @@ function findPresetMatches(text: string, presetKeys: PresetKey[]) {
   return ranges;
 }
 
-function isLikelyPhonePresetMatch(rawMatch: string) {
-  const value = rawMatch.trim();
-  if (!value) return false;
-  if (/[A-Za-z/]/.test(value)) return false;
-
-  const hasIntlPrefix = /^\s*(?:\+|00)/.test(value);
-  const digits = value.replace(/\D+/g, "");
-  const minDigits = hasIntlPrefix ? 8 : 10;
-  if (digits.length < minDigits || digits.length > 15) return false;
-
-  if (!hasIntlPrefix && !digits.startsWith("0")) return false;
-  if (!/[+\s().-]/.test(value)) return false;
-
-  return true;
-}
-
 type LayerTextNode = {
   node: Text;
   start: number;
@@ -647,6 +638,7 @@ function highlightPhonePresetMatches(
   textLayer: HTMLDivElement,
   previewLayer: HTMLDivElement,
   layerBounds: DOMRect,
+  defaultRegion: string,
 ) {
   const { fullText, nodes } = collectLayerTextNodes(textLayer);
   if (!fullText || nodes.length === 0) return;
@@ -669,7 +661,7 @@ function highlightPhonePresetMatches(
       value = "+" + value;
     }
 
-    if (!isLikelyPhonePresetMatch(value)) continue;
+    if (!backendWouldRedactPhone(value, defaultRegion)) continue;
 
     for (const item of nodes) {
       const localStart = Math.max(matchStart, item.start) - item.start;

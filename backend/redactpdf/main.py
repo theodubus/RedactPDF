@@ -22,7 +22,7 @@ from redactpdf.pipeline import (
     audit_plan,
     plan_redactions,
 )
-from redactpdf.presets import available_presets
+from redactpdf.presets import DEFAULT_REGION, available_presets
 from redactpdf.redaction import RedactionRect
 
 app = FastAPI()
@@ -32,6 +32,19 @@ router = APIRouter()
 @router.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@router.get("/config")
+def config() -> dict[str, str]:
+    """Réglages serveur dont l'UI a besoin pour que son aperçu dise la vérité.
+
+    Le preset téléphone valide ses candidats avec libphonenumber contre une
+    région par défaut (`REDACT_DEFAULT_REGION`). Sans connaître la même région,
+    l'aperçu surlignerait des numéros que le backend n'ira jamais caviarder --
+    un surlignage lu comme une promesse, suivi d'un export réussi qui laisse la
+    donnée en clair.
+    """
+    return {"default_region": DEFAULT_REGION}
 
 
 @router.post("/heartbeat")
