@@ -207,6 +207,12 @@ def audit_text(
                         "start": start,
                         "end": end,
                         "snippet": _make_snippet(src_text, start, end),
+                        # Le moteur travaille sur des lignes ; l'audit sur le texte
+                        # de page aplati. Une correspondance qui contient un saut de
+                        # ligne n'a donc pas pu être localisée géométriquement, et
+                        # c'est la seule chose qui distingue ce cas d'une redaction
+                        # qui aurait échoué à s'appliquer.
+                        "spans_line_break": "\n" in src_text[start:end],
                     }
                 )
                 per_page += 1
@@ -241,6 +247,7 @@ def audit_text(
                     "start": idx,
                     "end": end,
                     "snippet": _make_snippet(src_text, idx, end),
+                    "spans_line_break": "\n" in src_text[idx:end],
                 }
             )
 

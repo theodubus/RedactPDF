@@ -83,5 +83,8 @@
   "form.imageMode.pixels": "Precise",
   "form.imageMode.none.help": "Images are never modified, even when a redaction rectangle overlaps them.",
   "form.imageMode.remove.help": "Any image touched by a redaction rectangle is removed entirely.",
-  "form.imageMode.pixels.help": "Only the area intersected by the redaction is blackened. The rest of the image stays visible (possibly with lossy re-encoding)."
+  "form.imageMode.pixels.help": "Only the area intersected by the redaction is blackened. The rest of the image stays visible (possibly with lossy re-encoding).",
+  "result.error.why": "Why the export was refused",
+  "result.diagnostic.lineBreakSplit": "The targeted text is split across two lines or two cells that the engine deliberately refuses to merge -- that refusal is what stops it from redacting two unrelated columns by mistake. It could not target the text, so the text is still in the document.",
+  "result.diagnostic.lineBreakSplit.action": "Draw a rectangle over each part listed below, then submit again."
 }

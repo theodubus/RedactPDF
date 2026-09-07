@@ -83,5 +83,8 @@
   "form.imageMode.pixels": "Précise",
   "form.imageMode.none.help": "Les images ne sont pas modifiées, même si une zone de censure les recouvre.",
   "form.imageMode.remove.help": "Toute image touchée par une zone de censure est retirée intégralement.",
-  "form.imageMode.pixels.help": "Seule la zone intersectée de l'image est noircie ; le reste de l'image reste visible. Recompression possiblement avec perte."
+  "form.imageMode.pixels.help": "Seule la zone intersectée de l'image est noircie ; le reste de l'image reste visible. Recompression possiblement avec perte.",
+  "result.error.why": "Pourquoi l'export est refusé",
+  "result.diagnostic.lineBreakSplit": "Le texte visé est réparti sur deux lignes ou deux cellules que le moteur ne fusionne pas volontairement : c'est ce qui l'empêche de caviarder par erreur deux colonnes sans rapport. Il n'a donc pas pu le cibler, et le texte est toujours dans le document.",
+  "result.diagnostic.lineBreakSplit.action": "Tracez un rectangle sur chaque partie signalée ci-dessous, puis relancez."
 }

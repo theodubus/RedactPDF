@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -79,3 +80,58 @@ def test_audit_regex_finds_secret_when_regex_enabled() -> None:
         re.fullmatch(pattern, m.get("match", "")) is not None
         for m in report.get("matches", [])
     ), "Audit should include a match that satisfies the regex"
+
+
+@pytest.mark.integration
+def test_failed_export_explains_a_match_split_across_lines() -> None:
+    """Le rapport d'échec doit dire *pourquoi*, pas seulement *quoi*.
+
+    Sur un tableau « Nom | Prénom », les deux cellules partagent la même ligne
+    de base : le moteur refuse volontairement de les apparier (c'est ce qui
+    empêche les fusions inter-colonnes), tandis que l'audit lit un texte de page
+    aplati où les deux se suivent. L'utilisateur reçoit un 400 légitime, mais
+    rien ne l'oriente vers ce qui débloque tant que le rapport ne nomme pas la
+    cause.
+    """
+    from io import BytesIO
+
+    from fastapi.testclient import TestClient
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.units import mm
+    from reportlab.pdfgen import canvas as rl_canvas
+
+    from redactpdf.main import app
+
+    buf = BytesIO()
+    c = rl_canvas.Canvas(buf, pagesize=A4)
+    _, height = A4
+    c.setFont("Helvetica", 11)
+    c.drawString(25 * mm, height - 50 * mm, "Dupont")
+    c.drawString(80 * mm, height - 50 * mm, "Jean")
+    c.showPage()
+    c.save()
+
+    payload = {
+        "rects": [],
+        "searches": [
+            {
+                "query": "Dupont Jean",
+                "options": {"case_sensitive": False, "whole_word": True},
+                "scope": {"pages": None},
+            }
+        ],
+    }
+    resp = TestClient(app).post(
+        "/redact/apply",
+        files={
+            "file": ("in.pdf", buf.getvalue(), "application/pdf"),
+            "payload": (None, json.dumps(payload), "application/json"),
+        },
+    )
+
+    assert resp.status_code == 400, resp.text
+    body = resp.json()
+    assert "line_break_split" in body["diagnostics"]
+
+    matches = body["components"]["searches"]["failed"][0]["report"]["matches"]
+    assert any(m["spans_line_break"] for m in matches)

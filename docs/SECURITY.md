@@ -86,12 +86,25 @@ continue to follow the user's chosen image mode on the same page.
      `pixels` and `remove` delete the **whole path**, not just the
      intersected portion. Pixel-perfect partial redaction would require
      rasterising the affected vector area, which the project does not do.
-3. **Cross-column multiline regex**
-   - The geometric engine deliberately refuses to fuse lines across
-     columns. The text-based audit, however, runs on a flattened page text
-     and may match across columns. Multiline regex on multi-column PDFs
-     can therefore produce a 400 audit-fail even when nothing was
-     legitimately to redact.
+3. **Matches split across a boundary the engine will not cross**
+   - The geometric engine only merges lines that are vertically adjacent
+     and horizontally overlapping. It therefore refuses, on purpose, to
+     merge two columns of prose, and it refuses two cells sharing a
+     baseline — that refusal is what stops it from redacting unrelated
+     text that only *looks* contiguous once flattened.
+   - The text-based audit has no geometry: it reads flattened page text,
+     where those pieces sit next to each other. A rule whose match spans
+     such a boundary therefore fails the audit and blocks the export.
+   - This is **not** limited to multiline regex on multi-column PDFs, as
+     this document previously claimed. An ordinary whole-word search for
+     `Dupont Jean` on a plain two-column `Nom | Prénom` table triggers it,
+     with the default UI settings.
+   - The export is refused correctly — the text really is still in the
+     output — but no rule of that kind could have removed it. Since the
+     failure report is otherwise indistinguishable from a genuine leak,
+     it carries `diagnostics: ["line_break_split"]` and a per-match
+     `spans_line_break` flag, and the UI turns that into an explanation
+     plus the action that unblocks: draw a rectangle over each part.
 
 ## Operational Recommendations
 

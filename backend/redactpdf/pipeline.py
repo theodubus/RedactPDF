@@ -310,6 +310,7 @@ def audit_plan(
             "status": "fail",
             "components_failed": sorted(failures.keys()),
             "components": failures,
+            "diagnostics": _diagnose(failures),
         }
 
     return {
@@ -319,6 +320,32 @@ def audit_plan(
         "options": {"mode": "apply_combined"},
         "components": {},
     }
+
+
+# Codes lisibles par machine, traduits par l'interface : le backend ne sait pas
+# dans quelle langue s'adresse l'utilisateur, et un rapport en anglais dans une
+# UI française est le genre de détail qui fait douter du reste.
+DIAGNOSTIC_LINE_BREAK_SPLIT = "line_break_split"
+
+
+def _diagnose(failures: dict[str, Any]) -> list[str]:
+    """Expliquer *pourquoi* un caviardage a échoué, pas seulement qu'il a échoué.
+
+    Sans cela, l'utilisateur reçoit un 400 et un rapport qui dit ce qui a
+    survécu, sans rien qui l'oriente vers ce qui débloque. Le seul cas qu'on
+    sache diagnostiquer aujourd'hui est celui où la correspondance franchit un
+    retour à la ligne : le moteur raisonne par lignes et n'apparie que des
+    lignes géométriquement voisines, si bien que deux cellules d'un tableau ou
+    deux colonnes ne sont volontairement jamais fusionnées.
+    """
+    codes: list[str] = []
+    for component in failures.values():
+        for failed in component.get("failed", []) or []:
+            for match in failed.get("report", {}).get("matches", []) or []:
+                if match.get("spans_line_break"):
+                    codes.append(DIAGNOSTIC_LINE_BREAK_SPLIT)
+                    return sorted(set(codes))
+    return codes
 
 
 def _audit_pdf_text(pdf_bytes: bytes, opts: AuditOptions) -> dict[str, Any]:
