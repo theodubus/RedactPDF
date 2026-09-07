@@ -16,8 +16,13 @@ EMAIL_RX = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
 PHONE_RX = re.compile(r"(?:\+?\d[\d\s().-]{6,}\d)")
 
 
+# Résolu depuis ce fichier, pas depuis le répertoire courant : la suite doit
+# passer quel que soit l'endroit d'où pytest est lancé.
+FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures" / "generated"
+
+
 def _load_fixture(name: str) -> bytes:
-    path = Path("tests/fixtures/generated") / name
+    path = FIXTURES_DIR / name
     return path.read_bytes()
 
 
