@@ -11,7 +11,7 @@ ruff check .                      # lint (line-length 100, rules E,F,I,UP,B)
 pytest                            # full suite (testpaths=tests, pythonpath=.)
 pytest tests/test_redact_apply.py::test_redact_apply_combines_search_and_presets_email
 pytest -m unit                    # markers: unit, integration, e2e, slow
-uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+uvicorn redactpdf.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
 Frontend (run from `frontend/`):
@@ -27,6 +27,14 @@ Desktop / single-process mode (from repo root, after `npm run build`):
 
 ```bash
 python launch.py                  # free port + same-origin UI + heartbeat auto-shutdown
+```
+
+Python distributions — wheel + sdist (needs the `wheel` extra: `pip install -e "backend[dev,wheel]"`):
+
+```bash
+python scripts/build_package.py                 # npm build + stage + build -> backend/dist/
+python scripts/build_package.py --skip-frontend # reuse the existing frontend/dist
+python scripts/smoke_test_app.py --exe <venv>/bin/redactpdf   # check an installed wheel
 ```
 
 Standalone build (needs the `packaging` extra: `pip install -e "backend[dev,packaging]"`):
@@ -49,7 +57,7 @@ Fixture regeneration (from **repo root**, not `backend/`):
 python -m backend.tests.fixtures.generate_fixtures
 ```
 
-CI: `backend-ci` runs `ruff check .` + `pytest` on Python 3.11; `frontend-ci` runs `npm run lint` + `npm run build` on Node 20; `smoke-ci` builds the UI and runs `scripts/smoke_test_app.py --source`, which covers what pytest cannot see — `launch.py`, `app/paths.py`, same-origin serving of `frontend/dist`, and the end-to-end API path — without paying for a PyInstaller build. `release` builds the standalone app on Linux and Windows when a `v*` tag is pushed, gates it on the frozen `smoke_test_app.py`, and drafts a GitHub Release with both binaries — it never publishes on its own.
+CI: `backend-ci` runs `ruff check .` + `pytest` on Python 3.11; `frontend-ci` runs `npm run lint` (zero warnings) + `npm run build` on Node 20; `smoke-ci` has two jobs — one drives `scripts/smoke_test_app.py --source`, the other builds the wheel, installs it into a clean venv and drives the installed `redactpdf` console script. Between them they cover what pytest cannot see: `launch.py`, `redactpdf/paths.py`, same-origin serving of the built UI, and the end-to-end API path, without paying for a PyInstaller build. `release` fires on a `v*` tag: it checks the tag matches `version` in `backend/pyproject.toml`, builds the standalone binaries on Linux and Windows gated on the frozen `smoke_test_app.py`, builds and smoke-tests the wheel, drafts a GitHub Release with both binaries — never publishing it on its own — and publishes the distributions to PyPI through Trusted Publishing (OIDC, environment `pypi`, no stored secret).
 
 ## Architecture
 
@@ -57,35 +65,41 @@ Two halves: a FastAPI + PyMuPDF backend that does all redaction work, and a Reac
 
 ### Request flow: plan → apply → audit
 
-[backend/app/pipeline.py](backend/app/pipeline.py) is the spine, and the ordering is a security invariant:
+[backend/redactpdf/pipeline.py](backend/redactpdf/pipeline.py) is the spine, and the ordering is a security invariant:
 
 1. **`plan_redactions`** computes *all* rectangles (manual, search, regex, presets) from the **original** PDF bytes. Never re-derive rectangles from a partially-redacted document — a prior redaction would hide text a later rule needed to match. `test_redact_apply.py` has a regression test for this.
 2. **`apply_plan`** runs redaction in up to two passes: full-page rects first in forced strict mode (`image_mode="remove"`, `apply_graphics=True`) regardless of what the user picked, then everything else in the user's mode. Sanitisation is deferred to the last pass so it runs once on the final document.
-3. **`audit_plan`** re-runs every requested rule against the **output** PDF's extracted text. Any surviving match makes [main.py](backend/app/main.py) return HTTP 400 with a structured component report instead of the PDF. A successful export also carries the report base64'd in `X-Redaction-Audit-Report-B64` plus `X-Redaction-*-Occurrences` headers.
+3. **`audit_plan`** re-runs every requested rule against the **output** PDF's extracted text. Any surviving match makes [main.py](backend/redactpdf/main.py) return HTTP 400 with a structured component report instead of the PDF. A successful export also carries the report base64'd in `X-Redaction-Audit-Report-B64` plus `X-Redaction-*-Occurrences` headers.
 
 Never add a path that returns a PDF without passing the audit.
 
 ### Backend modules
 
-- [redaction.py](backend/app/redaction.py) — the only place that touches PyMuPDF redaction primitives. `_tighten_rect_vertical` shrinks extracted line boxes so a rect doesn't eat the line below; saves with `garbage=4` (required for metadata/image removal to be physical, not just unreferenced).
-- [multiline_regex_engine.py](backend/app/multiline_regex_engine.py) — the real matching engine. Extracts words/lines/char boxes, maps regex spans back to geometry, and fuses lines only when they overlap horizontally enough (`min_x_overlap_ratio`), which is what prevents cross-column false fusions (fixture `009`). Accent folding (`_fold_keep_len`) is deliberately **length-preserving** so string indices stay valid for span→rect mapping — keep that property in any change here.
-- [search.py](backend/app/search.py) — exact search. Fast path uses `page.search_for()`; `whole_word` or `ignore_accents` fall back to the regex engine with a generated pattern.
-- [presets.py](backend/app/presets.py) — email / phone / credit_card. Regex candidates plus post-filters: Luhn for cards, `phonenumbers` validation for phones (default region from `REDACT_DEFAULT_REGION`, `FR`).
-- [audit.py](backend/app/audit.py) — text-level audit primitives and `build_whole_word_pattern`, shared with `search.py` so search semantics and audit semantics cannot drift apart.
-- [sanitize.py](backend/app/sanitize.py) — metadata / annotations / widgets / attachments, on by default.
-- [heartbeat.py](backend/app/heartbeat.py) — liveness singleton; inert unless `launch.py` started a watchdog thread.
+- [redaction.py](backend/redactpdf/redaction.py) — the only place that touches PyMuPDF redaction primitives. `_tighten_rect_vertical` shrinks extracted line boxes so a rect doesn't eat the line below; saves with `garbage=4` (required for metadata/image removal to be physical, not just unreferenced).
+- [multiline_regex_engine.py](backend/redactpdf/multiline_regex_engine.py) — the real matching engine. Extracts words/lines/char boxes, maps regex spans back to geometry, and fuses lines only when they overlap horizontally enough (`min_x_overlap_ratio`), which is what prevents cross-column false fusions (fixture `009`). Accent folding (`_fold_keep_len`) is deliberately **length-preserving** so string indices stay valid for span→rect mapping — keep that property in any change here.
+- [search.py](backend/redactpdf/search.py) — exact search. Fast path uses `page.search_for()`; `whole_word` or `ignore_accents` fall back to the regex engine with a generated pattern.
+- [presets.py](backend/redactpdf/presets.py) — email / phone / credit_card. Regex candidates plus post-filters: Luhn for cards, `phonenumbers` validation for phones (default region from `REDACT_DEFAULT_REGION`, `FR`).
+- [audit.py](backend/redactpdf/audit.py) — text-level audit primitives and `build_whole_word_pattern`, shared with `search.py` so search semantics and audit semantics cannot drift apart.
+- [sanitize.py](backend/redactpdf/sanitize.py) — metadata / annotations / widgets / attachments, on by default.
+- [heartbeat.py](backend/redactpdf/heartbeat.py) — liveness singleton; inert unless `launch.py` started a watchdog thread.
 
 ### Packaging
 
 [packaging/redactpdf.spec](packaging/redactpdf.spec) freezes `launch.py` into one executable. Three things there are load-bearing and easy to break: `phonenumbers` region metadata and uvicorn's protocol/loop implementations are both resolved by string at runtime, so they are pulled in with `collect_submodules`; and `frontend/dist` is embedded as data under that same relative name. Anything else resolved dynamically needs the same treatment, and the symptom is always a runtime `ModuleNotFoundError` in the frozen binary only — never in the test suite.
 
-Because of that embedding, **no module may locate the UI from `__file__`**: once frozen, the code lives in a temporary extraction tree, not the repo. [app/paths.py](backend/app/paths.py) is the single place that knows both layouts (`frontend_dist()`, `is_frozen()`); `main.py` and `launch.py` go through it.
+Because of that embedding, **no module may locate the UI from `__file__`**: once frozen, the code lives in a temporary extraction tree, not the repo. [redactpdf/paths.py](backend/redactpdf/paths.py) is the single place that knows the layouts (`frontend_dist()`, `is_frozen()`, `is_source_checkout()`); `main.py` and `launch.py` go through it.
+
+There are **three** layouts, not two, and `frontend_dist()` tries them in this order: PyInstaller bundle (`sys._MEIPASS/frontend/dist`), source checkout (`<repo>/frontend/dist`), installed wheel (`redactpdf/_frontend`). The source checkout is tried before the package copy on purpose — on a machine that has already built a wheel, a stale `_frontend` must never shadow a freshly rebuilt `frontend/dist`.
+
+setuptools cannot reach above the package root, so `frontend/dist` and the root `LICENSE.md` are **staged into** `backend/` by [scripts/build_package.py](scripts/build_package.py) before `python -m build`. Both copies are git-ignored build artefacts; nothing else should read them.
+
+The console entry point is `redactpdf = "redactpdf.launch:run"`, so the launcher body lives in the package ([backend/redactpdf/launch.py](backend/redactpdf/launch.py)). Root [launch.py](launch.py) is a thin shim that puts `backend/` on `sys.path` for a source checkout and delegates — it stays the file `packaging/redactpdf.spec` analyses.
 
 The release build is windowed (`console=False`), so on Windows a frozen app has no `sys.stdout`/`sys.stderr` at all and a crash would be completely silent. [launch.py](launch.py) therefore routes every startup failure through `_fatal()` (GUI dialog, falling back to a stream when there is one) and wraps `main()` in a catch-all. Never replace those with a bare `print`/`sys.exit(str)`. `REDACT_PORT` and `REDACT_NO_BROWSER` exist so the smoke test can drive the app deterministically without hijacking a browser.
 
 ### Routing and serving
 
-[main.py](backend/app/main.py) includes the same router twice — bare (`/redact/apply`, used by tests and the Vite proxy, which strips the `/api` prefix) and under `/api` (used by same-origin production and `launch.py`). Static `frontend/dist` is mounted at `/` **after** the API routes, and only when the directory exists. If you add an endpoint, add it to `router`, not to `app`, or it will only exist on one of the two prefixes.
+[main.py](backend/redactpdf/main.py) includes the same router twice — bare (`/redact/apply`, used by tests and the Vite proxy, which strips the `/api` prefix) and under `/api` (used by same-origin production and `launch.py`). Static `frontend/dist` is mounted at `/` **after** the API routes, and only when the directory exists. If you add an endpoint, add it to `router`, not to `app`, or it will only exist on one of the two prefixes.
 
 ### Frontend
 
@@ -99,7 +113,7 @@ The release build is windowed (`console=False`), so on Windows a frozen app has 
 
 `backend/tests/fixtures/generated/*.pdf` are a **contract**: deterministic ReportLab-generated PDFs whose exact bytes are asserted by `test_fixtures.py` (SHA-256 against a fresh regeneration). Do not hand-edit them; if you change `generate_fixtures.py`, regenerate and commit all of them in the same change. Each fixture targets a specific trap (whole-word `CAT`/`CATCH`, phone split across lines vs across columns, Luhn-invalid cards, accents, metadata+annotation…), so prefer extending the corpus over inventing PDFs inside a test.
 
-Tests import the app directly (`from app.main import app`) with `fastapi.testclient`. `tests/utils_pdf.py` holds the two output inspectors: `extract_text` (via `pypdf` — deliberately a different library than the one that produced the redaction) and `inspect_pdf` (via PyMuPDF — metadata, XMP xref, links/annots/widgets, attachments), used by the sanitation tests.
+Tests import the app directly (`from redactpdf.main import app`) with `fastapi.testclient`. `tests/utils_pdf.py` holds the two output inspectors: `extract_text` (via `pypdf` — deliberately a different library than the one that produced the redaction) and `inspect_pdf` (via PyMuPDF — metadata, XMP xref, links/annots/widgets, attachments), used by the sanitation tests.
 
 ## Conventions
 

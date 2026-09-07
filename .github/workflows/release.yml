@@ -78,6 +78,65 @@ jobs:
           path: dist/${{ matrix.asset }}
           if-no-files-found: error
 
+  wheel:
+    name: build the Python distributions
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      # Le numéro de version vit dans backend/pyproject.toml, et lui seul. Un tag
+      # qui ne lui correspond pas publierait une version portant un autre nom que
+      # celui du dépôt : on s'arrête avant.
+      - name: Check the tag matches the declared version
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          declared=$(python -c "import tomllib,pathlib; \
+            print(tomllib.loads(pathlib.Path('backend/pyproject.toml').read_text())['project']['version'])")
+          if [ "v$declared" != "${GITHUB_REF_NAME}" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} does not match backend/pyproject.toml version $declared"
+            exit 1
+          fi
+          echo "tag ${GITHUB_REF_NAME} matches version $declared"
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+        working-directory: frontend
+
+      - name: Install the build tooling
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e "./backend[dev,wheel]"
+
+      - name: Build the wheel and the sdist
+        run: python scripts/build_package.py
+
+      # Le critère de A2 : sur un environnement vierge, `pip install` la roue puis
+      # `redactpdf` doit ouvrir l'UI et caviarder un PDF. Le smoke test sait viser
+      # un exécutable arbitraire, donc le script console installé.
+      - name: Smoke test the installed wheel
+        run: |
+          python -m venv /tmp/wheelcheck
+          /tmp/wheelcheck/bin/pip install --quiet backend/dist/*.whl
+          python scripts/smoke_test_app.py --exe /tmp/wheelcheck/bin/redactpdf
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: python-distributions
+          path: backend/dist/*
+          if-no-files-found: error
+
   release:
     name: draft release
     needs: build
@@ -139,3 +198,24 @@ jobs:
             --title "RedactPDF ${GITHUB_REF_NAME}" \
             --notes-file notes.md \
             artifacts/*
+
+  publish-pypi:
+    name: publish to PyPI
+    needs: wheel
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+
+    # Trusted Publishing : PyPI vérifie l'identité du workflow via OIDC. Le nom
+    # d'environnement ci-dessous doit correspondre à celui déclaré dans le
+    # publisher côté PyPI.
+    environment: pypi
+    permissions:
+      id-token: write
+
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: python-distributions
+          path: dist
+
+      - uses: pypa/gh-action-pypi-publish@release/v1

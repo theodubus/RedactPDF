@@ -7,8 +7,8 @@ import pymupdf  # PyMuPDF
 import pytest
 from fastapi.testclient import TestClient
 
-from app.main import app
-from app.redaction import RedactionRect, redact_pdf_by_rectangles
+from redactpdf.main import app
+from redactpdf.redaction import RedactionRect, redact_pdf_by_rectangles
 
 FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures" / "generated"
 client = TestClient(app)

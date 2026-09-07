@@ -6,11 +6,11 @@ from typing import Any
 
 import pymupdf
 
-from app.audit import AuditOptions, audit_text, build_audit_for_search
-from app.multiline_regex_engine import find_redaction_rectangles_by_regex
-from app.presets import find_redaction_rectangles_for_presets
-from app.redaction import RedactionRect, redact_pdf_by_rectangles
-from app.search import SearchOptions, find_redaction_rectangles
+from redactpdf.audit import AuditOptions, audit_text, build_audit_for_search
+from redactpdf.multiline_regex_engine import find_redaction_rectangles_by_regex
+from redactpdf.presets import find_redaction_rectangles_for_presets
+from redactpdf.redaction import RedactionRect, redact_pdf_by_rectangles
+from redactpdf.search import SearchOptions, find_redaction_rectangles
 
 
 @dataclass(frozen=True)
@@ -324,7 +324,7 @@ def audit_plan(
 def _audit_pdf_text(pdf_bytes: bytes, opts: AuditOptions) -> dict[str, Any]:
     """
     A lightweight audit runner (page loop + audit_text) that returns the same report shape
-    as app.audit.audit_pdf_text used to.
+    as redactpdf.audit.audit_pdf_text used to.
     We keep this here so the pipeline can produce composite reports without depending
     on HTTP-layer behavior.
     """

@@ -7,8 +7,8 @@ from dataclasses import dataclass
 
 import phonenumbers
 
-from app.multiline_regex_engine import iter_regex_hits
-from app.redaction import RedactionRect
+from redactpdf.multiline_regex_engine import iter_regex_hits
+from redactpdf.redaction import RedactionRect
 
 
 # For numbers without a leading '+' we need a region hint.

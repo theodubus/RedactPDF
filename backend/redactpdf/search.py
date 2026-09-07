@@ -6,9 +6,9 @@ from dataclasses import dataclass
 
 import pymupdf
 
-from app.audit import build_whole_word_pattern
-from app.multiline_regex_engine import find_redaction_rectangles_by_regex
-from app.redaction import RedactionRect
+from redactpdf.audit import build_whole_word_pattern
+from redactpdf.multiline_regex_engine import find_redaction_rectangles_by_regex
+from redactpdf.redaction import RedactionRect
 
 
 @dataclass(frozen=True)

@@ -34,6 +34,20 @@ info**, then **Run anyway** — see
 [docs/WINDOWS_BUILD.md](docs/WINDOWS_BUILD.md) for why. On Linux the binary
 needs a glibc at least as recent as Ubuntu 22.04's.
 
+### With Python installed — any OS, and the recommended path on macOS
+
+```bash
+pipx install redactpdf
+redactpdf
+```
+
+Same app, same single command to run it. There is no macOS binary: a file
+downloaded through a browser carries a quarantine attribute, and since macOS
+Sequoia clearing it takes a trip through System Settings and an admin password.
+`pipx` sidesteps that entirely — nothing is downloaded by the browser, so
+Gatekeeper never applies. It also makes the install independent of the build
+machine's glibc, which is what constrains the Linux binary above.
+
 Everything below is for running RedactPDF from source, or working on it.
 
 ---
@@ -134,7 +148,7 @@ Hot reload needs two terminals.
 ```bash
 cd backend
 source .venv/bin/activate
-uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+uvicorn redactpdf.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
 **Terminal 2 - frontend:**
@@ -195,7 +209,7 @@ without a leading `+` are parsed against a default region. To change it:
 
 ```bash
 export REDACT_DEFAULT_REGION=US
-uvicorn app.main:app ...
+uvicorn redactpdf.main:app ...
 ```
 
 ---

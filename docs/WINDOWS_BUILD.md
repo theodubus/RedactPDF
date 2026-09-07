@@ -201,7 +201,7 @@ the offending package the same way in `packaging/redactpdf.spec` — do not
 disable the collection that is already there.
 
 **The UI does not load but the API answers.** The bundled `frontend/dist` was
-not found. It is embedded as data and resolved by `backend/app/paths.py`; keep
+not found. It is embedded as data and resolved by `backend/redactpdf/paths.py`; keep
 the bundle-relative layout and never resolve it from `__file__`.
 
 **Nothing happens at all on launch.** Run it from PowerShell rather than by
@@ -225,7 +225,7 @@ be reachable from outside the machine.
   returns a PDF without passing the post-redaction audit. Packaging must not
   touch that pipeline. See [CLAUDE.md](../CLAUDE.md).
 - `pytest` and `ruff check .` in `backend/` must stay green. The Windows work
-  should not need to change anything under `backend/app/` except, at most,
+  should not need to change anything under `backend/redactpdf/` except, at most,
   `paths.py`.
 - Keep `launch.py` working on Linux: it is the same entry point for both the
   frozen app and people running from source. Guard anything Windows-specific
@@ -237,7 +237,7 @@ be reachable from outside the machine.
 Windows 11 Home 22631, Python 3.11.9, Node 22.23.2, npm 10.9.8, PyInstaller
 6.22.2. Result: `dist\redactpdf.exe`, 36.7 MB, starts in ~1 s, all 20 smoke
 checks green against both the source launcher and the frozen binary, `pytest`
-47/47 and `ruff check .` clean. Nothing under `backend/app/` changed, `paths.py`
+47/47 and `ruff check .` clean. Nothing under `backend/redactpdf/` changed, `paths.py`
 included, and neither CI workflow is affected.
 
 Three things were broken, in the order they surfaced.

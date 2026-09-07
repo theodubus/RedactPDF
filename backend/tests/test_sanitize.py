@@ -5,7 +5,7 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
-from app.main import app
+from redactpdf.main import app
 from tests.utils_pdf import inspect_pdf
 
 

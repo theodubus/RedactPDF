@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from app.main import app
+from redactpdf.main import app
 from tests.utils_pdf import extract_text
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures" / "generated"

@@ -9,7 +9,7 @@ from typing import Any
 
 import pymupdf  # PyMuPDF
 
-from app.redaction import RedactionRect
+from redactpdf.redaction import RedactionRect
 
 
 def _fold_keep_len(s: str) -> str:

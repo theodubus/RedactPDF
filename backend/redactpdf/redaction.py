@@ -6,7 +6,7 @@ from io import BytesIO
 
 import pymupdf
 
-from app.sanitize import sanitize_document
+from redactpdf.sanitize import sanitize_document
 
 
 @dataclass(frozen=True)

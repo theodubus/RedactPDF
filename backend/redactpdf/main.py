@@ -10,10 +10,10 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 from starlette.responses import Response
 
-from app.audit import AuditOptions
-from app.heartbeat import heartbeat
-from app.paths import frontend_dist
-from app.pipeline import (
+from redactpdf.audit import AuditOptions
+from redactpdf.heartbeat import heartbeat
+from redactpdf.paths import frontend_dist
+from redactpdf.pipeline import (
     PresetsRequest,
     RedactionOptions,
     RegexRequest,
@@ -22,8 +22,8 @@ from app.pipeline import (
     audit_plan,
     plan_redactions,
 )
-from app.presets import available_presets
-from app.redaction import RedactionRect
+from redactpdf.presets import available_presets
+from redactpdf.redaction import RedactionRect
 
 app = FastAPI()
 router = APIRouter()

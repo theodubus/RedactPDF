@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from app.audit import AuditOptions, audit_pdf_text
+from redactpdf.audit import AuditOptions, audit_pdf_text
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures" / "generated"
 SECRET_FIXTURE = FIXTURES_DIR / "001_secret_text.pdf"
