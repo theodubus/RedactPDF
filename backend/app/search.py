@@ -21,6 +21,17 @@ class SearchOptions:
     sort_words: bool = True
 
 
+# Les trois chemins de recherche exacte doivent se comporter pareil face à une
+# césure. Le chemin rapide (page.search_for) franchit déjà les fins de ligne ;
+# sans ce drapeau, les deux chemins passant par le moteur regex ne le faisaient
+# pas, et une requête multi-mots coupée en fin de ligne devenait introuvable —
+# avec whole_word un export refusé (l'audit voyait ce que le moteur ratait), avec
+# ignore_accents un export accepté laissant la donnée en clair.
+# La fusion reste contrainte géométriquement (recouvrement en x, écart vertical
+# maximal), ce qui continue d'exclure les fusions inter-colonnes : fixture 009.
+_MULTILINE_SEARCH = True
+
+
 def _build_substring_pattern(query: str) -> str:
     """
     Substring-like search expressed as regex, best-effort:
@@ -50,7 +61,7 @@ def find_redaction_rectangles(pdf_bytes: bytes, opts: SearchOptions) -> list[Red
             patterns=[pattern],
             case_sensitive=opts.case_sensitive,
             pages=opts.pages,
-            multiline=False,
+            multiline=_MULTILINE_SEARCH,
             ignore_accents=opts.ignore_accents,
         )
 
@@ -63,7 +74,7 @@ def find_redaction_rectangles(pdf_bytes: bytes, opts: SearchOptions) -> list[Red
             patterns=[pattern],
             case_sensitive=opts.case_sensitive,
             pages=opts.pages,
-            multiline=False,
+            multiline=_MULTILINE_SEARCH,
             ignore_accents=True,
         )
 
