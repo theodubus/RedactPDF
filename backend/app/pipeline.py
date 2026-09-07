@@ -15,8 +15,9 @@ from app.search import SearchOptions, find_redaction_rectangles
 
 @dataclass(frozen=True)
 class RedactionOptions:
-    image_mode: str = "none"
-    apply_graphics: bool = False
+    # Mêmes défauts que OptionsModel : sûrs, pas permissifs.
+    image_mode: str = "pixels"
+    apply_graphics: bool = True
     sanitize_metadata: bool = True
     remove_annotations: bool = True
     remove_attachments: bool = True

@@ -45,6 +45,23 @@ redacted region are not byte-identical to the original (visually
 indistinguishable). If your threat model cares about cryptographic hashes
 of image bytes, this is worth knowing.
 
+### Defaults are the safe end, not the permissive one
+
+`pixels` (with vector-graphics removal on) is the default **everywhere**, not
+just in the UI: a request that omits `options` entirely gets it too. A default
+that does not redact is a default that leaks — better to over-redact and make
+the operator run a second pass than to hand back a file that looks redacted
+and is not.
+
+### Unknown payload keys are rejected
+
+The API refuses any key it does not recognise, with HTTP 422 naming the
+offending key. This is deliberate, and stricter than usual REST practice: a
+tool whose contract is "we never do less than you asked without saying so"
+cannot silently discard an instruction it failed to parse. A request sending
+`imageMode` instead of `image_mode` used to return 200 with a black overlay
+drawn over a fully intact image; it is now an error.
+
 ### Full-page rule overrides image mode
 
 When the user clicks "Censurer la page" (full-page rule), that page is
@@ -83,7 +100,8 @@ For sensitive usage, prefer strict settings:
 - choose image mode `remove` or `pixels` (never `none`) for any document
   containing images or vector graphics that overlap your redaction zones,
 - sanitize metadata, remove annotations, remove attachments, these are
-  ON by default in the UI but can be turned off via the API,
+  ON by default (server-side, not only in the UI) but can be turned off
+  explicitly via the API,
 - verify audit output before sharing exported files.
 
 When in doubt about a particular page, "Censurer la page" guarantees a

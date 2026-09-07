@@ -45,7 +45,6 @@ def test_sanitize_metadata_and_annotations_via_regex_endpoint() -> None:
             }
         ],
         "options": {
-            "apply_images": False,
             "apply_graphics": False,
             "sanitize_metadata": True,
             "remove_annotations": True,

@@ -32,7 +32,7 @@ def _post_apply_regex(pdf_bytes: bytes, *, patterns: list[str], case_sensitive: 
                 "scope": {"pages": None},
             }
         ],
-        "options": {"apply_images": False, "apply_graphics": False},
+        "options": {"apply_graphics": False},
         "audit": audit,
     }
     files = {"file": ("input.pdf", pdf_bytes, "application/pdf")}

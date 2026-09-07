@@ -7,7 +7,7 @@ from typing import Annotated, Any, Literal
 from fastapi import APIRouter, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 from starlette.responses import Response
 
 from app.audit import AuditOptions
@@ -69,7 +69,20 @@ def _add_report_headers(headers: dict[str, Any], report: dict[str, Any]) -> None
 # ----------------------------
 
 
-class RectModel(BaseModel):
+class StrictModel(BaseModel):
+    """Modèle de payload qui refuse toute clé inconnue.
+
+    Un outil de caviardage ne doit jamais écarter en silence une option qu'il ne
+    comprend pas. Sans cela, une faute de frappe sur `image_mode` renvoie un 200
+    et un PDF dont l'image d'origine est intacte sous le calque noir, sans qu'un
+    seul message ne le signale. La clé inconnue produit désormais un 422 de
+    validation qui la nomme.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class RectModel(StrictModel):
     page: int = Field(ge=0)
     x0: float
     y0: float
@@ -77,12 +90,15 @@ class RectModel(BaseModel):
     y1: float
 
 
-class OptionsModel(BaseModel):
+class OptionsModel(StrictModel):
     # "none"   : ne touche pas aux images
     # "remove" : supprime entièrement les images intersectées (mode strict)
     # "pixels" : noircit uniquement la zone intersectée (caviardage partiel)
-    image_mode: Literal["none", "remove", "pixels"] = "none"
-    apply_graphics: bool = False
+    # Défauts alignés sur ce que l'UI envoie : un défaut qui ne caviarde pas est
+    # un défaut qui fuit. Mieux vaut caviarder trop, quitte à faire refaire une
+    # passe à l'utilisateur, que de laisser passer une donnée.
+    image_mode: Literal["none", "remove", "pixels"] = "pixels"
+    apply_graphics: bool = True
 
     # Sanitation "anti-fuites hors visuel" : ON par défaut (secure-by-default).
     sanitize_metadata: bool = True
@@ -90,7 +106,7 @@ class OptionsModel(BaseModel):
     remove_attachments: bool = True
 
 
-class AuditModel(BaseModel):
+class AuditModel(StrictModel):
     patterns: list[str] = Field(..., description="List of strings/regex to ban")
     regex: bool = False
     case_sensitive: bool = True
@@ -104,13 +120,13 @@ class AuditModel(BaseModel):
         return cleaned
 
 
-class SearchOptionsModel(BaseModel):
+class SearchOptionsModel(StrictModel):
     case_sensitive: bool = False
     whole_word: bool = False
     ignore_accents: bool = False
 
 
-class ScopeModel(BaseModel):
+class ScopeModel(StrictModel):
     # None => toutes les pages
     pages: list[int] | None = None
 
@@ -129,7 +145,7 @@ class ScopeModel(BaseModel):
 # ----------------------------
 
 
-class ApplySearchModel(BaseModel):
+class ApplySearchModel(StrictModel):
     query: str
     options: SearchOptionsModel = Field(default_factory=SearchOptionsModel)
     scope: ScopeModel = Field(default_factory=ScopeModel)
@@ -142,7 +158,7 @@ class ApplySearchModel(BaseModel):
         return v.strip()
 
 
-class ApplyRegexModel(BaseModel):
+class ApplyRegexModel(StrictModel):
     patterns: list[str]
     case_sensitive: bool = False
     multiline: bool = False
@@ -165,7 +181,7 @@ class ApplyRegexModel(BaseModel):
         raise ValueError("regex.patterns must be non-empty")
 
 
-class ApplyPresetsModel(BaseModel):
+class ApplyPresetsModel(StrictModel):
     presets: list[str]
     scope: ScopeModel = Field(default_factory=ScopeModel)
 
@@ -185,7 +201,7 @@ class ApplyPresetsModel(BaseModel):
         return cleaned
 
 
-class ApplyPayload(BaseModel):
+class ApplyPayload(StrictModel):
     rects: list[RectModel] = Field(default_factory=list)
     # Page-wide rules. Always processed in strict mode (full image + graphics
     # removal) regardless of options.image_mode, a page-wide rule is meant

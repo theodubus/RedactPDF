@@ -41,7 +41,7 @@ def find_secret_rect_with_pymupdf(pdf_bytes: bytes) -> dict:
 def make_payload(rects: list[dict], patterns: list[str]) -> dict:
     return {
         "rects": rects,
-        "options": {"apply_images": False, "apply_graphics": False},
+        "options": {"apply_graphics": False},
         "audit": {"patterns": patterns, "regex": False, "case_sensitive": True},
     }
 

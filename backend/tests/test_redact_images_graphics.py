@@ -464,3 +464,103 @@ def test_image_mode_invalid_value_returns_422() -> None:
         },
     )
     assert resp.status_code == 422
+
+
+def _image_stream_pixels(pdf_bytes: bytes, page_index: int = 0) -> tuple[int, int]:
+    """(pixels rouges, pixels totaux) du premier flux image embarqué.
+
+    On inspecte le flux lui-même, pas le rendu de la page : en mode "none" un
+    rectangle noir est dessiné par-dessus, si bien que la page paraît caviardée
+    alors que les pixels d'origine sont toujours dans le fichier.
+    """
+    doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")
+    try:
+        images = doc[page_index].get_images(full=True)
+        assert images, "Fixture expected to contain at least one image."
+        pix = pymupdf.Pixmap(doc.extract_image(images[0][0])["image"])
+        red = sum(
+            1
+            for y in range(pix.height)
+            for x in range(pix.width)
+            if pix.pixel(x, y)[0] > 150 and pix.pixel(x, y)[1] < 100 and pix.pixel(x, y)[2] < 100
+        )
+        return red, pix.width * pix.height
+    finally:
+        doc.close()
+
+
+@pytest.mark.integration
+def test_omitted_options_redact_image_pixels_by_default() -> None:
+    """Un payload sans `options` doit caviarder les pixels, pas poser un calque.
+
+    Le défaut serveur était `image_mode="none"` : l'appelant qui omettait
+    `options` recevait un 200 et un PDF dont l'image d'origine restait entière
+    sous un rectangle noir, récupérable en retirant le calque.
+    """
+    pdf_in = _read_fixture("004_bitmap_image.pdf")
+    _, img_rect = _first_image_rect(pdf_in)
+
+    red_before, total = _image_stream_pixels(pdf_in)
+    assert red_before == total, "La fixture doit être un aplat rouge."
+
+    inner = pymupdf.Rect(
+        img_rect.x0 + img_rect.width * 0.2,
+        img_rect.y0 + img_rect.height * 0.2,
+        img_rect.x1 - img_rect.width * 0.2,
+        img_rect.y1 - img_rect.height * 0.2,
+    )
+    payload = {
+        "rects": [{"page": 0, "x0": inner.x0, "y0": inner.y0, "x1": inner.x1, "y1": inner.y1}]
+    }
+
+    resp = client.post(
+        "/redact/apply",
+        files={
+            "file": ("input.pdf", pdf_in, "application/pdf"),
+            "payload": (None, json.dumps(payload), "application/json"),
+        },
+    )
+
+    assert resp.status_code == 200, resp.text
+    red_after, _ = _image_stream_pixels(resp.content)
+    assert red_after < red_before, "Les pixels visés devaient être noircis dans le flux image."
+
+
+@pytest.mark.integration
+def test_unknown_option_key_is_rejected_not_ignored() -> None:
+    """Une clé inconnue doit produire un 422 qui la nomme, jamais un 200 silencieux."""
+    pdf_in = _read_fixture("004_bitmap_image.pdf")
+    payload = {
+        "rects": [],
+        # Faute de frappe volontaire : camelCase au lieu de snake_case.
+        "options": {"imageMode": "pixels"},
+    }
+
+    resp = client.post(
+        "/redact/apply",
+        files={
+            "file": ("input.pdf", pdf_in, "application/pdf"),
+            "payload": (None, json.dumps(payload), "application/json"),
+        },
+    )
+
+    assert resp.status_code == 422, resp.text
+    assert "imageMode" in resp.text
+
+
+@pytest.mark.integration
+def test_unknown_top_level_key_is_rejected() -> None:
+    """Le refus des clés inconnues vaut aussi au niveau du payload lui-même."""
+    pdf_in = _read_fixture("004_bitmap_image.pdf")
+    payload = {"rects": [], "sanitize_metdata": False}
+
+    resp = client.post(
+        "/redact/apply",
+        files={
+            "file": ("input.pdf", pdf_in, "application/pdf"),
+            "payload": (None, json.dumps(payload), "application/json"),
+        },
+    )
+
+    assert resp.status_code == 422, resp.text
+    assert "sanitize_metdata" in resp.text

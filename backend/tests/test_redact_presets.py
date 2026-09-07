@@ -32,7 +32,7 @@ def _post_apply_presets(pdf_bytes: bytes, *, presets: list[str], audit: dict | N
     payload = {
         "rects": [],
         "presets": {"presets": presets, "scope": {"pages": None}},
-        "options": {"apply_images": False, "apply_graphics": False},
+        "options": {"apply_graphics": False},
         "audit": audit,
     }
     files = {"file": ("input.pdf", pdf_bytes, "application/pdf")}
