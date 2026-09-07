@@ -75,7 +75,10 @@ export function PdfViewer(props: {
 
   const [pdfDoc, setPdfDoc] = useState<PdfDocumentProxy | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  // Clé i18n, pas message traduit : le texte suit ainsi un changement de langue,
+  // et l'effet de chargement n'a pas à dépendre de `t` — il rechargerait le PDF
+  // à chaque bascule FR/EN.
+  const [errorKey, setErrorKey] = useState<string | null>(null);
   const [containerWidth, setContainerWidth] = useState(0);
 
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -111,7 +114,7 @@ export function PdfViewer(props: {
     onCurrentPageChange(null);
     pageScalesRef.current = [];
     setPdfDoc(null);
-    setError(null);
+    setErrorKey(null);
     setIsLoading(true);
     setDrawDraft(null);
 
@@ -133,7 +136,7 @@ export function PdfViewer(props: {
         onCurrentPageChange(1);
       } catch {
         if (!active) return;
-        setError(t("viewer.error.load"));
+        setErrorKey("viewer.error.load");
       } finally {
         if (active) setIsLoading(false);
       }
@@ -403,8 +406,8 @@ export function PdfViewer(props: {
     if (drawDraft) setDrawDraft(null);
   };
 
-  if (error) {
-    return <div className="pdfViewerMessage bad">{error}</div>;
+  if (errorKey) {
+    return <div className="pdfViewerMessage bad">{t(errorKey)}</div>;
   }
 
   return (

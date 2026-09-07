@@ -1,6 +1,8 @@
 export function newId(): string {
-  const g = (globalThis as any).crypto;
-  if (g && typeof g.randomUUID === "function") return g.randomUUID();
+  // randomUUID manque sur les contextes non sécurisés et les navigateurs anciens.
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 

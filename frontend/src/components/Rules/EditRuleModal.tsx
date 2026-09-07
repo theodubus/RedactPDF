@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import type { RuleKind, UiRule } from "../../types/uiRules";
 import { RuleOptionsRow } from "./RuleOptionsRow";
 
@@ -27,31 +27,20 @@ export function EditRuleModal(props: {
 }) {
   const { t, rule, onClose, onSave } = props;
 
-  const [editKind, setEditKind] = useState<RuleKind>("exact");
-  const [editValue, setEditValue] = useState("");
+  // Le parent remonte ce composant via `key` à chaque ouverture : l'état part
+  // donc directement de la règle éditée, sans synchronisation prop -> state
+  // dans un effet, qui provoquait des rendus en cascade.
+  const [editKind, setEditKind] = useState<RuleKind>(rule?.kind ?? "exact");
+  const [editValue, setEditValue] = useState(rule?.value ?? "");
 
-  const [editCaseSensitive, setEditCaseSensitive] = useState(false);
-  const [editMultiline, setEditMultiline] = useState(false);
-  const [editAllowSubwords, setEditAllowSubwords] = useState(false);
-  const [editIgnoreAccents, setEditIgnoreAccents] = useState(false);
+  const [editCaseSensitive, setEditCaseSensitive] = useState(rule?.caseSensitive ?? false);
+  const [editMultiline, setEditMultiline] = useState(
+    rule?.kind === "regex" ? rule.multiline : false,
+  );
+  const [editAllowSubwords, setEditAllowSubwords] = useState(rule?.allowSubwords ?? false);
+  const [editIgnoreAccents, setEditIgnoreAccents] = useState(rule?.ignoreAccents ?? false);
 
   const isOpen = !!rule;
-
-  useEffect(() => {
-    if (!rule) return;
-
-    setEditKind(rule.kind);
-    setEditValue(rule.value);
-    setEditCaseSensitive(rule.caseSensitive);
-    setEditAllowSubwords(rule.allowSubwords);
-    setEditIgnoreAccents(rule.ignoreAccents);
-
-    if (rule.kind === "regex") {
-      setEditMultiline(rule.multiline);
-    } else {
-      setEditMultiline(false);
-    }
-  }, [rule]);
 
   const canSave = useMemo(() => editValue.trim().length > 0, [editValue]);
 

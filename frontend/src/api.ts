@@ -1,5 +1,18 @@
 export type AuditReport = unknown;
 
+/** Échec renvoyé par /redact/apply, avec le rapport d'audit quand il y en a un. */
+export class RedactApiError extends Error {
+  readonly status: number;
+  readonly report: AuditReport | null;
+
+  constructor(status: number, report: AuditReport | null) {
+    super("AUDIT_FAILED");
+    this.name = "RedactApiError";
+    this.status = status;
+    this.report = report;
+  }
+}
+
 export type PresetKey = "email" | "phone" | "credit_card";
 
 export type ImageMode = "none" | "remove" | "pixels";
@@ -137,10 +150,7 @@ export async function redactApply(params: {
 
   if (!resp.ok) {
     const report = await parseErrorJson(resp);
-    const err = new Error("AUDIT_FAILED");
-    (err as any).status = resp.status;
-    (err as any).report = report;
-    throw err;
+    throw new RedactApiError(resp.status, report);
   }
 
   const blob = await resp.blob();

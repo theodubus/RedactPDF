@@ -20,7 +20,7 @@ Frontend (run from `frontend/`):
 npm ci
 npm run dev                       # Vite dev server on :5173, proxies /api/* -> :8000
 npm run build                     # tsc -b && vite build -> frontend/dist
-npm run lint                      # eslint (not run by CI; CI only builds)
+npm run lint                      # eslint, zero warnings tolerated (run by CI)
 ```
 
 Desktop / single-process mode (from repo root, after `npm run build`):
@@ -49,7 +49,7 @@ Fixture regeneration (from **repo root**, not `backend/`):
 python -m backend.tests.fixtures.generate_fixtures
 ```
 
-CI: `backend-ci` runs `ruff check .` + `pytest` on Python 3.11; `frontend-ci` runs `npm run build` on Node 20. `release` builds the standalone app on Linux and Windows when a `v*` tag is pushed, gates it on `smoke_test_app.py`, and drafts a GitHub Release with both binaries — it never publishes on its own.
+CI: `backend-ci` runs `ruff check .` + `pytest` on Python 3.11; `frontend-ci` runs `npm run lint` + `npm run build` on Node 20; `smoke-ci` builds the UI and runs `scripts/smoke_test_app.py --source`, which covers what pytest cannot see — `launch.py`, `app/paths.py`, same-origin serving of `frontend/dist`, and the end-to-end API path — without paying for a PyInstaller build. `release` builds the standalone app on Linux and Windows when a `v*` tag is pushed, gates it on the frozen `smoke_test_app.py`, and drafts a GitHub Release with both binaries — it never publishes on its own.
 
 ## Architecture
 

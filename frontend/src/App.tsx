@@ -1,6 +1,6 @@
 import React, { useCallback, useMemo, useRef, useState } from "react";
-import { useI18n } from "./i18n";
-import { redactApply } from "./api";
+import { useI18n } from "./i18nContext";
+import { redactApply, RedactApiError } from "./api";
 import type { ImageMode, PresetKey, RuleInput } from "./api";
 
 import { HeaderBar } from "./components/HeaderBar";
@@ -250,11 +250,11 @@ export default function App() {
 
       downloadBlob(r.pdfBlob, "redacted.pdf");
     } catch (err) {
-      setErrorInfo({
-        status: (err as any)?.status,
-        report: (err as any)?.report,
-        rawMessage: (err as any)?.message,
-      });
+      setErrorInfo(
+        err instanceof RedactApiError
+          ? { status: err.status, report: err.report, rawMessage: err.message }
+          : { rawMessage: err instanceof Error ? err.message : String(err) },
+      );
     } finally {
       setSubmitting(false);
     }
