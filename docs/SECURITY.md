@@ -53,6 +53,41 @@ that does not redact is a default that leaks — better to over-redact and make
 the operator run a second pass than to hand back a file that looks redacted
 and is not.
 
+### Rule defaults: the API is not the UI
+
+The image-mode default above is the same everywhere. The per-rule matching
+options are not: the UI picks its own and always sends them explicitly, so a
+direct API caller who omits `options` gets the model defaults, which differ.
+
+| Rule | Option | API default | UI default | Removes more |
+|---|---|---|---|---|
+| search | `case_sensitive` | `False` | `False` | equal |
+| search | `whole_word` | `False` | `True` (**Subword** off) | API |
+| search | `ignore_accents` | `False` | `True` (**Respect accents** off) | UI |
+| regex | `case_sensitive` | `False` | `False` | equal |
+| regex | `multiline` | `False` | `False` | equal |
+| regex | `ignore_accents` | `False` | `True` | UI |
+
+Exact search has no `multiline` field either: it always crosses line breaks,
+under the same geometric constraints as the regex engine (see limitation 3
+below). A multi-word query hyphenated at the end of a line would otherwise be
+unfindable by the engine while remaining visible to the audit.
+
+Regex rules have no `whole_word` field: the UI implements that option by
+wrapping the pattern in `(?<!\w)…(?!\w)` before sending it, so a direct API
+caller who wants word boundaries writes them into the pattern. Presets take no
+matching options at all, only a page scope.
+
+`whole_word=False` is the safe end: matching inside words removes a superset of
+what whole-word matching removes.
+
+`ignore_accents=False` is **not** the safe end, and is a known inconsistency
+rather than a considered choice. Accent-insensitive matching is a strict
+superset — a rule for `Leo` also removes `Léo` — so the API default currently
+removes less than the UI's for the same rule text. Until this is aligned, an
+API caller who cares about accented variants must pass `ignore_accents: true`
+explicitly; the audit uses the same option, so it will not flag the miss.
+
 ### Unknown payload keys are rejected
 
 The API refuses any key it does not recognise, with HTTP 422 naming the
@@ -105,6 +140,26 @@ continue to follow the user's chosen image mode on the same page.
      it carries `diagnostics: ["line_break_split"]` and a per-match
      `spans_line_break` flag, and the UI turns that into an explanation
      plus the action that unblocks: draw a rectangle over each part.
+4. **The preset audit is not independent of the preset detector**
+   - Audit strength is not uniform across rule types, and the difference is
+     structural rather than a bug.
+   - A search or regex rule is audited by re-reading the **flattened text**
+     of the output and looking for the pattern again. That text comes from
+     the extractor, not from the matching engine, so the audit catches both
+     a rectangle that failed to apply *and* a match the engine never found.
+   - A preset is audited by re-running `find_redaction_rectangles_for_presets`
+     on the output PDF — the **same detector, same settings**. It catches a
+     rectangle that failed to apply. It cannot catch a **non-detection**: a
+     string the detector did not recognise as a phone number on the way in is
+     not recognised on the way out either, so nothing is reported.
+   - Concretely, with `REDACT_DEFAULT_REGION=FR`, a US number written without
+     its country code (`212 736 5000`) is rejected by `phonenumbers`, is
+     therefore not redacted, and the export succeeds with the number intact
+     and no failure report.
+   - The guarantee a preset carries is *no match this detector recognises
+     survives the export*, not *no phone number survives the export*. For
+     content that must be gone regardless of the detector's coverage, target
+     it with a search, a regex, or a rectangle.
 
 ## Operational Recommendations
 
