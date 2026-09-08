@@ -264,7 +264,16 @@ def audit_text(
     return matches, per_page
 
 
-def audit_pdf_text(pdf_bytes: bytes, opts: AuditOptions) -> dict[str, Any]:
+def audit_pdf_text(
+    pdf_bytes: bytes, opts: AuditOptions, *, budget: RegexBudget | None = None
+) -> dict[str, Any]:
+    """Rejoue `opts` sur le texte extrait de chaque page et rend un rapport.
+
+    Implémentation unique : le pipeline s'en servait via une copie locale qui
+    avait divergé sur deux points — elle ne respectait pas exactement le
+    plafond `max_total_matches`, et son rapport omettait `ignore_accents`.
+    Une copie qu'aucun test ne couvre finit toujours par dériver.
+    """
     if not pdf_bytes:
         raise ValueError("Empty PDF bytes")
     if not opts.patterns:
@@ -283,7 +292,9 @@ def audit_pdf_text(pdf_bytes: bytes, opts: AuditOptions) -> dict[str, Any]:
             if not text:
                 continue
 
-            page_matches, page_count = audit_text(text, opts, page_number=page_number)
+            page_matches, page_count = audit_text(
+                text, opts, page_number=page_number, budget=budget
+            )
             if page_count:
                 matched_pages.add(page_number)
 

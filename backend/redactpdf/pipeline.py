@@ -6,7 +6,7 @@ from typing import Any
 
 import pymupdf
 
-from redactpdf.audit import AuditOptions, audit_text, build_audit_for_search
+from redactpdf.audit import AuditOptions, audit_pdf_text, build_audit_for_search
 from redactpdf.multiline_regex_engine import find_redaction_rectangles_by_regex
 from redactpdf.presets import find_redaction_rectangles_for_presets
 from redactpdf.redaction import RedactionRect, redact_pdf_by_rectangles
@@ -258,7 +258,7 @@ def audit_plan(
                 whole_word=s.whole_word,
                 ignore_accents=s.ignore_accents,
             )
-            report = _audit_pdf_text(out_pdf, s_opts, budget=budget)
+            report = audit_pdf_text(out_pdf, s_opts, budget=budget)
             if report["status"] != "pass":
                 failed.append(
                     {
@@ -289,7 +289,7 @@ def audit_plan(
                 case_sensitive=r.case_sensitive,
                 ignore_accents=r.ignore_accents,
             )
-            report = _audit_pdf_text(out_pdf, r_opts, budget=budget)
+            report = audit_pdf_text(out_pdf, r_opts, budget=budget)
             if report["status"] != "pass":
                 failed.append(
                     {
@@ -318,7 +318,7 @@ def audit_plan(
 
     # --- Extra audit (optional banlist)
     if extra_audit is not None:
-        report = _audit_pdf_text(out_pdf, extra_audit, budget=budget)
+        report = audit_pdf_text(out_pdf, extra_audit, budget=budget)
         if report["status"] != "pass":
             failures["audit"] = report
 
@@ -363,54 +363,3 @@ def _diagnose(failures: dict[str, Any]) -> list[str]:
                     codes.append(DIAGNOSTIC_LINE_BREAK_SPLIT)
                     return sorted(set(codes))
     return codes
-
-
-def _audit_pdf_text(
-    pdf_bytes: bytes, opts: AuditOptions, *, budget: RegexBudget | None = None
-) -> dict[str, Any]:
-    """
-    A lightweight audit runner (page loop + audit_text) that returns the same report shape
-    as redactpdf.audit.audit_pdf_text used to.
-    We keep this here so the pipeline can produce composite reports without depending
-    on HTTP-layer behavior.
-    """
-    if not opts.patterns:
-        raise ValueError("audit.patterns must be non-empty")
-
-    matches: list[dict[str, Any]] = []
-    matched_pages: set[int] = set()
-    total_matches = 0
-
-    doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")
-    try:
-        for page_index in range(doc.page_count):
-            page = doc.load_page(page_index)
-            text = page.get_text("text") or ""
-            page_no = page_index + 1  # 1-based
-
-            page_matches, page_total = audit_text(
-                text, opts, page_number=page_no, budget=budget
-            )
-            if page_total:
-                matches.extend(page_matches)
-                matched_pages.add(page_no)
-                total_matches += page_total
-
-            if total_matches >= opts.max_total_matches:
-                break
-    finally:
-        doc.close()
-
-    return {
-        "status": "pass" if total_matches == 0 else "fail",
-        "total_matches": total_matches,
-        "matched_pages": sorted(matched_pages),
-        "options": {
-            "regex": opts.regex,
-            "case_sensitive": opts.case_sensitive,
-            "max_total_matches": opts.max_total_matches,
-            "max_matches_per_page": opts.max_matches_per_page,
-        },
-        "patterns": opts.patterns,
-        "matches": matches,
-    }

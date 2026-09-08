@@ -19,7 +19,6 @@ class SearchOptions:
     whole_word: bool = False
     ignore_accents: bool = False
     pages: Sequence[int] | None = None
-    sort_words: bool = True
 
 
 # Les trois chemins de recherche exacte doivent se comporter pareil face à une
