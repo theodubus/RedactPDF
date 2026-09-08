@@ -9,6 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from redactpdf.main import app
+from redactpdf.redaction import RedactionRect
 from tests.utils_pdf import extract_text
 
 CLIENT = TestClient(app)
@@ -151,3 +152,27 @@ def test_redact_rectangles_full_page_rect_redacts_target() -> None:
 
     out_text = extract_text(resp.content)
     assert SECRET not in out_text
+
+
+@pytest.mark.unit
+def test_manual_rects_are_never_vertically_tightened() -> None:
+    """Un rectangle tracé par l'utilisateur doit être appliqué tel qu'il a été tracé.
+
+    Le resserrement vertical existe pour corriger les boîtes de texte extraites,
+    qui sont plus hautes que les lettres. Un tracé manuel n'est pas une boîte
+    extraite : c'est une intention explicite, et la réduire sans le dire revient
+    à caviarder une zone différente de celle demandée.
+
+    Test de contrat et non de comportement : je n'ai pas réussi à faire échouer
+    concrètement un rectangle manuel resserré, PyMuPDF retirant les glyphes qui
+    recoupent suffisamment la zone. C'est donc l'intention qui est verrouillée
+    ici, pas un défaut observé.
+    """
+    from redactpdf.pipeline import plan_redactions
+
+    pdf_bytes = (FIXTURES_DIR / "001_secret_text.pdf").read_bytes()
+    manual = RedactionRect(page=0, x0=10.0, y0=10.0, x1=200.0, y1=28.0)
+    assert manual.from_horizontal_text is False
+
+    plan = plan_redactions(pdf_bytes, manual_rects=[manual])
+    assert all(not r.from_horizontal_text for r in plan.manual)

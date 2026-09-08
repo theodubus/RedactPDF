@@ -19,6 +19,15 @@ class RedactionRect:
     x1: float
     y1: float
 
+    # Vrai seulement quand le rectangle vient d'un texte écrit horizontalement.
+    # Seuls ces rectangles-là sont resserrés verticalement : pour un texte pivoté
+    # la hauteur EST la direction de lecture, et la resserrer coupe le début et la
+    # fin du mot. Le défaut est `False` : un producteur qui ne se prononce pas
+    # obtient un rectangle intact, c'est-à-dire qui caviarde plutôt plus que
+    # moins. Les rectangles tracés à la main gardent ce défaut — une intention
+    # explicite ne doit pas être modifiée en silence.
+    from_horizontal_text: bool = False
+
 
 def _tighten_rect_vertical(rect: pymupdf.Rect) -> pymupdf.Rect:
     """
@@ -120,7 +129,8 @@ def redact_pdf_by_rectangles(
             if rect.is_empty:
                 raise ValueError(f"Empty rectangle: {rect}")
 
-            rect = _tighten_rect_vertical(rect)
+            if r.from_horizontal_text:
+                rect = _tighten_rect_vertical(rect)
 
             by_page.setdefault(r.page, []).append(rect)
 

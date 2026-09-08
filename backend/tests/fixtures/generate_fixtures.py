@@ -352,6 +352,58 @@ def write_012_ignore_accents(path: Path) -> None:
     c.save()
 
 
+def write_013_rotated_margin_text(path: Path) -> None:
+    """
+    Fixture used to ensure rotated text is redacted whole.
+
+    Layout (mirrors what French payslips do):
+    - a vertical title in the left margin, letters spaced out
+    - a vertical version string ending in an isolated digit
+    - a vertical amount whose decimals are a partial-word match (",48")
+    - one ordinary horizontal line
+
+    Two traps, both specific to rotated text:
+    1. A rect built for rotated text must NOT be tightened vertically -- there
+       the height IS the reading direction, so shrinking it cuts the first and
+       last characters off the match.
+    2. Glyphs of a rotated line all share the same x0. Ordering them left to
+       right yields the reverse of the reading order, so a partial-word match
+       like the "48" of ",48" selects the wrong glyphs and leaves a digit behind.
+    """
+    c = _new_canvas(path)
+    _, h = A4
+
+    c.saveState()
+    c.translate(15 * mm, h - 200 * mm)
+    c.rotate(90)
+    c.setFont("Helvetica-Bold", 16)
+    for i, word in enumerate(["B U L L E T I N", "D E", "P A Y E"]):
+        c.drawString(i * 22, 0, word)
+    c.restoreState()
+
+    c.saveState()
+    c.translate(200 * mm, h - 120 * mm)
+    c.rotate(90)
+    c.setFont("Helvetica", 7)
+    c.drawString(0, 0, "PAY18E - V2.  - 2")
+    c.drawString(0, -9, "9")
+    c.restoreState()
+
+    c.saveState()
+    c.translate(190 * mm, h - 60 * mm)
+    c.rotate(90)
+    c.setFont("Helvetica", 7)
+    c.drawString(0, 0, "CCBPFRPPVER")
+    c.drawString(0, -9, ",48")
+    c.restoreState()
+
+    c.setFont("Helvetica", 9)
+    c.drawString(30 * mm, h - 40 * mm, "Net a payer 1766,96 EUR")
+
+    c.showPage()
+    c.save()
+
+
 SPECS: list[FixtureSpec] = [
     FixtureSpec(
         filename="001_secret_text.pdf",
@@ -412,6 +464,11 @@ SPECS: list[FixtureSpec] = [
         filename="012_ignore_accents.pdf",
         writer=write_012_ignore_accents,
         description='Ignore accents fixture ("Léo" vs "Leo")',
+    ),
+    FixtureSpec(
+        filename="013_rotated_margin_text.pdf",
+        writer=write_013_rotated_margin_text,
+        description="Rotated margin text (no vertical tightening, reading-order glyph sort)",
     ),
 ]
 

@@ -144,3 +144,38 @@ def test_regex_no_match_occurrences_zero_and_content_preserved() -> None:
 
     text_out = extract_text(resp.content)
     assert text_out == text_in
+
+
+@pytest.mark.integration
+def test_regex_removes_every_digit_from_rotated_margin_text() -> None:
+    """Le texte pivoté doit être caviardé entier, comme le texte horizontal.
+
+    Deux pièges, tous deux propres au texte pivoté, tous deux dans la fixture 013 :
+
+    1. Le resserrement vertical des rectangles n'a de sens que pour du texte
+       horizontal, où la hauteur est la marge autour des lettres. Sur une ligne
+       pivotée d'un quart de tour, la hauteur EST la ligne : la resserrer coupe
+       le premier et le dernier caractère de la correspondance.
+    2. Les glyphes d'une ligne pivotée partagent tous le même x0. Les ordonner
+       de gauche à droite les rend à l'envers de la lecture, si bien qu'une
+       correspondance partielle -- le « 48 » de « ,48 » -- sélectionne les
+       mauvais glyphes et laisse un chiffre en clair.
+    """
+    pdf_bytes = _load_fixture("013_rotated_margin_text.pdf")
+    # Motif que l'interface envoie par défaut pour une règle regex « \\d+ ».
+    pattern = r"(?<!\w)\d+(?!\w)"
+
+    resp = _post_apply_regex(
+        pdf_bytes,
+        patterns=[pattern],
+        case_sensitive=False,
+        audit={"patterns": [pattern], "regex": True, "case_sensitive": False},
+    )
+
+    assert resp.status_code == 200, resp.text
+    out = extract_text(resp.content)
+    assert re.search(pattern, out) is None
+
+    # Pas de dégâts collatéraux : un chiffre soudé à des lettres n'est pas ciblé
+    # par un motif à frontières de mot, il doit rester.
+    assert "PAY18E" in out

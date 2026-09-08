@@ -114,29 +114,47 @@ def _resolve_pages(page_count: int, pages: Sequence[int] | None) -> list[int]:
     return unique
 
 
+def _quad_is_horizontal(quad: pymupdf.Quad) -> bool:
+    """Le côté supérieur du quadrilatère est-il horizontal ?
+
+    `search_for(quads=True)` rend la géométrie réelle de la correspondance et
+    non son enveloppe : c'est ce qui permet de savoir si le texte est pivoté,
+    information que le rectangle englobant a déjà perdue.
+    """
+    return abs(float(quad.ur.y) - float(quad.ul.y)) <= 1e-3
+
+
 def _find_substring_like(
     page: pymupdf.Page,
     pno: int,
     query: str,
     case_sensitive: bool,
 ) -> list[RedactionRect]:
-    candidates = page.search_for(query)
+    candidates = page.search_for(query, quads=True)
 
     if not case_sensitive:
-        return [_rect_to_model(pno, r) for r in candidates]
+        return [_quad_to_model(pno, q) for q in candidates]
 
     needle = _collapse_ws(query)
     out: list[RedactionRect] = []
-    for r in candidates:
-        boxed = page.get_textbox(r)
+    for q in candidates:
+        boxed = page.get_textbox(q.rect)
         hay = _collapse_ws(boxed)
         if needle in hay:
-            out.append(_rect_to_model(pno, r))
+            out.append(_quad_to_model(pno, q))
     return out
 
 
-def _rect_to_model(pno: int, r: pymupdf.Rect) -> RedactionRect:
-    return RedactionRect(page=pno, x0=float(r.x0), y0=float(r.y0), x1=float(r.x1), y1=float(r.y1))
+def _quad_to_model(pno: int, quad: pymupdf.Quad) -> RedactionRect:
+    r = quad.rect
+    return RedactionRect(
+        page=pno,
+        x0=float(r.x0),
+        y0=float(r.y0),
+        x1=float(r.x1),
+        y1=float(r.y1),
+        from_horizontal_text=_quad_is_horizontal(quad),
+    )
 
 
 def _collapse_ws(s: str) -> str:
