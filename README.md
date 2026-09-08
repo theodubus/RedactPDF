@@ -1,7 +1,7 @@
 # <img src="frontend/public/logo.png" alt="RedactPDF" width="40" align="center" /> RedactPDF
 
-**Redact PDFs on your own machine.** Mark what has to go — a passage of text, an
-image, a whole page, every phone number in the file — and get back a copy with
+**Redact PDFs on your own machine.** Mark what has to go (a passage of text, an
+image, a whole page, every phone number in the file) and get back a copy with
 that content removed from the document, not hidden under a black rectangle.
 
 Nothing is uploaded. No network calls, no account, no telemetry. Download a
@@ -20,10 +20,10 @@ Python.
 
 You open a PDF in your browser, mark content in one of five ways, and export:
 
-| | |
+| Way in | What it covers |
 | --- | --- |
 | **Select text** | highlight it in the viewer, redact the selection |
-| **Draw a rectangle** | for whatever the text layer cannot reach — a scan, a signature, a logo |
+| **Draw a rectangle** | whatever the text layer cannot reach: a scan, a signature, a logo |
 | **Censor a page** | wipes the page whole, images and vector graphics included |
 | **Type a pattern** | an exact string or a regular expression, with options for word boundaries, accents and line breaks |
 | **Pick a detector** | e-mail addresses, phone numbers validated with libphonenumber, card numbers filtered by Luhn |
@@ -37,14 +37,14 @@ page.
 
 After redacting, RedactPDF re-runs the rules you gave it **against the file it
 just produced**. If anything you targeted is still findable in there, you do not
-get the file — you get a report naming what survived, on which page, and whether
+get the file. You get a report naming what survived, on which page, and whether
 the engine was able to locate it at all.
 
 That check has caught real failures, and it has blind spots of its own. Both are
 written down in [docs/SECURITY.md](docs/SECURITY.md) rather than left implied;
 read it before trusting the tool with anything that matters. And if you would
 rather not take its word for it, three commands from a different PDF library will
-tell you independently — see
+tell you independently: see
 [Check the output yourself](docs/USAGE.md#check-the-output-yourself).
 
 ---
@@ -53,7 +53,7 @@ tell you independently — see
 
 Take the file for your system from the
 [latest release](https://github.com/theodubus/RedactPDF/releases/latest) and run
-it. No Python, no Node, nothing to install — the app opens in your browser and
+it. No Python, no Node, nothing to install. The app opens in your browser and
 stops when you close the tab.
 
 | System | File |
@@ -63,9 +63,9 @@ stops when you close the tab.
 
 **Windows shows "Windows protected your PC" on first run**, because the
 executable is not signed with a paid code-signing certificate. Click **More
-info**, then **Run anyway** — see
-[docs/WINDOWS_BUILD.md](docs/WINDOWS_BUILD.md) for why. On Linux the binary needs
-a glibc at least as recent as Ubuntu 22.04's.
+info**, then **Run anyway**. [docs/WINDOWS_BUILD.md](docs/WINDOWS_BUILD.md)
+explains why. On Linux the binary needs a glibc at least as recent as
+Ubuntu 22.04's.
 
 Since the binary is unsigned, the release page gives you two ways to check it
 yourself instead. `SHA256SUMS.txt` says the bytes are the ones that were built:
@@ -75,13 +75,13 @@ sha256sum --ignore-missing -c SHA256SUMS.txt
 ```
 
 And the build attestation says *this repository* built them, at a known commit,
-on GitHub's runners — which a hash alone cannot tell you:
+on GitHub's runners, which a hash alone cannot tell you:
 
 ```bash
 gh attestation verify redactpdf-linux-x86_64 --repo theodubus/RedactPDF
 ```
 
-### With Python — any OS, and the recommended path on macOS
+### With Python: any OS, and the recommended path on macOS
 
 ```bash
 pipx install redactpdf
@@ -91,9 +91,19 @@ redactpdf
 Same app, same single command to run it. There is no macOS binary: a file
 downloaded through a browser carries a quarantine attribute, and since macOS
 Sequoia clearing it takes a trip through System Settings and an admin password.
-`pipx` sidesteps that entirely — nothing is downloaded by the browser, so
+`pipx` sidesteps that entirely, because nothing is downloaded by the browser and
 Gatekeeper never applies. It also makes the install independent of the build
 machine's glibc, which is what constrains the Linux binary above.
+
+**Why `pipx` rather than `pip`.** RedactPDF is an application, not a library you
+import, and its dependencies are pinned to exact versions because redaction
+behaviour is version-sensitive. `pipx` gives it a private virtual environment and
+puts the `redactpdf` command on your PATH, so those pins cannot collide with
+anything else you have installed. `pip install redactpdf` into a system Python is
+also refused outright on most current Linux distributions, which mark it
+externally managed (PEP 668). `uv tool install redactpdf` does the same job as
+`pipx`. Plain `pip install redactpdf` is fine inside a virtual environment you
+manage yourself.
 
 ### From source
 
@@ -109,10 +119,10 @@ python launch.py
 
 ## Documentation
 
-| | |
+| Document | What is in it |
 | --- | --- |
 | [**Usage**](docs/USAGE.md) | The five kinds of rule, the three image modes, what the matching does that the UI does not show, and how to verify an export with software that is not this project. |
-| [**Security model**](docs/SECURITY.md) | What is guaranteed, what is not, and the known limits — including the ones that are structural rather than bugs. Also covers exposing the API beyond a single local user. |
+| [**Security model**](docs/SECURITY.md) | What is guaranteed, what is not, and the known limits, including the ones that are structural rather than bugs. Also covers exposing the API beyond a single local user. |
 | [**Development**](docs/DEVELOPMENT.md) | Running the two halves with hot reload, the test suite and its PDF fixtures, building the binary and the wheel, and what CI checks. |
 | [**Windows build**](docs/WINDOWS_BUILD.md) | The failure modes of the frozen Windows build, most of which produce no output at all. |
 
@@ -121,7 +131,7 @@ python launch.py
 ## License
 
 RedactPDF is licensed under the **GNU Affero General Public License v3.0**
-(AGPL-3.0) — see [LICENSE.md](LICENSE.md) for the full text.
+(AGPL-3.0). See [LICENSE.md](LICENSE.md) for the full text.
 
 In short: you may use, study, modify, and redistribute it freely, but any
 redistributed or network-hosted (SaaS) version, including modified ones, must

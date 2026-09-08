@@ -49,7 +49,7 @@ of image bytes, this is worth knowing.
 
 `pixels` (with vector-graphics removal on) is the default **everywhere**, not
 just in the UI: a request that omits `options` entirely gets it too. A default
-that does not redact is a default that leaks — better to over-redact and make
+that does not redact is a default that leaks. Better to over-redact and make
 the operator run a second pass than to hand back a file that looks redacted
 and is not.
 
@@ -83,7 +83,7 @@ what whole-word matching removes.
 
 `ignore_accents=False` is **not** the safe end, and is a known inconsistency
 rather than a considered choice. Accent-insensitive matching is a strict
-superset — a rule for `Leo` also removes `Léo` — so the API default currently
+superset (a rule for `Leo` also removes `Léo`), so the API default currently
 removes less than the UI's for the same rule text. Until this is aligned, an
 API caller who cares about accented variants must pass `ignore_accents: true`
 explicitly; the audit uses the same option, so it will not flag the miss.
@@ -125,7 +125,7 @@ continue to follow the user's chosen image mode on the same page.
    - The geometric engine only merges lines that are vertically adjacent
      and horizontally overlapping. It therefore refuses, on purpose, to
      merge two columns of prose, and it refuses two cells sharing a
-     baseline — that refusal is what stops it from redacting unrelated
+     baseline. That refusal is what stops it from redacting unrelated
      text that only *looks* contiguous once flattened.
    - The text-based audit has no geometry: it reads flattened page text,
      where those pieces sit next to each other. A rule whose match spans
@@ -134,8 +134,8 @@ continue to follow the user's chosen image mode on the same page.
      this document previously claimed. An ordinary whole-word search for
      `Dupont Jean` on a plain two-column `Nom | Prénom` table triggers it,
      with the default UI settings.
-   - The export is refused correctly — the text really is still in the
-     output — but no rule of that kind could have removed it. Since the
+   - The export is refused correctly, since the text really is still in the
+     output, but no rule of that kind could have removed it. Since the
      failure report is otherwise indistinguishable from a genuine leak,
      it carries `diagnostics: ["line_break_split"]` and a per-match
      `spans_line_break` flag, and the UI turns that into an explanation
@@ -148,7 +148,7 @@ continue to follow the user's chosen image mode on the same page.
      the extractor, not from the matching engine, so the audit catches both
      a rectangle that failed to apply *and* a match the engine never found.
    - A preset is audited by re-running `find_redaction_rectangles_for_presets`
-     on the output PDF — the **same detector, same settings**. It catches a
+     on the output PDF: the **same detector, same settings**. It catches a
      rectangle that failed to apply. It cannot catch a **non-detection**: a
      string the detector did not recognise as a phone number on the way in is
      not recognised on the way out either, so nothing is reported.
@@ -204,7 +204,7 @@ can saturate CPU.
 - nginx: `limit_req_zone $binary_remote_addr zone=redact:10m rate=2r/s;`
 - Caddy: rate-limit plugin or Cloudflare in front.
 
-### ReDoS (regex denial of service) — handled in the application
+### ReDoS (regex denial of service), handled in the application
 
 This one **is** implemented, unlike the rest of this section, and for a
 reason: the main way to run RedactPDF is a local binary, where there is no
@@ -222,7 +222,7 @@ Two details that motivate the shape of that guard:
 
 - `re` does not release the GIL while matching, so a single pathological
   pattern freezes the whole process, event loop included. A timeout
-  enforced by a watchdog thread could never observe it — the interruption
+  enforced by a watchdog thread could never observe it: the interruption
   has to come from inside the matching engine.
 - The engine runs patterns line by line, page by page. A per-call timeout
   would be multiplied by the number of lines; a hundred-page document would
@@ -251,7 +251,7 @@ With the exception of the regex budget above, these items are **not**
 implemented in the application and will not be. RedactPDF stays small and
 focused on its redaction job; operating it safely in a multi-user setting is
 the responsibility of the deployer. The regex budget is the exception because
-the local binary — the main way this tool is used — has no deployer at all.
+the local binary, the main way this tool is used, has no deployer at all.
 
 ## Reporting Security Issues
 

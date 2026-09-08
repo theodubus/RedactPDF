@@ -15,8 +15,9 @@ not say out loud.
 
 ## Adding rules
 
-Five kinds, which the API groups into two families — geometric (a rectangle is
-given to the engine) and textual (the engine has to find the rectangle first).
+Five kinds, which the API groups into two families: geometric, where a rectangle
+is handed to the engine, and textual, where the engine has to find the rectangle
+first.
 
 | Rule | How you add it | Family |
 | --- | --- | --- |
@@ -38,22 +39,22 @@ One segmented control in the right pane, applying to the whole request.
 
 | Mode | Bitmap images | Vector graphics |
 | --- | --- | --- |
-| **Aucune** / None | untouched — a black overlay is drawn on top, the original pixels stay in the file and come back for anyone who removes the overlay | untouched, same caveat |
+| **Aucune** / None | untouched. A black overlay is drawn on top, but the original pixels stay in the file and come back for anyone who removes the overlay | untouched, same caveat |
 | **Totale** / Full | any image a rectangle touches is dropped entirely | any path touched is removed |
 | **Précise** / Precise *(default)* | only the pixels inside the rectangle are blackened in the bitmap; the rest of the image stays visible | any path touched is removed |
 
 **Précise is the mode that makes flattened and scanned PDFs redactable.**
 Without it, the only options on a scan would be losing the whole page or
 drawing a black overlay that hides nothing. Its cost: the modified image is
-decoded and re-encoded, which is lossy on JPEG-backed images — pixels outside
-the redacted region stay visually identical but not byte-identical.
+decoded and re-encoded, which is lossy on JPEG-backed images. Pixels outside the
+redacted region stay visually identical but not byte-identical.
 
 Vector paths are removed **per path**, not per pixel: a rectangle clipping the
 corner of a path removes the whole path.
 
 **One exception overrides the control.** A "Censurer la page" rule always
-processes its page in strict mode — image removal plus graphics removal — even
-if you picked **Aucune**. A page-wide rule is meant to wipe the page; the
+processes its page in strict mode (image removal plus graphics removal) even if
+you picked **Aucune**. A page-wide rule is meant to wipe the page; the
 override stops it from quietly leaving images intact under a black overlay.
 
 ---
@@ -71,14 +72,14 @@ the ones that decide whether something gets missed.
   what keeps the offsets that map a match back to glyphs on the page valid.
 - **Several lines.** Always on for exact search and for the phone preset; a
   toggle, off by default, for regex rules. A match may run across consecutive
-  lines, but only where they overlap horizontally — two columns are never fused.
-  That refusal cuts both ways; see the next section.
+  lines, but only where they overlap horizontally. Two columns are never fused,
+  and that refusal cuts both ways; see the next section.
 - **Rotated text.** Glyphs are ordered along the line's reading direction rather
   than left to right. On a quarter-turned line the two disagree, and sorting by
   x selects the wrong glyphs for a partial match.
 - **Presets are validated, not merely matched.** A card candidate must pass the
   Luhn checksum, a phone candidate must be accepted by libphonenumber for the
-  default region — a long digit string that fails the checksum stays. For phones
+  default region. A long digit string that fails the checksum stays. For phones
   the viewer runs that same validation before highlighting, so a highlighted
   number is one the backend will actually remove.
 - **The document is stripped as well as redacted.** Metadata (Info dictionary
@@ -88,7 +89,7 @@ the ones that decide whether something gets missed.
 - **Every rectangle is computed from the original file**, before anything is
   removed. Deriving them from a partly redacted document would let an early rule
   hide the text a later one needed to match.
-- **Typed patterns run under a time budget** — 10 seconds per request,
+- **Typed patterns run under a time budget** of 10 seconds per request, set by
   `REDACT_REGEX_TIMEOUT`. A pattern that backtracks catastrophically returns an
   error naming it instead of freezing the app.
 
@@ -101,13 +102,13 @@ and are not identical rule by rule.
 
 ## When the export is refused
 
-You get a report instead of a file. Usually that means the rule needs fixing —
-it did not cover everything you thought it did.
+You get a report instead of a file. Usually that means the rule needs fixing: it
+did not cover everything you thought it did.
 
 One case is not a rule problem and reads identically at first glance: a match
 that spans a boundary the engine refuses to cross. Two columns of prose, or two
 cells of a `Nom | Prénom` table, sit side by side in the flattened text the
-audit reads, but the engine will not fuse them — that refusal is what stops it
+audit reads, but the engine will not fuse them. That refusal is what stops it
 from redacting unrelated text that merely *looks* contiguous. So a rule for
 `Dupont Jean` on such a table finds nothing to remove, the audit finds the
 string anyway, and the export is blocked with nothing you can change about the
@@ -116,8 +117,8 @@ rule.
 The report marks those matches `spans_line_break`, the UI turns that into an
 explanation, and the way out is a manual rectangle over each half.
 
-The full list of limits — including the guarantee a preset carries, which is
-weaker than the one a typed rule carries — is in
+The full list of limits, including the guarantee a preset carries, which is
+weaker than the one a typed rule carries, is in
 [SECURITY.md → Important Limitations](SECURITY.md#important-limitations).
 
 ---
@@ -141,7 +142,7 @@ pdfinfo redacted.pdf
 The first one is the important one: `pdftotext` is poppler, while the redaction
 was done by PyMuPDF. If a different implementation cannot find the text either,
 that is worth more than an assurance from the tool that removed it. The test
-suite does the same thing for the same reason — it reads results back with
+suite does the same thing for the same reason: it reads results back with
 `pypdf`, deliberately not the library that wrote them.
 
 ---
@@ -158,7 +159,7 @@ redactpdf
 
 The viewer reads the same value from `/api/config`, so the highlights follow.
 A number that is valid in another region and written without its country code is
-not detected — and, because the preset audit re-runs the same detector, not
+not detected, and, because the preset audit re-runs the same detector, not
 reported either. That is
 [limitation 4](SECURITY.md#important-limitations), and it is the reason to
 target such content with a search or a rectangle instead.

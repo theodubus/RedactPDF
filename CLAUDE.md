@@ -122,5 +122,7 @@ Tests import the app directly (`from redactpdf.main import app`) with `fastapi.t
 - Dependencies in [backend/pyproject.toml](backend/pyproject.toml) are pinned exactly, `pymupdf` especially — redaction behaviour is version-sensitive. Bump deliberately and re-run the suite.
 - Comments and docstrings are a mix of French and English; match the file you are editing.
 - The security model and its limitations live in [docs/SECURITY.md](docs/SECURITY.md); changes affecting image modes, sanitation, or audit behaviour should be reflected there.
+- Documentation is part of the change, not a follow-up. A commit that alters behaviour updates the page that describes it, in the same commit. The README carried "no regex timeout" for a week after the budget landed; that is the failure mode to avoid.
+- No em dashes in the documentation (`README.md`, `docs/*.md`). Use a comma, a colon, parentheses, or two sentences. This file is exempt.
 - Prose is split by reader, and each piece has one home. `README.md` says what the project is and how to get it, and stays short. [docs/USAGE.md](docs/USAGE.md) documents rule types, image modes and matching behaviour. [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) covers setup, tests, builds and CI. `docs/SECURITY.md` is canonical for **limits** — the other files link to it rather than restating them, because a duplicated limit is a limit that will drift (the README claimed "no regex timeout" for a week after the budget landed).
 - AGPL-3.0 (inherited from PyMuPDF) — keep it in mind before vendoring or extracting code.

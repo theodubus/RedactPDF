@@ -16,8 +16,8 @@ payload. They talk over exactly one endpoint, `POST /redact/apply`.
 
 ## Requirements
 
-- **Python 3.10 or newer** — CI runs 3.11
-- **Node.js 20 or newer** — for the frontend dev server and build
+- **Python 3.10 or newer**. CI runs 3.11.
+- **Node.js 20 or newer**, for the frontend dev server and build.
 - Linux, macOS or Windows. The commands below assume a POSIX shell; on Windows
   activate the venv with `.\.venv\Scripts\Activate.ps1`. The test suite and the
   desktop launcher are exercised on Linux and on Windows.
@@ -70,7 +70,7 @@ deterministically; they work by hand too.
 
 ### Two processes, with hot reload
 
-**Terminal 1 — backend:**
+**Terminal 1, backend:**
 
 ```bash
 cd backend
@@ -78,7 +78,7 @@ source .venv/bin/activate
 uvicorn redactpdf.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
-**Terminal 2 — frontend:**
+**Terminal 2, frontend:**
 
 ```bash
 cd frontend
@@ -86,9 +86,9 @@ npm run dev
 ```
 
 Open the URL Vite prints (`http://localhost:5173` by default). The dev server
-proxies `/api/*` to `127.0.0.1:8000` — configured in
-[frontend/vite.config.ts](../frontend/vite.config.ts) — so CORS never comes up
-in development.
+proxies `/api/*` to `127.0.0.1:8000`, configured in
+[frontend/vite.config.ts](../frontend/vite.config.ts), so CORS never comes up in
+development.
 
 ---
 
@@ -126,7 +126,7 @@ Prefer extending the corpus over inventing a PDF inside a test. Each fixture and
 the trap it covers is listed in
 [backend/tests/fixtures/README.md](../backend/tests/fixtures/README.md).
 
-Output is read back with a library that did not write it — `pypdf` for text,
+Output is read back with a library that did not write it: `pypdf` for text,
 PyMuPDF only for structural inspection (metadata, XMP, annotations,
 attachments). See [backend/tests/utils_pdf.py](../backend/tests/utils_pdf.py).
 
@@ -159,7 +159,7 @@ python scripts/smoke_test_app.py --source      # same checks against `python lau
 
 PyInstaller does not cross-compile: one build per target OS, and the Linux
 binary requires a glibc at least as new as the build machine's. **Working on the
-Windows build? Read [WINDOWS_BUILD.md](WINDOWS_BUILD.md) first** — it covers the
+Windows build? Read [WINDOWS_BUILD.md](WINDOWS_BUILD.md) first**: it covers the
 failure modes that produce no output at all, which is most of the difficulty.
 
 ### Release
@@ -168,8 +168,8 @@ A `v*` tag fires `release.yml`, which checks the tag matches `version` in
 [backend/pyproject.toml](../backend/pyproject.toml), builds the binaries on
 Linux and Windows gated on a frozen smoke test, builds and smoke-tests the
 wheel, attests the provenance of every artifact, drafts a GitHub Release
-carrying the binaries, the distributions and `SHA256SUMS.txt` — never publishing
-it on its own — and publishes to PyPI through Trusted Publishing (OIDC, no
+carrying the binaries, the distributions and `SHA256SUMS.txt` (never publishing
+it on its own), and publishes to PyPI through Trusted Publishing (OIDC, no
 stored secret).
 
 Checksums and attestations are the only trust story available without a paid
@@ -186,8 +186,8 @@ code-signing certificate. Do not drop either.
 | `smoke-ci` | two jobs: one drives `smoke_test_app.py --source`, the other builds the wheel, installs it into a clean venv and drives the installed console script |
 | `release` | on a `v*` tag, see above |
 
-`smoke-ci` covers what pytest cannot see — `launch.py`, `redactpdf/paths.py`,
-same-origin serving of the built UI, the end-to-end API path — without paying
+`smoke-ci` covers what pytest cannot see: `launch.py`, `redactpdf/paths.py`,
+same-origin serving of the built UI and the end-to-end API path, without paying
 for a PyInstaller build on every push.
 
 ---
