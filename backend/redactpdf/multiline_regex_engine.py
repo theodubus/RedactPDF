@@ -1,13 +1,12 @@
-# backend/app/multiline_regex_engine.py
 from __future__ import annotations
 
-import re
 import unicodedata
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from typing import Any
 
 import pymupdf  # PyMuPDF
+import regex
 
 from redactpdf.redaction import RedactionRect
 from redactpdf.regex_guard import (
@@ -187,7 +186,7 @@ def _compile_patterns(
     *,
     case_sensitive: bool,
     ignore_accents: bool,
-) -> list[tuple[str, re.Pattern[str]]]:
+) -> list[tuple[str, regex.Pattern[str]]]:
     cleaned: list[str] = []
     for p in patterns:
         p2 = (p or "").strip()
@@ -382,7 +381,9 @@ def _extract_page_chars(page: pymupdf.Page) -> list[_CharBox]:
 
 
 def _rect_contains(outer: pymupdf.Rect, inner: pymupdf.Rect, tol: float = 0.75) -> bool:
-    return (
+    # `bool(...)` explicite : les coordonnées de pymupdf.Rect arrivent en `Any`,
+    # faute de types publiés, donc la comparaison aussi.
+    return bool(
         inner.x0 >= outer.x0 - tol
         and inner.y0 >= outer.y0 - tol
         and inner.x1 <= outer.x1 + tol

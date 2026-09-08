@@ -66,6 +66,12 @@ dev = [
   "pytest==9.0.2",
   "httpx==0.28.1",
   "ruff==0.14.14",
+  "mypy==2.3.1",
+  # Types réels pour `regex`, pas une exception. C'est ce qui rend vérifiable la
+  # frontière du garde-fou ReDoS : sans eux, une signature pouvait annoncer
+  # `re.Pattern` sur un chemin qui doit rester sur le moteur `regex`, et rien ne
+  # le disait. La version suit celle de `regex` ci-dessus.
+  "types-regex==2026.9.3.20260903",
   "reportlab==4.4.9",
   "pypdf==6.6.2",
 ]
@@ -106,6 +112,21 @@ markers = [
 testpaths = ["tests"]
 pythonpath = ["."]
 addopts = "-q"
+
+[tool.mypy]
+# Le paquet seul, pas les tests : sur `tests/` le mode strict ne remonte que des
+# `dict` sans paramètres, du bruit sans rapport avec la justesse du caviardage.
+files = ["redactpdf"]
+strict = true
+python_version = "3.10"
+
+[[tool.mypy.overrides]]
+# PyMuPDF n'embarque ni stubs ni marqueur py.typed. Sans cette exception, mypy
+# refuse d'analyser les sept modules qui l'importent, ce qui masquerait tout le
+# reste. Conséquence assumée : ce qui vient de pymupdf arrive en `Any`, donc
+# c'est à nous d'annoter là où on en tire une hypothèse (voir _IMAGE_MODE_MAP).
+module = ["pymupdf.*", "fitz.*"]
+ignore_missing_imports = true
 
 [tool.ruff]
 line-length = 100

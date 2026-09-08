@@ -98,8 +98,17 @@ development.
 cd backend
 source .venv/bin/activate
 ruff check .          # line-length 100, rules E,F,I,UP,B
+mypy                  # --strict over redactpdf/, configured in pyproject.toml
 pytest                # markers: unit, integration, e2e, slow
 ```
+
+`mypy` runs strict over the package and not over `tests/`, where the only
+findings are unparameterised `dict`s. Two dependencies have no published types:
+PyMuPDF is waived by an override, so anything coming from it arrives as `Any`
+and it is on us to annotate wherever we rely on its shape; `regex` gets real
+stubs (`types-regex`, pinned to the same version) rather than a waiver, because
+that is what makes the ReDoS guard's boundary checkable. It caught a signature
+declaring `re.Pattern` on a path that must stay on the `regex` engine.
 
 ```bash
 cd frontend
@@ -181,7 +190,7 @@ code-signing certificate. Do not drop either.
 
 | Workflow | What it runs |
 | --- | --- |
-| `backend-ci` | `ruff check .` + `pytest` on Python 3.11 |
+| `backend-ci` | `ruff check .` + `mypy` + `pytest` on Python 3.11 |
 | `frontend-ci` | `npm run lint` (zero warnings) + `npm run build` on Node 20 |
 | `smoke-ci` | two jobs: one drives `smoke_test_app.py --source`, the other builds the wheel, installs it into a clean venv and drives the installed console script |
 | `release` | on a `v*` tag, see above |

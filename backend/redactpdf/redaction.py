@@ -77,7 +77,11 @@ def _tighten_rect_vertical(rect: pymupdf.Rect) -> pymupdf.Rect:
 
 
 
-_IMAGE_MODE_MAP = {
+# Annoté explicitement : PyMuPDF ne publie pas de types, donc ces constantes
+# arrivent en `Any`. L'annotation dit ce qu'on attend d'elles, et un bump de
+# pymupdf qui changerait leur nature deviendrait une erreur de vérification
+# plutôt qu'un comportement silencieusement différent.
+_IMAGE_MODE_MAP: dict[str, int] = {
     "none": pymupdf.PDF_REDACT_IMAGE_NONE,
     "remove": pymupdf.PDF_REDACT_IMAGE_REMOVE,
     "pixels": pymupdf.PDF_REDACT_IMAGE_PIXELS,
