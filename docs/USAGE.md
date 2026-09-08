@@ -93,10 +93,11 @@ the ones that decide whether something gets missed.
   `REDACT_REGEX_TIMEOUT`. A pattern that backtracks catastrophically returns an
   error naming it instead of freezing the app.
 
-The defaults above are the ones the UI sends. Calling the API directly is not
-the same thing: it applies its own, which are tabulated in
-[SECURITY.md → Rule defaults](SECURITY.md#rule-defaults-the-api-is-not-the-ui)
-and are not identical rule by rule.
+The defaults above are the ones the UI sends. A direct API caller who omits an
+option gets the model default instead, which is chosen so that it never removes
+less than the UI would: sub-word matching is on, accent folding is on. The full
+table is in
+[SECURITY.md → Rule defaults](SECURITY.md#rule-defaults-every-one-of-them-removes-at-least-as-much-as-the-ui).
 
 ---
 

@@ -53,40 +53,55 @@ that does not redact is a default that leaks. Better to over-redact and make
 the operator run a second pass than to hand back a file that looks redacted
 and is not.
 
-### Rule defaults: the API is not the UI
+### Rule defaults: every one of them removes at least as much as the UI
 
-The image-mode default above is the same everywhere. The per-rule matching
-options are not: the UI picks its own and always sends them explicitly, so a
-direct API caller who omits `options` gets the model defaults, which differ.
+The UI picks its own matching options and always sends them explicitly, so these
+defaults only ever apply to a direct API caller who omits them. That is exactly
+what makes them easy to get wrong unnoticed, and the audit cannot catch the
+mistake: it replays the same option.
+
+The rule is the one stated above for `image_mode`. **No default may remove less
+than the UI would for the same rule text.**
 
 | Rule | Option | API default | UI default | Removes more |
 |---|---|---|---|---|
 | search | `case_sensitive` | `False` | `False` | equal |
 | search | `whole_word` | `False` | `True` (**Subword** off) | API |
-| search | `ignore_accents` | `False` | `True` (**Respect accents** off) | UI |
+| search | `ignore_accents` | `True` | `True` (**Respect accents** off) | equal |
 | regex | `case_sensitive` | `False` | `False` | equal |
 | regex | `multiline` | `False` | `False` | equal |
-| regex | `ignore_accents` | `False` | `True` | UI |
+| regex | `ignore_accents` | `True` | `True` | equal |
 
-Exact search has no `multiline` field either: it always crosses line breaks,
-under the same geometric constraints as the regex engine (see limitation 3
-below). A multi-word query hyphenated at the end of a line would otherwise be
-unfindable by the engine while remaining visible to the audit.
+Both non-equal cases lean the same way, and both are deliberate:
 
-Regex rules have no `whole_word` field: the UI implements that option by
-wrapping the pattern in `(?<!\w)…(?!\w)` before sending it, so a direct API
-caller who wants word boundaries writes them into the pattern. Presets take no
-matching options at all, only a page scope.
+- `whole_word=False` matches inside words, which is a strict superset of
+  whole-word matching. **Do not "align this with the UI".** The UI ships
+  **Subword** off, which is `whole_word: true`, and copying that here would make
+  the API remove less.
+- `ignore_accents=True` makes a rule for `Leo` also remove `Léo`, again a strict
+  superset. It was `False` until it was measured: with the old default, a rule
+  for `Benoit` left `Benoît` in the output, returned HTTP 200, and reported
+  nothing, because the audit replayed the same accent-sensitive setting. The
+  cost of the current default is over-redaction, visible and fixable in a second
+  pass: a rule for `resume` now also removes `résumé`.
 
-`whole_word=False` is the safe end: matching inside words removes a superset of
-what whole-word matching removes.
+`backend/tests/test_api_defaults.py` pins both, by behaviour rather than by
+reading the field, so a flip in either direction fails the suite.
 
-`ignore_accents=False` is **not** the safe end, and is a known inconsistency
-rather than a considered choice. Accent-insensitive matching is a strict
-superset (a rule for `Leo` also removes `Léo`), so the API default currently
-removes less than the UI's for the same rule text. Until this is aligned, an
-API caller who cares about accented variants must pass `ignore_accents: true`
-explicitly; the audit uses the same option, so it will not flag the miss.
+Two fields do not exist rather than having a default. Exact search has no
+`multiline`: it always crosses line breaks, under the same geometric constraints
+as the regex engine (see limitation 3 below), because a multi-word query
+hyphenated at the end of a line would otherwise be unfindable by the engine
+while remaining visible to the audit. Regex rules have no `whole_word`: the UI
+implements that option by wrapping the pattern in `(?<!\w)…(?!\w)` before
+sending it, so a direct API caller who wants word boundaries writes them into the
+pattern. Presets take no matching options at all, only a page scope.
+
+One default is knowingly left on the permissive side: the optional `audit` block,
+where a caller supplies extra patterns that must not appear in the output, is
+accent-sensitive. Those patterns are only ever *checked*, never redacted, so a
+miss there does not hide a redaction failure; it only declines to raise a flag
+the caller asked for.
 
 ### Unknown payload keys are rejected
 

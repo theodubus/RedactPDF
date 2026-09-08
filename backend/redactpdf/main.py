@@ -133,10 +133,25 @@ class AuditModel(StrictModel):
         return cleaned
 
 
+# Les deux réglages d'appariement par défaut penchent vers le sur-caviardage,
+# pour la même raison que `image_mode` en OptionsModel : l'UI envoie toujours ses
+# valeurs, donc ces défauts ne servent qu'aux appelants directs de l'API, et un
+# défaut qui caviarde moins est un défaut qui fuit en silence.
+#
+#   whole_word=False    -> apparie aussi à l'intérieur des mots. Sur-ensemble
+#                          strict : « CAT » attrape aussi « CATCH ». NE PAS
+#                          passer à True pour « s'aligner sur l'UI » : ce serait
+#                          caviarder moins.
+#   ignore_accents=True -> « Leo » retire aussi « Léo ». Sur-ensemble strict lui
+#                          aussi. Le repliage préserve la longueur, donc la
+#                          cartographie span -> rectangle reste valide.
+#
+# L'audit rejoue la même option : un manque ici n'est signalé par personne.
+# tests/test_api_defaults.py fige les deux.
 class SearchOptionsModel(StrictModel):
     case_sensitive: bool = False
     whole_word: bool = False
-    ignore_accents: bool = False
+    ignore_accents: bool = True
 
 
 class ScopeModel(StrictModel):
@@ -175,7 +190,8 @@ class ApplyRegexModel(StrictModel):
     patterns: list[str]
     case_sensitive: bool = False
     multiline: bool = False
-    ignore_accents: bool = False
+    # Voir SearchOptionsModel : sur-ensemble strict, défaut côté sur-caviardage.
+    ignore_accents: bool = True
     scope: ScopeModel = Field(default_factory=ScopeModel)
 
     @field_validator("patterns", mode="before")
