@@ -9,6 +9,7 @@ import pymupdf
 from redactpdf.audit import build_whole_word_pattern
 from redactpdf.multiline_regex_engine import find_redaction_rectangles_by_regex
 from redactpdf.redaction import RedactionRect
+from redactpdf.regex_guard import RegexBudget
 
 
 @dataclass(frozen=True)
@@ -48,7 +49,9 @@ def _build_substring_pattern(query: str) -> str:
     return r"\s+".join(re.escape(t) for t in tokens)
 
 
-def find_redaction_rectangles(pdf_bytes: bytes, opts: SearchOptions) -> list[RedactionRect]:
+def find_redaction_rectangles(
+    pdf_bytes: bytes, opts: SearchOptions, *, budget: RegexBudget | None = None
+) -> list[RedactionRect]:
     query = (opts.query or "").strip()
     if not query:
         raise ValueError("query must be non-empty")
@@ -63,6 +66,7 @@ def find_redaction_rectangles(pdf_bytes: bytes, opts: SearchOptions) -> list[Red
             pages=opts.pages,
             multiline=_MULTILINE_SEARCH,
             ignore_accents=opts.ignore_accents,
+            budget=budget,
         )
 
     # If ignore_accents=True, we cannot rely on page.search_for().
@@ -76,6 +80,7 @@ def find_redaction_rectangles(pdf_bytes: bytes, opts: SearchOptions) -> list[Red
             pages=opts.pages,
             multiline=_MULTILINE_SEARCH,
             ignore_accents=True,
+            budget=budget,
         )
 
     # Default path (fast): page.search_for()

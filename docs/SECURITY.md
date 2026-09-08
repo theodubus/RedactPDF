@@ -124,9 +124,9 @@ above), even if the global image mode is `Aucune`.
 ## Production / Multi-user Deployment
 
 RedactPDF is designed for **local, single-user usage**. The HTTP API has no
-authentication, no rate limiting, no upload size cap, and no regex execution
-timeout. Exposing it to untrusted networks or multiple users without
-hardening is **not safe**.
+authentication, no rate limiting and no upload size cap. Regex execution *is*
+bounded (see below). Exposing it to untrusted networks or multiple users
+without hardening is **not safe**.
 
 If you deploy it behind a reverse proxy (nginx, Caddy, Traefik...) for
 multiple users, address the following at the **infrastructure layer**, not
@@ -149,22 +149,33 @@ can saturate CPU.
 - nginx: `limit_req_zone $binary_remote_addr zone=redact:10m rate=2r/s;`
 - Caddy: rate-limit plugin or Cloudflare in front.
 
-### ReDoS (regex denial of service)
+### ReDoS (regex denial of service) — handled in the application
 
-The `/redact/apply` endpoint accepts user-supplied regex patterns and
-compiles them with Python's `re` module **without timeout**. A malicious
-pattern (catastrophic backtracking, e.g. `(a+)+$`) can hang a worker
-indefinitely.
+This one **is** implemented, unlike the rest of this section, and for a
+reason: the main way to run RedactPDF is a local binary, where there is no
+deployer to put a reverse proxy in front. Sending the mitigation downstream
+would have meant sending it nowhere.
 
-Mitigations:
+User-supplied patterns run through
+[redactpdf/regex_guard.py](../backend/redactpdf/regex_guard.py) on the
+`regex` engine rather than `re`, under a **time budget shared by the whole
+request** (`REDACT_REGEX_TIMEOUT`, 10 seconds by default). Exceeding it
+returns HTTP 400 naming the pattern, instead of leaving the process
+spinning.
 
-- Set a strict `proxy_read_timeout` on the reverse proxy (e.g. 30s) so the
-  client connection drops, but the worker can still be wedged. Combine with
-  a process supervisor that recycles stuck workers.
-- Or run the backend in a sandboxed container with strict CPU/memory
-  limits and an external watchdog.
-- Or switch the regex engine to one that supports timeouts (e.g.
-  `regex` package with `re.TIMEOUT`, or `re2`).
+Two details that motivate the shape of that guard:
+
+- `re` does not release the GIL while matching, so a single pathological
+  pattern freezes the whole process, event loop included. A timeout
+  enforced by a watchdog thread could never observe it — the interruption
+  has to come from inside the matching engine.
+- The engine runs patterns line by line, page by page. A per-call timeout
+  would be multiplied by the number of lines; a hundred-page document would
+  turn a two-second limit into an hour. Hence one budget per request.
+
+Residual risk: a request can still occupy a worker for the length of the
+budget. Under a multi-user deployment, combine the budget with rate
+limiting below.
 
 ### Authentication
 
@@ -181,9 +192,11 @@ If running in production, containerize and apply quotas:
 
 ### Scope of these recommendations
 
-These items are **not** implemented in the application and will not be.
-RedactPDF stays small and focused on its redaction job; operating it safely
-in a multi-user setting is the responsibility of the deployer.
+With the exception of the regex budget above, these items are **not**
+implemented in the application and will not be. RedactPDF stays small and
+focused on its redaction job; operating it safely in a multi-user setting is
+the responsibility of the deployer. The regex budget is the exception because
+the local binary — the main way this tool is used — has no deployer at all.
 
 ## Reporting Security Issues
 

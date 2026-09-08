@@ -7,6 +7,9 @@ from typing import Any
 
 import pymupdf
 
+from redactpdf.regex_guard import RegexBudget, compile_pattern
+from redactpdf.regex_guard import finditer as guarded_finditer
+
 
 @dataclass(frozen=True)
 class AuditOptions:
@@ -161,7 +164,8 @@ def audit_text(
     text: str,
     opts: AuditOptions,
     *,
-    page_number: int
+    page_number: int,
+    budget: RegexBudget | None = None,
 ) -> tuple[list[dict[str, Any]], int]:
     if not opts.patterns:
         raise ValueError("audit.patterns must be non-empty")
@@ -175,11 +179,12 @@ def audit_text(
 
     # Regex mode
     if opts.regex:
-        flags = 0
-        if not opts.case_sensitive:
-            flags |= re.IGNORECASE
+        # L'audit rejoue les motifs de l'utilisateur : il est exposé au même
+        # retour arrière catastrophique que la phase de planification, et sur un
+        # texte de page entier plutôt que ligne par ligne.
+        budget = budget if budget is not None else RegexBudget()
 
-        compiled: list[tuple[str, re.Pattern[str]]] = []
+        compiled: list[tuple[str, Any]] = []
         for pat in opts.patterns:
             cleaned = (pat or "").strip()
             if not cleaned:
@@ -189,14 +194,13 @@ def audit_text(
                 _fold_regex_pattern_best_effort(cleaned) if opts.ignore_accents else cleaned
             )
 
-            try:
-                compiled.append((cleaned, re.compile(cleaned_for_rx, flags)))
-            except re.error as e:
-                raise ValueError(f"invalid regex pattern: {cleaned}") from e
+            compiled.append(
+                (cleaned, compile_pattern(cleaned_for_rx, ignore_case=not opts.case_sensitive))
+            )
 
         per_page = 0
         for pat_src, rx in compiled:
-            for m in rx.finditer(folded_text):
+            for m in guarded_finditer(rx, folded_text, budget):
                 start, end = m.span()
                 # indexes align with original text due to fold_keep_len
                 matches.append(

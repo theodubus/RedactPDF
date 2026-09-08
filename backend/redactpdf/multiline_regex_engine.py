@@ -10,6 +10,11 @@ from typing import Any
 import pymupdf  # PyMuPDF
 
 from redactpdf.redaction import RedactionRect
+from redactpdf.regex_guard import (
+    RegexBudget,
+    compile_patterns,
+)
+from redactpdf.regex_guard import finditer as guarded_finditer
 
 
 def _fold_keep_len(s: str) -> str:
@@ -193,16 +198,13 @@ def _compile_patterns(
     if not cleaned:
         raise ValueError("No non-empty regex patterns provided.")
 
-    flags = 0 if case_sensitive else re.IGNORECASE
-    compiled: list[tuple[str, re.Pattern[str]]] = []
-    for p in cleaned:
-        src = _fold_regex_pattern_best_effort(p) if ignore_accents else p
-        try:
-            compiled.append((p, re.compile(src, flags=flags)))
-        except re.error as e:
-            raise ValueError(f"Invalid regex pattern: {p!r}. {e}") from e
-
-    return compiled
+    sources = [
+        (_fold_regex_pattern_best_effort(p) if ignore_accents else p, p) for p in cleaned
+    ]
+    compiled = compile_patterns([src for src, _ in sources], ignore_case=not case_sensitive)
+    # `compile_patterns` renvoie le motif effectivement compilé ; on réexpose le
+    # motif d'origine, seul intelligible dans un rapport d'erreur.
+    return [(original, pat) for (_, original), (_, pat) in zip(sources, compiled, strict=True)]
 
 
 def _rect_union(words: Sequence[_Word]) -> tuple[float, float, float, float]:
@@ -503,7 +505,12 @@ def iter_regex_hits(
     min_x_overlap_ratio: float = 0.25,
     max_vertical_gap: float = 18.0,
     ignore_accents: bool = False,
+    budget: RegexBudget | None = None,
 ) -> Iterator[RegexHit]:
+    # Un budget par appel quand l'appelant ne se prononce pas : les motifs sont
+    # exécutés ligne par ligne, un délai posé sur chaque parcours serait
+    # multiplié par le nombre de lignes du document.
+    budget = budget if budget is not None else RegexBudget()
     compiled = _compile_patterns(
         patterns,
         case_sensitive=case_sensitive,
@@ -532,7 +539,7 @@ def iter_regex_hits(
                 ln_text_match, ln_map = line_text_for_match(ln.text)
 
                 for pat_src, pat in compiled:
-                    for m in pat.finditer(ln_text_match):
+                    for m in guarded_finditer(pat, ln_text_match, budget):
                         s, e = m.span()
                         orig_s = ln_map[s]
                         orig_e = ln_map[e]
@@ -582,7 +589,7 @@ def iter_regex_hits(
                     offset_b = len(a_match) + len(joiner)
 
                     for pat_src, pat in compiled:
-                        for m in pat.finditer(combined):
+                        for m in guarded_finditer(pat, combined, budget):
                             s, e = m.span()
 
                             # keep only matches crossing the boundary
@@ -678,6 +685,7 @@ def find_redaction_rectangles_by_regex(
     pages: Sequence[int] | None = None,
     multiline: bool = False,
     ignore_accents: bool = False,
+    budget: RegexBudget | None = None,
 ) -> list[RedactionRect]:
     rects: list[RedactionRect] = []
     for hit in iter_regex_hits(
@@ -687,6 +695,7 @@ def find_redaction_rectangles_by_regex(
         pages=pages,
         multiline=multiline,
         ignore_accents=ignore_accents,
+        budget=budget,
     ):
         rects.extend(list(hit.rects))
     return _dedup_rects(rects)

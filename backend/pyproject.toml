@@ -55,6 +55,10 @@ dependencies = [
   "pymupdf==1.26.7",
   "python-multipart==0.0.22",
   "phonenumbers==9.0.22",
+  # Moteur de motifs pour tout ce que l'utilisateur fournit : `re` peut partir
+  # en retour arriere catastrophique sans qu'on puisse l'interrompre, et il ne
+  # relache pas le GIL pendant le parcours. Voir redactpdf/regex_guard.py.
+  "regex==2026.9.3",
 ]
 
 [project.optional-dependencies]

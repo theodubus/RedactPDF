@@ -80,6 +80,7 @@ Never add a path that returns a PDF without passing the audit.
 - [search.py](backend/redactpdf/search.py) — exact search. Fast path uses `page.search_for()`; `whole_word` or `ignore_accents` fall back to the regex engine with a generated pattern.
 - [presets.py](backend/redactpdf/presets.py) — email / phone / credit_card. Regex candidates plus post-filters: Luhn for cards, `phonenumbers` validation for phones (default region from `REDACT_DEFAULT_REGION`, `FR`).
 - [audit.py](backend/redactpdf/audit.py) — text-level audit primitives and `build_whole_word_pattern`, shared with `search.py` so search semantics and audit semantics cannot drift apart.
+- [regex_guard.py](backend/redactpdf/regex_guard.py) — every user-supplied pattern runs through here, on the `regex` engine rather than `re`, under a time budget **shared by the whole request** (`REDACT_REGEX_TIMEOUT`, 10s). Two reasons the guard has that exact shape, both easy to undo by accident: `re` does not release the GIL while matching, so a watchdog thread could never observe a runaway pattern — the interruption must come from inside the engine; and patterns run line by line, so a per-call timeout would be multiplied by the number of lines. `RegexTimeout` subclasses `ValueError` so it lands on the existing 400 path.
 - [sanitize.py](backend/redactpdf/sanitize.py) — metadata / annotations / widgets / attachments, on by default.
 - [heartbeat.py](backend/redactpdf/heartbeat.py) — liveness singleton; inert unless `launch.py` started a watchdog thread.
 

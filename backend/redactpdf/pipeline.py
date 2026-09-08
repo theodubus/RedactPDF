@@ -10,6 +10,7 @@ from redactpdf.audit import AuditOptions, audit_text, build_audit_for_search
 from redactpdf.multiline_regex_engine import find_redaction_rectangles_by_regex
 from redactpdf.presets import find_redaction_rectangles_for_presets
 from redactpdf.redaction import RedactionRect, redact_pdf_by_rectangles
+from redactpdf.regex_guard import RegexBudget
 from redactpdf.search import SearchOptions, find_redaction_rectangles
 
 
@@ -81,6 +82,10 @@ def plan_redactions(
     if not pdf_bytes:
         raise ValueError("Empty PDF bytes")
 
+    # Un seul budget pour toute la phase : les motifs sont exécutés ligne par
+    # ligne et règle par règle, un délai par appel serait multiplié d'autant.
+    budget = RegexBudget()
+
     manual_out = list(manual_rects or [])
     full_page_out = list(full_page_rects or [])
 
@@ -100,6 +105,7 @@ def plan_redactions(
                         ignore_accents=s.ignore_accents,
                         pages=s.pages,
                     ),
+                    budget=budget,
                 )
             )
 
@@ -113,6 +119,7 @@ def plan_redactions(
                     pages=r.pages,
                     multiline=r.multiline,
                     ignore_accents=r.ignore_accents,
+                    budget=budget,
                 )
             )
 
@@ -121,6 +128,7 @@ def plan_redactions(
             pdf_bytes,
             presets.presets,
             pages=presets.pages,
+            budget=budget,
         )
 
     all_rects = _dedupe_rects(manual_out + search_rects + regex_rects + presets_rects)
@@ -167,7 +175,9 @@ def apply_plan(pdf_bytes: bytes, plan: PlanResult, *, options: RedactionOptions)
     )
 
 
-def presets_internal_audit(out_pdf: bytes, *, presets: PresetsRequest) -> dict[str, Any] | None:
+def presets_internal_audit(
+    out_pdf: bytes, *, presets: PresetsRequest, budget: RegexBudget | None = None
+) -> dict[str, Any] | None:
     """
     Internal presets audit: rerun presets detection on OUT PDF.
     If leaks remain -> return a structured fail report, else None.
@@ -177,7 +187,9 @@ def presets_internal_audit(out_pdf: bytes, *, presets: PresetsRequest) -> dict[s
     matched_pages: set[int] = set()
 
     for p in presets.presets:
-        rects = find_redaction_rectangles_for_presets(out_pdf, [p], pages=presets.pages)
+        rects = find_redaction_rectangles_for_presets(
+            out_pdf, [p], pages=presets.pages, budget=budget
+        )
         leaks_by_preset[p] = rects
         total += len(rects)
         matched_pages.update((r.page + 1) for r in rects)  # 1-based
@@ -229,6 +241,11 @@ def audit_plan(
     Run coherent audits for all components that were requested.
     Supports multiple search and regex rules.
     """
+    # Budget distinct de celui de la planification : l'audit rejoue les mêmes
+    # motifs sur le document de sortie, et mérite sa propre enveloppe plutôt que
+    # d'hériter d'un budget déjà consommé.
+    budget = RegexBudget()
+
     failures: dict[str, Any] = {}
 
     # --- Searches audit (cohérent avec whole_word / case_sensitive), par règle
@@ -241,7 +258,7 @@ def audit_plan(
                 whole_word=s.whole_word,
                 ignore_accents=s.ignore_accents,
             )
-            report = _audit_pdf_text(out_pdf, s_opts)
+            report = _audit_pdf_text(out_pdf, s_opts, budget=budget)
             if report["status"] != "pass":
                 failed.append(
                     {
@@ -272,7 +289,7 @@ def audit_plan(
                 case_sensitive=r.case_sensitive,
                 ignore_accents=r.ignore_accents,
             )
-            report = _audit_pdf_text(out_pdf, r_opts)
+            report = _audit_pdf_text(out_pdf, r_opts, budget=budget)
             if report["status"] != "pass":
                 failed.append(
                     {
@@ -295,13 +312,13 @@ def audit_plan(
 
     # --- Presets internal audit
     if presets is not None:
-        leak_report = presets_internal_audit(out_pdf, presets=presets)
+        leak_report = presets_internal_audit(out_pdf, presets=presets, budget=budget)
         if leak_report is not None:
             failures["presets"] = leak_report
 
     # --- Extra audit (optional banlist)
     if extra_audit is not None:
-        report = _audit_pdf_text(out_pdf, extra_audit)
+        report = _audit_pdf_text(out_pdf, extra_audit, budget=budget)
         if report["status"] != "pass":
             failures["audit"] = report
 
@@ -348,7 +365,9 @@ def _diagnose(failures: dict[str, Any]) -> list[str]:
     return codes
 
 
-def _audit_pdf_text(pdf_bytes: bytes, opts: AuditOptions) -> dict[str, Any]:
+def _audit_pdf_text(
+    pdf_bytes: bytes, opts: AuditOptions, *, budget: RegexBudget | None = None
+) -> dict[str, Any]:
     """
     A lightweight audit runner (page loop + audit_text) that returns the same report shape
     as redactpdf.audit.audit_pdf_text used to.
@@ -369,7 +388,9 @@ def _audit_pdf_text(pdf_bytes: bytes, opts: AuditOptions) -> dict[str, Any]:
             text = page.get_text("text") or ""
             page_no = page_index + 1  # 1-based
 
-            page_matches, page_total = audit_text(text, opts, page_number=page_no)
+            page_matches, page_total = audit_text(
+                text, opts, page_number=page_no, budget=budget
+            )
             if page_total:
                 matches.extend(page_matches)
                 matched_pages.add(page_no)

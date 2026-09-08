@@ -404,6 +404,33 @@ def write_013_rotated_margin_text(path: Path) -> None:
     c.save()
 
 
+def write_014_redos_bait(path: Path) -> None:
+    """
+    Fixture carrying bait for catastrophic backtracking.
+
+    A long unbroken run of one repeated character followed by a character that
+    breaks the match is what makes patterns like ``(a|a)+$`` or ``(a+)+$`` blow
+    up exponentially: every way of splitting the run has to be tried before the
+    engine can conclude.
+
+    The other fixtures cannot serve here -- their lines are short, and the
+    engine runs patterns line by line, which caps the damage on its own. The
+    audit is the exposed side: it scans the whole page text at once.
+
+    Nothing here is sensitive; the point is the shape, not the content.
+    """
+    c = _new_canvas(path)
+    _, h = A4
+    c.setFont("Helvetica", 11)
+    c.drawString(25 * mm, h - 30 * mm, "Fixture 014 — ReDoS bait")
+    c.setFont("Courier", 10)
+    c.drawString(25 * mm, h - 45 * mm, "a" * 40 + "b")
+    c.setFont("Helvetica", 10)
+    c.drawString(25 * mm, h - 60 * mm, "Texte non sensible : rien a caviarder ici.")
+    c.showPage()
+    c.save()
+
+
 SPECS: list[FixtureSpec] = [
     FixtureSpec(
         filename="001_secret_text.pdf",
@@ -469,6 +496,11 @@ SPECS: list[FixtureSpec] = [
         filename="013_rotated_margin_text.pdf",
         writer=write_013_rotated_margin_text,
         description="Rotated margin text (no vertical tightening, reading-order glyph sort)",
+    ),
+    FixtureSpec(
+        filename="014_redos_bait.pdf",
+        writer=write_014_redos_bait,
+        description="Long repeated run that makes nested quantifiers backtrack exponentially",
     ),
 ]
 
