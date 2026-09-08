@@ -135,6 +135,20 @@ Prefer extending the corpus over inventing a PDF inside a test. Each fixture and
 the trap it covers is listed in
 [backend/tests/fixtures/README.md](../backend/tests/fixtures/README.md).
 
+### Property-based tests
+
+`tests/test_properties.py` runs invariants over generated input rather than
+chosen examples, with `hypothesis`. Two of them are load-bearing:
+
+- **`_fold_keep_len` preserves length.** Text is matched character by character
+  against glyph boxes extracted from the page, so an offset of one does not
+  redact *more*, it redacts *elsewhere*: the target stays visible and a
+  neighbour is destroyed. The naive implementation (NFKD then drop combining
+  marks) breaks on the first ligature, and `hypothesis` finds one in seconds.
+- **`build_whole_word_pattern` holds its boundaries.** It must find its token
+  standing alone and inside punctuation, and refuse it glued to a word
+  character. That is what makes the whole-word default safe rather than leaky.
+
 Output is read back with a library that did not write it: `pypdf` for text,
 PyMuPDF only for structural inspection (metadata, XMP, annotations,
 attachments). See [backend/tests/utils_pdf.py](../backend/tests/utils_pdf.py).

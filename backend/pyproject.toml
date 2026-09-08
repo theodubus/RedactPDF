@@ -74,6 +74,10 @@ dev = [
   "types-regex==2026.9.3.20260903",
   "reportlab==4.4.9",
   "pypdf==6.6.2",
+  # Tests à base de propriétés : voir tests/test_properties.py. Deux invariants
+  # y vivent dont l'espace d'entrée est Unicode entier, hors de portée d'exemples
+  # écrits à la main.
+  "hypothesis==6.167.1",
 ]
 # Kept out of `dev` on purpose: only the release build needs it, and CI installs
 # `.[dev]` on every run. Build with `python scripts/build_app.py`.

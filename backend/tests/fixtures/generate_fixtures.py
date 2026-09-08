@@ -431,6 +431,63 @@ def write_014_redos_bait(path: Path) -> None:
     c.save()
 
 
+def write_015_tight_leading(path: Path) -> None:
+    """
+    Interligne serré : la seule fixture qui fait réellement travailler
+    `_tighten_rect_vertical`.
+
+    La boîte de ligne rendue par l'extracteur est plus haute que les glyphes.
+    Quand les lignes sont largement espacées, un rectangle non resserré déborde
+    dans du blanc et personne ne le voit. Sous ~1,1 fois le corps, il déborde
+    sur la ligne suivante et l'emporte avec la cible.
+
+    Deux blocs, à 9 pt :
+
+    - **Bloc A, interligne 3,5 mm.** Le resserrement est porteur : sans lui,
+      `CONSERVER_A` disparaît avec la cible. C'est la protection de régression
+      qui manquait au mécanisme mis en cause par le bug des fiches de paie.
+    - **Bloc B, interligne 2,5 mm.** Sous le point de rupture : même resserré,
+      le rectangle mord sur `FRAGILE_B`. Documenté comme limite connue dans
+      docs/SECURITY.md, pas figé comme comportement correct.
+
+    Les autres fixtures du corpus n'ont jamais moins de 5 mm entre deux lignes,
+    donc le resserrement y est sans effet.
+    """
+    c = _new_canvas(path)
+    _, h = A4
+    c.setFont("Helvetica", 14)
+    c.drawString(25 * mm, h - 30 * mm, "Fixture 015 — tight leading")
+
+    # Bloc A : interligne 3,5 mm, le resserrement sauve la ligne suivante.
+    c.setFont("Helvetica", 10)
+    c.drawString(25 * mm, h - 45 * mm, "Bloc A - interligne 3,5 mm :")
+    c.setFont("Helvetica", 9)
+    top_a = h - 55 * mm
+    for i, line in enumerate(
+        [f"Ligne cible : {SECRET}", "CONSERVER_A doit rester entier", "CONSERVER_B aussi"]
+    ):
+        c.drawString(25 * mm, top_a - i * 3.5 * mm, line)
+
+    # Bloc B : interligne 2,5 mm, sous le point de rupture du resserrement.
+    c.setFont("Helvetica", 10)
+    c.drawString(25 * mm, h - 90 * mm, "Bloc B - interligne 2,5 mm :")
+    c.setFont("Helvetica", 9)
+    top_b = h - 100 * mm
+    for i, line in enumerate(
+        ["Ligne cible : CIBLE_SERREE", "FRAGILE_B est mange sous la limite", "FRAGILE_C ensuite"]
+    ):
+        c.drawString(25 * mm, top_b - i * 2.5 * mm, line)
+
+    c.setFont("Helvetica", 9)
+    c.drawString(
+        25 * mm,
+        20 * mm,
+        "Note: aucune autre fixture ne descend sous 5 mm entre deux lignes.",
+    )
+    c.showPage()
+    c.save()
+
+
 SPECS: list[FixtureSpec] = [
     FixtureSpec(
         filename="001_secret_text.pdf",
@@ -501,6 +558,11 @@ SPECS: list[FixtureSpec] = [
         filename="014_redos_bait.pdf",
         writer=write_014_redos_bait,
         description="Long repeated run that makes nested quantifiers backtrack exponentially",
+    ),
+    FixtureSpec(
+        filename="015_tight_leading.pdf",
+        writer=write_015_tight_leading,
+        description="Tight leading: the only fixture that exercises _tighten_rect_vertical",
     ),
 ]
 

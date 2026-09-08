@@ -197,6 +197,22 @@ continue to follow the user's chosen image mode on the same page.
      content that must be gone regardless of the detector's coverage, target
      it with a search, a regex, or a rectangle.
 
+5. **Very tight leading damages the line below**
+   - Text extraction reports a line box taller than the glyphs it contains.
+     `_tighten_rect_vertical` shrinks it so a redaction rectangle does not
+     spill onto the following line. Above roughly 1.1 times the font size of
+     leading, the shrunk rectangle stays clear.
+   - Below that, it does not. Measured at 9 pt: at 3.5 mm of leading the
+     tightening is what saves the next line, and at 2.5 mm the next line loses
+     words even with it. Fixture `015_tight_leading.pdf` carries both cases and
+     `test_tight_leading.py` pins them.
+   - The failure is over-redaction, not a leak: content next to the target is
+     removed, never left behind. It is still damage the operator did not ask
+     for, on a neighbouring line they may not check, so it is written down here
+     rather than left to be discovered.
+   - Dense tables and payslips are where this shows up. If a document is set
+     that tightly, read the exported file before sending it.
+
 ## Operational Recommendations
 
 For sensitive usage, prefer strict settings:
