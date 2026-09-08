@@ -5,8 +5,11 @@ toujours ses propres valeurs. C'est précisément ce qui les rend faciles à fai
 dériver sans que personne ne s'en aperçoive, et l'audit ne peut pas rattraper la
 dérive puisqu'il rejoue la même option.
 
-La règle est celle de A0 : un défaut qui caviarde moins est un défaut qui fuit.
-Chaque test ci-dessous échoue si un défaut bascule du côté qui retire moins.
+La règle n'est pas « caviarder le plus possible » mais « faire ce que la règle
+voulait dire », et les deux ne coïncident pas toujours. Retirer « Léo » pour une
+règle « Leo » est ce qui était visé ; retirer « Dupontel » pour une règle
+« Dupont » est mutiler un tiers. Là où l'intention est vraiment ambiguë, on
+retient l'option qui retire le plus.
 """
 from __future__ import annotations
 
@@ -58,18 +61,53 @@ def test_regex_without_options_folds_accents() -> None:
 
 
 @pytest.mark.integration
-def test_search_without_options_matches_inside_words() -> None:
-    """« CAT » sans options doit aussi mordre dans « CATCH ».
+def test_search_without_options_matches_whole_words_only() -> None:
+    """« CAT » sans options ne doit pas mordre dans « CATCH ».
 
-    Garde-fou contre un alignement mal orienté sur l'interface : côté UI,
-    « Sous-mot » est désactivé par défaut, ce qui vaut `whole_word: true`. Le
-    reprendre ici ferait caviarder *moins*. `whole_word` reste donc à False.
+    Deux mots différents. Apparier le second reviendrait à caviarder un terme que
+    personne n'a visé : une règle « Dupont » emportait « Dupontel », le nom de
+    quelqu'un d'autre.
     """
     out = _apply("007_whole_word_cat_catch.pdf", {"searches": [{"query": "CAT"}]})
-    assert "CAT" not in out
-    assert "CATCH" not in out
-    # Le reste de la ligne survit : c'est bien un retrait glyphe à glyphe.
-    assert "CH" in out
+    assert "CATCH" in out
+    # Le jeton isolé, lui, est bien parti.
+    assert "Standalone token: CAT" not in out
+
+
+@pytest.mark.integration
+def test_whole_word_default_still_crosses_punctuation() -> None:
+    """Ce qui rend le défaut mot-entier tenable : la ponctuation reste une frontière.
+
+    C'est la condition qui empêche `whole_word=True` de manquer les données que
+    cet outil vise. Sans elle, « Dupont » ne serait plus trouvé dans une adresse
+    e-mail ni dans un nom composé, et le défaut deviendrait une fuite.
+    """
+    import io
+
+    from reportlab.lib.pagesizes import A4
+    from reportlab.pdfgen import canvas
+
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf, pagesize=A4)
+    _, height = A4
+    c.setFont("Helvetica", 11)
+    for i, line in enumerate(
+        ["Mail : jean.dupont@example.com", "Compose : Dupont-Martin", "Elision : l'affaire Dupont"]
+    ):
+        c.drawString(60, height - 90 - i * 22, line)
+    c.showPage()
+    c.save()
+
+    resp = client.post(
+        "/redact/apply",
+        files={
+            "file": ("input.pdf", buf.getvalue(), "application/pdf"),
+            "payload": (None, json.dumps({"searches": [{"query": "Dupont"}]}), "application/json"),
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    out = extract_text(resp.content).lower()
+    assert "dupont" not in out
 
 
 @pytest.mark.integration

@@ -133,24 +133,34 @@ class AuditModel(StrictModel):
         return cleaned
 
 
-# Les deux réglages d'appariement par défaut penchent vers le sur-caviardage,
-# pour la même raison que `image_mode` en OptionsModel : l'UI envoie toujours ses
-# valeurs, donc ces défauts ne servent qu'aux appelants directs de l'API, et un
-# défaut qui caviarde moins est un défaut qui fuit en silence.
+# Ces défauts ne servent qu'aux appelants directs de l'API : l'interface envoie
+# toujours ses propres valeurs. C'est ce qui les rend faciles à faire dériver sans
+# que personne ne le voie, et l'audit ne rattrape pas la dérive puisqu'il rejoue
+# la même option.
 #
-#   whole_word=False    -> apparie aussi à l'intérieur des mots. Sur-ensemble
-#                          strict : « CAT » attrape aussi « CATCH ». NE PAS
-#                          passer à True pour « s'aligner sur l'UI » : ce serait
-#                          caviarder moins.
-#   ignore_accents=True -> « Leo » retire aussi « Léo ». Sur-ensemble strict lui
-#                          aussi. Le repliage préserve la longueur, donc la
-#                          cartographie span -> rectangle reste valide.
+# La règle n'est pas « caviarder le plus possible » mais « faire ce que la règle
+# voulait dire ». Les deux options divergent sur ce point :
 #
-# L'audit rejoue la même option : un manque ici n'est signalé par personne.
-# tests/test_api_defaults.py fige les deux.
+#   ignore_accents=True -> « Benoit » et « Benoît » sont le même nom, l'accent est
+#                          un accident d'encodage. Ne pas le retirer, c'est manquer
+#                          ce qui était visé. Le repliage préserve la longueur,
+#                          donc la cartographie span -> rectangle reste valide.
+#   whole_word=True     -> « cat » et « catch » sont deux mots différents.
+#                          Apparier le second, c'est mutiler un tiers : une règle
+#                          « Dupont » emportait « Dupontel », le nom de quelqu'un
+#                          d'autre, pendant que l'utilisateur croyait n'en viser
+#                          qu'un.
+#
+# Ce que whole_word ne coûte pas : build_whole_word_pattern pose ses frontières
+# sur \w, donc « . », « @ », « - » et « ' » restent des séparateurs. « Dupont »
+# est toujours trouvé dans « jean.dupont@example.com » et « Dupont-Martin ». Il ne
+# manque que la cible collée dans un jeton alphanumérique (« IDDUPONT123 »), forme
+# rare pour les données que cet outil vise.
+#
+# tests/test_api_defaults.py fige les deux, dans les deux sens de dérive.
 class SearchOptionsModel(StrictModel):
     case_sensitive: bool = False
-    whole_word: bool = False
+    whole_word: bool = True
     ignore_accents: bool = True
 
 
@@ -190,7 +200,8 @@ class ApplyRegexModel(StrictModel):
     patterns: list[str]
     case_sensitive: bool = False
     multiline: bool = False
-    # Voir SearchOptionsModel : sur-ensemble strict, défaut côté sur-caviardage.
+    # Voir SearchOptionsModel. Pas de `whole_word` ici, et c'est voulu : une regex
+    # est un instrument précis, celui qui l'écrit pose ses frontières lui-même.
     ignore_accents: bool = True
     scope: ScopeModel = Field(default_factory=ScopeModel)
 

@@ -64,10 +64,14 @@ override stops it from quietly leaving images intact under a black overlay.
 The rules are not a literal string comparison, and the differences are exactly
 the ones that decide whether something gets missed.
 
-- **Sub-word.** Off in the UI by default, so a rule for `CAT` leaves `CATCH`
-  alone. Turn **Subword** on and `CATCH` becomes `CH`: the match is redacted
-  glyph by glyph, not word by word.
-- **Accents.** Insensitive in the UI by default, so `Leo` also removes `Léo`;
+- **Sub-word.** Off by default, so a rule for `CAT` leaves `CATCH` alone. That
+  is deliberate: matching inside words looks like caution but takes third
+  parties with it, a rule for `Dupont` eating `Dupontel`. Punctuation still
+  counts as a boundary, so `Dupont` is found in `jean.dupont@example.com` and in
+  `Dupont-Martin`. Turn **Subword** on and `CATCH` becomes `CH`: the match is
+  then redacted glyph by glyph, not word by word.
+- **Accents.** Insensitive by default, so `Leo` also removes `Léo`, on the
+  grounds that the accent is an encoding accident rather than a different name.
   **Respect accents** turns that off. The folding is length-preserving, which is
   what keeps the offsets that map a match back to glyphs on the page valid.
 - **Several lines.** Always on for exact search and for the phone preset; a
@@ -93,11 +97,10 @@ the ones that decide whether something gets missed.
   `REDACT_REGEX_TIMEOUT`. A pattern that backtracks catastrophically returns an
   error naming it instead of freezing the app.
 
-The defaults above are the ones the UI sends. A direct API caller who omits an
-option gets the model default instead, which is chosen so that it never removes
-less than the UI would: sub-word matching is on, accent folding is on. The full
-table is in
-[SECURITY.md → Rule defaults](SECURITY.md#rule-defaults-every-one-of-them-removes-at-least-as-much-as-the-ui).
+The API applies the same defaults, so a direct caller who omits an option gets
+what the UI would have sent. The table, and why each one is set the way it is,
+are in
+[SECURITY.md → Rule defaults](SECURITY.md#rule-defaults-what-the-rule-meant-and-the-ui-agrees).
 
 ---
 

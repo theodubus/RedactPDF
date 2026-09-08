@@ -53,49 +53,70 @@ that does not redact is a default that leaks. Better to over-redact and make
 the operator run a second pass than to hand back a file that looks redacted
 and is not.
 
-### Rule defaults: every one of them removes at least as much as the UI
+That applies here because the intent is not in doubt: someone who puts a
+rectangle over an image wants what is under it gone. Where a default has to
+guess at intent instead, removing more is not automatically right; see
+[Rule defaults](#rule-defaults-what-the-rule-meant-and-the-ui-agrees) below.
+
+### Rule defaults: what the rule meant, and the UI agrees
 
 The UI picks its own matching options and always sends them explicitly, so these
 defaults only ever apply to a direct API caller who omits them. That is exactly
 what makes them easy to get wrong unnoticed, and the audit cannot catch the
 mistake: it replays the same option.
 
-The rule is the one stated above for `image_mode`. **No default may remove less
-than the UI would for the same rule text.**
+| Rule | Option | API default | UI default |
+|---|---|---|---|
+| search | `case_sensitive` | `False` | `False` |
+| search | `whole_word` | `True` | `True` (**Subword** off) |
+| search | `ignore_accents` | `True` | `True` (**Respect accents** off) |
+| regex | `case_sensitive` | `False` | `False` |
+| regex | `multiline` | `False` | `False` |
+| regex | `ignore_accents` | `True` | `True` |
 
-| Rule | Option | API default | UI default | Removes more |
-|---|---|---|---|---|
-| search | `case_sensitive` | `False` | `False` | equal |
-| search | `whole_word` | `False` | `True` (**Subword** off) | API |
-| search | `ignore_accents` | `True` | `True` (**Respect accents** off) | equal |
-| regex | `case_sensitive` | `False` | `False` | equal |
-| regex | `multiline` | `False` | `False` | equal |
-| regex | `ignore_accents` | `True` | `True` | equal |
+The two entry points now agree on every option, which is one behaviour to learn
+instead of two. `backend/tests/test_api_defaults.py` pins them by behaviour
+rather than by reading the field, so a flip in either direction fails the suite.
 
-Both non-equal cases lean the same way, and both are deliberate:
+#### The rule is not "remove as much as possible"
 
-- `whole_word=False` matches inside words, which is a strict superset of
-  whole-word matching. **Do not "align this with the UI".** The UI ships
-  **Subword** off, which is `whole_word: true`, and copying that here would make
-  the API remove less.
-- `ignore_accents=True` makes a rule for `Leo` also remove `Léo`, again a strict
-  superset. It was `False` until it was measured: with the old default, a rule
-  for `Benoit` left `Benoît` in the output, returned HTTP 200, and reported
-  nothing, because the audit replayed the same accent-sensitive setting. The
-  cost of the current default is over-redaction, visible and fixable in a second
-  pass: a rule for `resume` now also removes `résumé`.
+That was the first formulation, and it is wrong. The rule is **do what the rule
+was asking for**, and only where the intent is genuinely ambiguous fall back on
+removing more. The two matching options land on opposite sides of that test,
+which is why they do not both point the same way:
 
-`backend/tests/test_api_defaults.py` pins both, by behaviour rather than by
-reading the field, so a flip in either direction fails the suite.
+- **`ignore_accents=True`.** `Benoit` and `Benoît` are the same name; the accent
+  is an encoding accident. Leaving the accented form is a failure to do what was
+  asked. Measured before the change: a rule for `Benoit` left `Benoît` in the
+  output, returned HTTP 200, and reported nothing, because the audit replayed the
+  same accent-sensitive setting. The cost of folding is mild over-redaction, of
+  the kind a second pass fixes: a rule for `resume` also removes `résumé`.
+- **`whole_word=True`.** `cat` and `catch` are different words. Matching the
+  second is not caution, it is damage to a third party: a rule for `Dupont` used
+  to take `Dupontel` with it, someone else's name, while the operator believed
+  they had targeted one person.
 
-Two fields do not exist rather than having a default. Exact search has no
-`multiline`: it always crosses line breaks, under the same geometric constraints
-as the regex engine (see limitation 3 below), because a multi-word query
-hyphenated at the end of a line would otherwise be unfindable by the engine
-while remaining visible to the audit. Regex rules have no `whole_word`: the UI
-implements that option by wrapping the pattern in `(?<!\w)…(?!\w)` before
-sending it, so a direct API caller who wants word boundaries writes them into the
-pattern. Presets take no matching options at all, only a page scope.
+What makes the whole-word default safe rather than a leak is where the
+boundaries fall. `build_whole_word_pattern` anchors on `\w`, so `.`, `@`, `-`
+and `'` all count as separators. `Dupont` is still found inside
+`jean.dupont@example.com`, `Dupont-Martin` and `l'affaire Dupont`. The only shape
+it misses is a target glued inside an alphanumeric token, `IDDUPONT123`, which is
+rare for the data this tool targets: names, addresses, phone numbers and card
+numbers all carry separators. A caller who needs that case turns the option off
+explicitly, and the UI exposes it as **Subword**.
+
+#### Fields that do not exist, rather than having a default
+
+Exact search has no `multiline`: it always crosses line breaks, under the same
+geometric constraints as the regex engine (see limitation 3 below), because a
+multi-word query hyphenated at the end of a line would otherwise be unfindable by
+the engine while remaining visible to the audit.
+
+Regex rules have no `whole_word`, deliberately. A regular expression is a precise
+instrument and whoever writes one places their own boundaries; the UI implements
+its **Subword** toggle for regex rules by wrapping the pattern in
+`(?<!\w)…(?!\w)` before sending it. Presets take no matching options at all,
+only a page scope.
 
 One default is knowingly left on the permissive side: the optional `audit` block,
 where a caller supplies extra patterns that must not appear in the output, is
