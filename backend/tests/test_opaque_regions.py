@@ -167,3 +167,28 @@ def test_a_geometric_rule_covering_the_region_unlocks_block_mode() -> None:
         },
     )
     assert resp.status_code == 200, resp.text
+
+
+@pytest.mark.integration
+def test_a_rectangle_that_does_not_quite_cover_still_reports() -> None:
+    """Régression : le seuil par ratio de surface laissait passer une bande lisible.
+
+    La première version acceptait une couverture de 95 % de la *surface*. Mesuré
+    sur une zone de 320 x 120 pt, cela laissait dépasser une bande de 16 pt de
+    large sur toute la hauteur, soit trois caractères en corps 9, sans un mot.
+    La surface ignore la forme ; on exige donc un rectangle qui contienne la zone.
+    """
+    pdf = _scan()
+    first = _post(pdf, {"searches": [{"query": "Dupont"}]})
+    x0, y0, x1, y1 = first.json()["detail"]["regions"][0]["bbox"]
+
+    resp = _post(
+        pdf,
+        {
+            "searches": [{"query": "Dupont"}],
+            "options": {"image_regions": "block"},
+            # Il manque seize points sur la droite.
+            "rects": [{"page": 0, "x0": x0, "y0": y0, "x1": x1 - 16, "y1": y1}],
+        },
+    )
+    assert resp.status_code == 409, resp.text

@@ -42,9 +42,15 @@ MIN_PAGE_SHARE = 0.005
 # règles lisent ce qui est écrit dessus, l'image ne cache rien.
 MAX_TEXT_RATIO = 0.05
 
-# Une zone couverte à ce point par une règle géométrique est traitée : l'utilisateur
-# a dessiné dessus, il n'y a plus rien à lui signaler.
-MIN_COVER_RATIO = 0.95
+# Marge tolérée sur chaque bord quand on juge qu'un rectangle couvre une zone.
+# Deux points : de quoi absorber un tracé à la main imprécis, pas de quoi laisser
+# passer un caractère, qui fait environ 5 x 9 points en corps 9.
+#
+# Ce seuil a d'abord été un ratio de surface, à 95 %. C'était faux : la surface
+# ignore la forme. Mesuré sur le bloc d'identité de docs/demo-invoice.pdf, une
+# bande non couverte de 16 x 120 points, soit trois caractères de large sur toute
+# la hauteur, restait sous les 5 % et éteignait le signalement en silence.
+COVER_TOLERANCE_PT = 2.0
 
 
 @dataclass(frozen=True)
@@ -134,22 +140,42 @@ def drop_covered(
     regions: list[OpaqueRegion],
     covering: list[tuple[int, tuple[float, float, float, float]]],
     *,
-    min_cover: float = MIN_COVER_RATIO,
+    tolerance: float = COVER_TOLERANCE_PT,
 ) -> list[OpaqueRegion]:
-    """Retire les zones qu'une règle géométrique traite déjà.
+    """Retire les zones qu'un rectangle recouvre **entièrement**.
 
     C'est ce qui rend le contrôle vivable : le geste naturel devant un
     signalement, dessiner un rectangle, l'éteint définitivement pour cette zone.
+
+    On exige qu'un **seul** rectangle contienne la zone, à la tolérance près,
+    plutôt qu'une somme de surfaces. Deux rectangles qui se partagent une zone ne
+    l'éteignent donc pas, et c'est volontaire : rien ne garantit qu'ils se
+    touchent, et l'interstice est précisément là où un caractère survit. Le coût
+    est un signalement de trop, que l'utilisateur lève en agrandissant son
+    rectangle ou en l'acquittant.
     """
     remaining: list[OpaqueRegion] = []
     for region in regions:
-        rect = pymupdf.Rect(region.bbox)
-        area = abs(rect)
-        if area <= 0:
-            continue
-        covered = sum(
-            abs(rect & pymupdf.Rect(box)) for page, box in covering if page == region.page
+        x0, y0, x1, y1 = region.bbox
+        core = pymupdf.Rect(
+            x0 + tolerance, y0 + tolerance, x1 - tolerance, y1 - tolerance
         )
-        if covered / area < min_cover:
+        if core.is_empty:  # zone plus petite que la tolérance : rien à protéger
+            continue
+
+        covered = any(
+            page == region.page and _contains(pymupdf.Rect(box), core)
+            for page, box in covering
+        )
+        if not covered:
             remaining.append(region)
     return remaining
+
+
+def _contains(outer: pymupdf.Rect, inner: pymupdf.Rect) -> bool:
+    return bool(
+        inner.x0 >= outer.x0
+        and inner.y0 >= outer.y0
+        and inner.x1 <= outer.x1
+        and inner.y1 <= outer.y1
+    )

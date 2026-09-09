@@ -166,6 +166,14 @@ caller never expected the engine to read anything.
 The acknowledgement travels in the request and the server recomputes the regions
 to check it against. Left to the client, it would be enough to send nothing.
 
+A region counts as handled only when a **single** rectangle contains it, within
+two points on each edge. An earlier version accepted 95 % of the area covered,
+which is wrong because area ignores shape: measured on a 320x120 pt scanned
+block, a 16 pt strip along one edge stayed under the threshold and silenced the
+warning, while a character at 9 pt is about 5x9 pt. Two rectangles meeting in
+the middle do not count either, since nothing guarantees they touch and the seam
+is exactly where a character survives.
+
 `block` is not a stricter policy than `review`, it is the variant for callers
 with no interface. The 409 is distinct from the 400 that means targeted content
 survived: a script can tell "unresolved region" from "leak" without parsing the
