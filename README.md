@@ -6,7 +6,7 @@ that content removed from the document, not hidden under a black rectangle.
 
 Nothing is uploaded. No network calls, no account, no telemetry. Download a
 binary for Windows or Linux, or `pipx install redactpdf` on any machine that has
-Python.
+Python. Nothing else to install, text recognition for images included.
 
 <p align="center">
   <video src="https://github.com/user-attachments/assets/8b4716d7-e6f8-445f-8d00-09b00af840f0" controls width="820">

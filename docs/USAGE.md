@@ -205,16 +205,32 @@ Consequences per mode, which is where the honesty lives:
 | Block | Still refused. An area a rough detector has been over is not an area that was read. |
 | Ignore | Suggestions are applied and the file comes back with no review at all. |
 
+The detector runs on **every** image, including ones too small to be worth a
+review screen. The size threshold decides what you are shown, not what is read: a
+letterhead logo does not deserve a confirmation screen, but it can carry an
+employer name, and reading it costs about a tenth of a second (measured on a real
+payslip: a 202x122 logo, 0.11 s, "REPUBLIQUE FRANCAISE" read).
+
 That last row is the risky one, and the app warns you before exporting rather
 than afterwards: you get black boxes over a scan, which looks handled, while only
 what a rough detector happened to find actually is. A document that looks handled
 is sometimes worse than one you know is not.
 
-The detector is never bundled. It uses a system Tesseract, and the option is
-greyed out with an explanation when none is installed (on Debian or Ubuntu:
-`apt install tesseract-ocr tesseract-ocr-fra`). Bundling it would add about 22 MB
-of native dependency to a binary whose whole promise is one file with nothing to
-install, for a feature that carries no guarantee.
+Nothing to install. The engine already travels inside PyMuPDF, so only the
+language models were missing, and **French and English ship with the app**, in
+the binary and in the wheel alike. That is 5 MB, not the 22 MB a system package
+weighs, because the 22 MB includes an engine we already have.
+
+Only those two languages **for now**. It is a choice about who uses the tool
+today, not a technical limit: adding one is dropping a `.traineddata` file into
+`backend/redactpdf/_tessdata` and recording its hash. A language installed on the
+machine is used as a fallback, so a Tesseract you already have keeps working.
+
+The pair matters more than it looks. Measured on a French transcript, the French
+model **alone** read "BULLE CUT" where French plus English reads "BULLETIN
+CUMULATIF", which is why both ship and why both are used by default. The
+higher-accuracy `tessdata_best` models were tested too: not one extra word, four
+times slower, four times larger. Not shipped.
 
 An image repeated across pages, a header banner for instance, is one screen and
 not one per page. Grouping needs both the same pixels (a hash of them, so only

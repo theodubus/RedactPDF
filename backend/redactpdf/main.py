@@ -24,6 +24,7 @@ from redactpdf.pipeline import (
     SearchRequest,
     apply_plan,
     audit_plan,
+    ocr_targets,
     plan_redactions,
     readable_view,
     unreadable_fonts,
@@ -450,14 +451,19 @@ async def redact_apply(
             )
             fonts = unreadable_fonts(view, plan, has_textual_rules=has_textual_rules)
 
-            if wants_ocr and unresolved:
-                # Sur les zones que les règles n'ont pas pu lire, et sur elles
-                # seules : ailleurs le texte est déjà lu, mieux et pour de vrai.
+            if wants_ocr:
+                # Sur **toutes** les images, pas seulement celles que la revue
+                # signale : le seuil de revue décide de ce qu'on montre, pas de ce
+                # qu'on lit, et un logo sous le seuil coûte un dixième de seconde
+                # à lire. Non filtré par les acquittements non plus : avoir
+                # regardé une image ne rend pas sa lecture inutile, et les deux
+                # requêtes d'un aller-retour de revue doivent proposer pareil.
+                #
                 # Tourne **avant** le 409 pour que la revue montre ce qui est déjà
                 # proposé, ce qui est tout l'intérêt annoncé de la combinaison.
                 ocr_proposals = propose_from_regions(
                     view,
-                    unresolved,
+                    ocr_targets(view, plan),
                     searches=[
                         SearchOptions(
                             query=s.query,

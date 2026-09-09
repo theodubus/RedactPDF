@@ -8,6 +8,7 @@ import pymupdf
 
 from redactpdf.audit import AuditOptions, audit_pdf_text, build_audit_for_search
 from redactpdf.multiline_regex_engine import find_redaction_rectangles_by_regex
+from redactpdf.ocr import OCR_MIN_PAGE_SHARE
 from redactpdf.opaque import (
     OpaqueRegion,
     UnreliableFont,
@@ -345,6 +346,24 @@ def unresolved_opaque_regions(
     # Une zone déjà couverte par une règle géométrique est traitée. C'est ce qui
     # rend le contrôle vivable : le geste naturel devant un signalement, dessiner
     # un rectangle, l'éteint pour de bon.
+    covering = [(r.page, (r.x0, r.y0, r.x1, r.y1)) for r in plan.manual + plan.full_page]
+    return drop_covered(regions, covering)
+
+
+def ocr_targets(pdf_bytes: bytes, plan: PlanResult) -> list[OpaqueRegion]:
+    """Les images sur lesquelles lancer le détecteur, seuil de revue mis à part.
+
+    Volontairement plus large que `unresolved_opaque_regions` : le seuil de revue
+    décide de ce qu'on **montre** à l'utilisateur, pas de ce qu'on lit. Un logo
+    sous le seuil ne mérite pas un écran de relecture, mais rien n'empêche d'y
+    lire un nom d'employeur au passage, et ça coûte un dixième de seconde.
+
+    Filtré par `drop_covered` comme le reste : inutile de lire sous un rectangle
+    qui va tout recouvrir.
+    """
+    regions = find_opaque_regions(pdf_bytes, min_share=OCR_MIN_PAGE_SHARE)
+    if not regions:
+        return []
     covering = [(r.page, (r.x0, r.y0, r.x1, r.y1)) for r in plan.manual + plan.full_page]
     return drop_covered(regions, covering)
 

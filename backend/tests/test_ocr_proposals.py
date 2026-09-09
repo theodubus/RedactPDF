@@ -11,6 +11,7 @@ que d'échouer à l'export.
 from __future__ import annotations
 
 import json
+import pathlib
 
 import pymupdf
 import pytest
@@ -238,3 +239,92 @@ def test_config_tells_the_ui_whether_it_can_offer_the_option() -> None:
 
     assert body["ocr_available"] is ocr.is_available()
     assert isinstance(body["ocr_languages"], list)
+
+
+@pytest.mark.unit
+def test_the_language_models_are_the_ones_we_shipped() -> None:
+    """Contrat sur les octets, comme pour les fixtures PDF.
+
+    Ces fichiers sont binaires et versionnés. `.gitattributes` les marque
+    `binary` précisément parce qu'une conversion de fin de ligne les corromprait
+    en silence sur un checkout Windows, et un modèle corrompu ne lève pas : il
+    lit mal, ce qui est le pire des deux.
+    """
+    import hashlib
+
+    directory = pathlib.Path(__file__).resolve().parents[1] / "redactpdf" / "_tessdata"
+    expected = {}
+    for line in (directory / "SHA256SUMS").read_text().splitlines():
+        digest, name = line.split()
+        expected[name.lstrip("*")] = digest
+
+    assert expected, "SHA256SUMS ne doit pas être vide"
+    for name, digest in expected.items():
+        actual = hashlib.sha256((directory / name).read_bytes()).hexdigest()
+        assert actual == digest, f"{name} ne correspond plus à son empreinte"
+
+
+@pytest.mark.unit
+def test_the_bundled_models_are_preferred_over_a_system_install() -> None:
+    """L'embarqué passe devant : c'est le seul dont on connaît la variante.
+
+    Les mesures de qualité citées dans le module portent sur `tessdata_fast`
+    version connue ; un tesseract système d'une autre variante les invaliderait
+    sans prévenir.
+    """
+    from redactpdf.paths import bundled_tessdata
+
+    bundled = bundled_tessdata()
+    assert bundled is not None, "les modèles doivent voyager avec le paquet"
+    assert ocr.tessdata_dir() == str(bundled)
+    assert {"fra", "eng"} <= set(ocr.available_languages())
+
+
+@pytest.mark.unit
+def test_a_missing_language_does_not_take_the_others_down_with_it() -> None:
+    """Demander une langue absente ferait échouer la reconnaissance entière.
+
+    Tesseract accepte plusieurs modèles séparés par `+` ; on ne garde que ceux
+    qui sont là, plutôt que de transmettre une liste dont un élément n'existe pas.
+    """
+    assert ocr.resolve_language("fra+eng") == "fra+eng"
+    assert ocr.resolve_language("deu") == ocr.DEFAULT_LANGUAGE
+    assert ocr.resolve_language("fra+deu") == "fra"
+
+
+@pytest.mark.integration
+def test_an_image_below_the_review_threshold_is_still_read() -> None:
+    """Le seuil décide de ce qu'on montre, pas de ce qu'on lit.
+
+    Un logo ne mérite pas un écran de relecture, mais il peut porter un nom
+    d'employeur, et le lire coûte un dixième de seconde. Mesuré sur une fiche de
+    paie réelle : logo de 202 x 122 px, 0,11 s, « REPUBLIQUE FRANCAISE » lu.
+    """
+    source = pymupdf.open()
+    page = source.new_page()
+    page.insert_text((60, 120), TARGET, fontsize=28)
+    pix = page.get_pixmap(dpi=200)
+    source.close()
+
+    doc = pymupdf.open()
+    dest = doc.new_page()
+    # Un dixième de la largeur : bien en dessous de MIN_PAGE_SHARE, donc jamais
+    # signalé à la relecture.
+    dest.insert_image(pymupdf.Rect(20, 20, 80, 50), pixmap=pix)
+    pdf = doc.tobytes()
+    doc.close()
+
+    from redactpdf.opaque import find_opaque_regions
+
+    assert find_opaque_regions(pdf) == [], "cette image doit rester sous le seuil de revue"
+
+    resp = _post(
+        pdf,
+        {
+            "searches": [{"query": TARGET}],
+            "options": {"image_regions": "review", "ocr_proposals": True},
+        },
+    )
+
+    assert resp.status_code == 200, resp.text[:200]
+    assert int(resp.headers["X-Redaction-Ocr-Proposals"]) >= 1

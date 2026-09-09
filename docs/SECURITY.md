@@ -232,6 +232,21 @@ Three properties hold in code, not just in intent:
   report afterwards, since that is the only moment the user can still change
   their mind.
 
+Two shapes of image text are beyond it, both measured rather than assumed:
+
+- **Faint, large, rotated text**, the classic diagonal watermark. Measured on a
+  real transcript: 12 % contrast (224 to 255 out of 255), about 35 degrees of
+  rotation, letters 250 px tall, drawn over a logo. Rotating the image back,
+  raising contrast, and auto-contrast were all tried, alone and combined; none
+  found it, and contrast enhancement destroyed everything else on the page.
+  Tesseract looks for lines of text, and one giant oblique word at 12 % contrast
+  is not one.
+- **Anything the models do not cover.** Only French and English ship today.
+
+Neither is a hole in the guarantee, because the guarantee never covered this
+detector. The real safety net is unchanged: the area is still reported for human
+review, and a suggestion does not remove that.
+
 **Vector graphics are not covered.** The detector looks at raster images only. A
 chart drawn as lines and paths, a vector logo, and above all text converted to
 outlines are all invisible to the text rules and equally invisible to this check.

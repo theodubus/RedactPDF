@@ -123,19 +123,22 @@ npm test              # vitest
 npm run build
 ```
 
-### Tests that need Tesseract
+### The bundled language models
 
-`tests/test_ocr_proposals.py` skips itself when no system Tesseract is installed,
-which is the case in CI and for most users, since the app never bundles one. To
-run them locally on Debian or Ubuntu:
+`backend/redactpdf/_tessdata/*.traineddata` are versioned binary assets, not
+build products. Nothing stages them: they live in the package, so a source
+checkout and an installed wheel find them at the same path, and only the frozen
+bundle needs the extra line in `packaging/redactpdf.spec`.
 
-```bash
-apt install tesseract-ocr tesseract-ocr-fra
-```
+`tests/test_ocr_proposals.py` therefore runs everywhere rather than skipping, and
+`smoke_test_app.py` additionally checks that the models really travel with an
+installed wheel, which is the part pytest cannot see because it always runs from
+the checkout.
 
-Skipping is the honest default here: the feature disables itself the same way in
-the app, so a machine without Tesseract exercises the disabled path, which is
-also worth having covered.
+Their SHA-256s are in `_tessdata/SHA256SUMS` and a test asserts them. A mangled
+model does not raise, it just reads badly, which is why they are marked `binary`
+in `.gitattributes` like the PDF fixtures. To add a language: drop the
+`.traineddata` in, append its hash, and mention it in `PROVENANCE.md`.
 
 ### The phone preview is checked against the backend, not trusted
 

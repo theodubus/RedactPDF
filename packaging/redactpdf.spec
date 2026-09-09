@@ -12,7 +12,15 @@ ROOT = Path(SPECPATH).resolve().parent  # noqa: F821  (SPECPATH is injected by P
 
 # The UI is served same-origin from inside the bundle; app/paths.py looks it up
 # at "frontend/dist" relative to the extraction dir, so keep that layout here.
-datas = [(str(ROOT / "frontend" / "dist"), "frontend/dist")]
+datas = [
+    (str(ROOT / "frontend" / "dist"), "frontend/dist"),
+    # Les modèles de langue de l'OCR. Le moteur, lui, arrive déjà dans le
+    # `_mupdf.so` de PyMuPDF : il n'y a ni binaire ni bibliothèque native à
+    # ajouter, seulement ces 5 Mo de données. `redactpdf/paths.py` les cherche
+    # sous ce nom relatif dans le répertoire d'extraction, donc ne pas le changer
+    # sans le changer là-bas aussi.
+    (str(ROOT / "backend" / "redactpdf" / "_tessdata"), "redactpdf/_tessdata"),
+]
 
 hiddenimports = [
     # uvicorn resolves its protocol/loop/lifespan implementations by string at

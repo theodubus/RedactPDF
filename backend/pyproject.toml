@@ -108,7 +108,9 @@ packages = ["redactpdf"]
 
 [tool.setuptools.package-data]
 # L'UI construite, recopiée depuis frontend/dist par scripts/build_package.py.
-redactpdf = ["_frontend/**"]
+# Les modèles de langue, eux, sont versionnés : ce ne sont pas des produits de
+# construction, rien ne les met en place, ils sont simplement dans le paquet.
+redactpdf = ["_frontend/**", "_tessdata/*.traineddata", "_tessdata/*.md", "_tessdata/SHA256SUMS"]
 
 [tool.pytest.ini_options]
 markers = [

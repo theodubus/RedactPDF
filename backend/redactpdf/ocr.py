@@ -39,22 +39,41 @@ tesseract système et on se désactive proprement s'il est absent.
 """
 from __future__ import annotations
 
+import pathlib
 from collections.abc import Sequence
 from dataclasses import dataclass
 
 import pymupdf
 
 from redactpdf.opaque import OpaqueRegion
+from redactpdf.paths import bundled_tessdata
 from redactpdf.presets import find_redaction_rectangles_for_presets
 from redactpdf.redaction import RedactionRect
 from redactpdf.regex_guard import RegexBudget
 from redactpdf.search import SearchOptions, find_redaction_rectangles
 
-# Langue par défaut : le projet est francophone et sa région téléphone par défaut
-# l'est aussi. Retombe sur l'anglais si le français n'est pas installé, plutôt que
-# d'échouer sur une langue absente.
-DEFAULT_LANGUAGE = "fra"
+# Défaut mesuré, pas supposé. Le modèle français **seul** lit « BULLE CUT » là où
+# le couple lit « BULLETIN CUMULATIF », sur un titre pourtant français : le
+# détecteur travaille sur des formes, et deux modèles votent mieux qu'un. Coût
+# constaté 1,25 s contre 0,91 s, soit un tiers de plus pour des mots trouvés que
+# le français seul ratait.
+#
+# Testé aussi `tessdata_best` : aucun mot de plus, 4,92 s au lieu de 1,21 s et
+# 19 Mo au lieu de 5. Écarté.
+DEFAULT_LANGUAGE = "fra+eng"
 FALLBACK_LANGUAGE = "eng"
+
+# Le détecteur passe sur **toutes** les images, pas seulement sur celles que la
+# revue signale. `MIN_PAGE_SHARE` répond à « faut-il déranger l'utilisateur avec
+# cette image » ; ici la question est « peut-on lire quelque chose dedans », et
+# elle n'a pas le même seuil. Mesuré : le logo d'une fiche de paie, 202 x 122
+# pixels, coûte 0,11 s et rend « Liberté Egalité Fraternité REPUBLIQUE
+# FRANCAISE ». Le coût suit le nombre de pixels, et ces images sont petites par
+# définition, donc élargir ne coûte presque rien.
+#
+# Un plancher subsiste quand même : une image d'un pixel ne porte rien, et lancer
+# un OCR dessus n'est pas gratuit, seulement bon marché.
+OCR_MIN_PAGE_SHARE = 0.0002
 
 
 @dataclass(frozen=True)
@@ -87,19 +106,32 @@ class OcrProposal:
         )
 
 
-def available_languages() -> list[str]:
-    """Les langues qu'un tesseract système propose, vide s'il n'y en a pas."""
-    try:
-        tessdata = pymupdf.get_tessdata()
-    except Exception:
-        return []
-    if not tessdata:
-        return []
-    import pathlib
+def tessdata_dir() -> str | None:
+    """Le répertoire de modèles à utiliser, embarqué de préférence.
 
+    L'embarqué passe devant le système : c'est celui dont on connaît la variante
+    et l'empreinte, donc le seul sur lequel les mesures de qualité citées plus
+    haut valent quelque chose. Le système reste en repli, pour la machine qui a
+    déjà une langue qu'on n'embarque pas.
+    """
+    bundled = bundled_tessdata()
+    if bundled is not None:
+        return str(bundled)
     try:
-        return sorted(p.stem for p in pathlib.Path(str(tessdata)).glob("*.traineddata"))
+        found = pymupdf.get_tessdata()
     except Exception:
+        return None
+    return str(found) if found else None
+
+
+def available_languages() -> list[str]:
+    """Les langues effectivement utilisables, vide s'il n'y en a aucune."""
+    directory = tessdata_dir()
+    if not directory:
+        return []
+    try:
+        return sorted(p.stem for p in pathlib.Path(directory).glob("*.traineddata"))
+    except OSError:
         return []
 
 
@@ -113,14 +145,23 @@ def is_available() -> bool:
 
 
 def resolve_language(requested: str | None) -> str | None:
-    """La langue à utiliser, ou None si aucune n'est utilisable."""
-    langs = available_languages()
+    """La langue à utiliser, ou None si aucune n'est utilisable.
+
+    Tesseract accepte plusieurs modèles séparés par `+`, et c'est le défaut ici.
+    On filtre sur ce qui est réellement présent : demander une langue absente
+    fait échouer la reconnaissance entière, y compris pour les langues qui, elles,
+    étaient là.
+    """
+    langs = set(available_languages())
     if not langs:
         return None
     for candidate in (requested, DEFAULT_LANGUAGE, FALLBACK_LANGUAGE):
-        if candidate and candidate in langs:
-            return candidate
-    return langs[0]
+        if not candidate:
+            continue
+        kept = [part for part in candidate.split("+") if part in langs]
+        if kept:
+            return "+".join(kept)
+    return sorted(langs)[0]
 
 
 def _page_from_unit(
@@ -172,7 +213,7 @@ def _ocr_region(doc: pymupdf.Document, region: OpaqueRegion, language: str) -> b
         # le tampon rendu est adossé au Pixmap, et le laisser mourir dans
         # l'expression rend un PDF tronqué. Mesuré : 124 caractères lus au lieu
         # de 342, sans la moindre erreur levée.
-        return bytes(pix.pdfocr_tobytes(language=language))
+        return bytes(pix.pdfocr_tobytes(language=language, tessdata=tessdata_dir()))
     except Exception:
         return None
 

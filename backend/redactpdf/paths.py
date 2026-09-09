@@ -8,6 +8,12 @@ from pathlib import Path
 # construction du paquet ; il est ignoré par git.
 _PACKAGE_UI_DIR = "_frontend"
 
+# Données de langue Tesseract embarquées. Contrairement à l'UI, ce ne sont pas
+# des produits de construction mais des ressources versionnées : elles vivent
+# dans le paquet, donc le dépôt source et la roue installée partagent le même
+# chemin, et seul le gel PyInstaller en diffère.
+_PACKAGE_TESSDATA_DIR = "_tessdata"
+
 
 def is_frozen() -> bool:
     """True when running from a PyInstaller bundle rather than a source checkout."""
@@ -60,3 +66,38 @@ def frontend_dist() -> Path:
         return packaged
 
     return repo
+
+
+def bundled_tessdata() -> Path | None:
+    """Les données de langue embarquées, ou None si elles manquent.
+
+    Le moteur d'OCR est déjà dans PyMuPDF (vérifié en cachant le binaire
+    `tesseract` : la reconnaissance continue de marcher). Seules les données de
+    langue manquaient, et elles pèsent 5 Mo pour `fra` et `eng`, pas les 22 Mo du
+    paquet système que j'avais mesurés à tort. À ce prix-là, obliger un
+    utilisateur non technique à lancer un `apt install` pour une application
+    livrée en un fichier n'avait aucune justification.
+
+    Rend None plutôt que de lever : l'absence est un cas normal (dépôt sans les
+    fichiers), et `ocr.py` retombe alors sur un Tesseract système.
+    """
+    bundle = getattr(sys, "_MEIPASS", None)
+    if bundle is not None:
+        frozen = Path(bundle) / "redactpdf" / _PACKAGE_TESSDATA_DIR
+        return frozen if _has_language_data(frozen) else None
+
+    packaged = Path(__file__).resolve().parent / _PACKAGE_TESSDATA_DIR
+    return packaged if _has_language_data(packaged) else None
+
+
+def _has_language_data(directory: Path) -> bool:
+    """Un répertoire vide ne vaut pas mieux qu'un répertoire absent.
+
+    Tesseract lit `<langue>.traineddata` dans le dossier qu'on lui donne ; lui en
+    désigner un qui n'en contient aucun échouerait à l'export au lieu de laisser
+    le repli système jouer.
+    """
+    try:
+        return any(directory.glob("*.traineddata"))
+    except OSError:
+        return False
