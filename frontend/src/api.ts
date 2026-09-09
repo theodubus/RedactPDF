@@ -143,19 +143,25 @@ export async function redactApply(params: {
 
   const hasPresets = params.presets.length > 0;
 
+  // Une option non fournie est **omise**, jamais remplie ici. Le backend a ses
+  // propres défauts, tous du côté qui caviarde ; les redéfinir de ce côté-ci en
+  // ferait une seconde copie à faire dériver, et la version précédente penchait
+  // du mauvais côté : `image_mode` retombait sur "none" et les trois drapeaux
+  // d'assainissement sur `false`, c'est-à-dire l'inverse du défaut serveur.
+  const options: Record<string, unknown> = {};
+  if (params.imageMode !== undefined) options.image_mode = params.imageMode;
+  if (params.applyGraphics !== undefined) options.apply_graphics = params.applyGraphics;
+  if (params.sanitizeMetadata !== undefined) options.sanitize_metadata = params.sanitizeMetadata;
+  if (params.removeAnnotations !== undefined) options.remove_annotations = params.removeAnnotations;
+  if (params.removeAttachments !== undefined) options.remove_attachments = params.removeAttachments;
+
   const payload = {
     rects: params.rects,
     full_page_rects: params.fullPageRects ?? [],
     searches,
     regexes,
     presets: hasPresets ? { presets: params.presets, scope: { pages: null as null } } : null,
-    options: {
-      image_mode: params.imageMode ?? "none",
-      apply_graphics: !!params.applyGraphics,
-      sanitize_metadata: !!params.sanitizeMetadata,
-      remove_annotations: !!params.removeAnnotations,
-      remove_attachments: !!params.removeAttachments,
-    },
+    options,
     // audit additionnel facultatif : on laisse null (audit_plan gère déjà search/regex/presets)
     audit: null,
   };
