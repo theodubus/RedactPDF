@@ -42,6 +42,18 @@ export async function fetchConfig(): Promise<ServerConfig> {
   };
 }
 
+/** Le corps d'un 400 « document chiffré », enveloppé ou non par FastAPI. */
+export function encryptedReason(body: unknown): "password_required" | "password_incorrect" | null {
+  if (typeof body !== "object" || body === null) return null;
+  const wrapped = (body as { detail?: unknown }).detail;
+  const detail = (typeof wrapped === "object" && wrapped !== null ? wrapped : body) as {
+    status?: unknown;
+    reason?: unknown;
+  };
+  if (detail.status !== "encrypted") return null;
+  return detail.reason === "password_incorrect" ? "password_incorrect" : "password_required";
+}
+
 export type PresetKey = "email" | "phone" | "credit_card";
 
 export type ImageMode = "none" | "remove" | "pixels";
@@ -136,6 +148,8 @@ export async function redactApply(params: {
   // zones pour les vérifier : envoyer n'importe quoi ne débloque rien.
   acknowledgedRegions?: { page: number; bbox: number[] }[];
   acknowledgedFontPages?: number[];
+  /** Mot de passe d'ouverture, uniquement pour un document chiffré. */
+  password?: string;
 }): Promise<RedactSuccess> {
   const form = new FormData();
   form.append("file", params.file);
@@ -197,6 +211,7 @@ export async function redactApply(params: {
     audit: null,
     acknowledged_regions: params.acknowledgedRegions ?? [],
     acknowledged_font_pages: params.acknowledgedFontPages ?? [],
+    ...(params.password ? { password: params.password } : {}),
   };
 
   form.append("payload", JSON.stringify(payload));

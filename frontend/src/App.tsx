@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useI18n } from "./i18nContext";
-import { fetchConfig, FALLBACK_REGION, redactApply, RedactApiError } from "./api";
+import { encryptedReason, fetchConfig, FALLBACK_REGION, redactApply, RedactApiError } from "./api";
 import { ReviewCarousel } from "./review/ReviewCarousel";
 import { useReviewDocument } from "./review/useReviewDocument";
 import { serverReviewItems, toAcknowledgements } from "./review/reviewItems";
@@ -14,6 +14,7 @@ import { ImageModeSection } from "./components/ImageModeSection";
 import { ImageRegionsSection } from "./components/ImageRegionsSection";
 import { OcrSection } from "./components/OcrSection";
 import { OcrWarningModal } from "./components/OcrWarningModal";
+import { PasswordModal } from "./components/PasswordModal";
 import { ResultPanel } from "./components/ResultPanel";
 import { PdfViewer } from "./components/PdfViewer";
 
@@ -50,6 +51,10 @@ export default function App() {
   const [ocrProposals, setOcrProposals] = useState(false);
   const [ocrAvailable, setOcrAvailable] = useState(false);
   const [ocrWarning, setOcrWarning] = useState(false);
+  // Mot de passe d'un document chiffré : gardé en mémoire le temps de la session
+  // de travail sur ce fichier, jamais persisté.
+  const [password, setPassword] = useState<string | null>(null);
+  const [passwordPrompt, setPasswordPrompt] = useState<null | { wrong: boolean }>(null);
 
   // Revue avant export : uniquement ce que le moteur n'a pas su lire, connu après
   // un 409. Les rectangles dessinés n'y défilent pas, ils s'y affichent comme
@@ -286,7 +291,7 @@ export default function App() {
     void runExport();
   };
 
-  const runExport = async (items?: ReviewItem[]) => {
+  const runExport = async (items?: ReviewItem[], passwordOverride?: string) => {
     if (!file) return;
 
     setErrorInfo(null);
@@ -310,6 +315,7 @@ export default function App() {
         removeAttachments: true,
         acknowledgedRegions: acks?.acknowledged_regions,
         acknowledgedFontPages: acks?.acknowledged_font_pages,
+        password: passwordOverride ?? password ?? undefined,
       });
 
       downloadBlob(r.pdfBlob, "redacted.pdf");
@@ -323,6 +329,13 @@ export default function App() {
       // 409 sur une requête qui en portait déjà signale que les acquittements ne
       // correspondent pas à ce que le serveur recalcule : le rouvrir bouclerait
       // sans fin, mieux vaut montrer l'erreur.
+      // Chiffré : ce n'est pas une erreur à afficher mais une question à poser.
+      const encrypted = err instanceof RedactApiError ? encryptedReason(err.report) : null;
+      if (encrypted) {
+        setPasswordPrompt({ wrong: encrypted === "password_incorrect" });
+        return;
+      }
+
       if (
         err instanceof RedactApiError &&
         err.status === 409 &&
@@ -348,6 +361,19 @@ export default function App() {
   return (
     <div className="page pageLayout">
       <input ref={fileInputRef} type="file" accept="application/pdf" onChange={onPickFile} hidden />
+
+      {passwordPrompt ? (
+        <PasswordModal
+          t={t}
+          wrong={passwordPrompt.wrong}
+          onCancel={() => setPasswordPrompt(null)}
+          onSubmit={(pw) => {
+            setPassword(pw);
+            setPasswordPrompt(null);
+            void runExport(undefined, pw);
+          }}
+        />
+      ) : null}
 
       {ocrWarning ? (
         <OcrWarningModal

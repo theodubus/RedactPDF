@@ -218,6 +218,56 @@ def _overlap_ratio(a0: float, a1: float, b0: float, b1: float) -> float:
     return inter / denom
 
 
+# Un mot interlettré est coupé lettre par lettre par l'extracteur, parce que
+# l'écart entre les glyphes y dépasse la largeur d'une espace. Mesuré sur du
+# Helvetica : la coupure démarre entre 14 % et 18 % du corps en interlettrage, et
+# en dessous le mot reste entier. Au-dessus, « BOURDILLON » s'extrait
+# « B O U R D I L L O N », une requête sur le nom ne trouve rien, l'audit rejoue
+# la même requête et ne trouve rien non plus : HTTP 200, nom parfaitement lisible
+# sur l'en-tête. C'est exactement la mise en page d'un papier à lettres.
+#
+# On ne peut pas trancher par la seule largeur de l'écart : à ce réglage, il fait
+# bien la taille d'une espace. Le signal est ailleurs, dans la **forme du
+# groupe** : une suite de mots d'une seule lettre, séparés par des écarts
+# réguliers. Trois au minimum, car « il y a » n'en aligne que deux.
+_LETTERSPACE_MIN_RUN = 3
+
+# Les écarts d'un interlettrage sont réguliers. Une vraie suite de mots courts
+# aurait des écarts variables, la largeur d'une espace ne dépendant pas des
+# lettres voisines de la même façon.
+_LETTERSPACE_GAP_TOLERANCE = 2.0
+
+
+def _letterspaced_runs(words: Sequence[_Word]) -> set[int]:
+    """Indices des mots à recoller au précédent, sans séparateur.
+
+    Rend un ensemble d'indices plutôt qu'une liste de mots fusionnés : les
+    `_Span` continuent de désigner les mots d'origine, donc la cartographie
+    span → rectangle reste exacte, et seule la ponctuation du texte de ligne
+    change.
+    """
+    glued: set[int] = set()
+    n = len(words)
+    i = 0
+    while i < n:
+        if len(words[i].text) != 1:
+            i += 1
+            continue
+        j = i
+        gaps: list[float] = []
+        while j + 1 < n and len(words[j + 1].text) == 1:
+            gaps.append(words[j + 1].x0 - words[j].x1)
+            j += 1
+        run = j - i + 1
+        if run >= _LETTERSPACE_MIN_RUN and gaps:
+            positives = [g for g in gaps if g > 0]
+            regular = not positives or max(positives) <= _LETTERSPACE_GAP_TOLERANCE * min(positives)
+            if regular:
+                glued.update(range(i + 1, j + 1))
+        i = j + 1
+    return glued
+
+
 def _extract_lines(doc: pymupdf.Document, page_index: int) -> list[_Line]:
     page = doc[page_index]
     raw = page.get_text("words")  # (x0,y0,x1,y1, "word", block, line, word)
@@ -246,12 +296,13 @@ def _extract_lines(doc: pymupdf.Document, page_index: int) -> list[_Line]:
     lines: list[_Line] = []
     for (bno, lno), ws in groups.items():
         ws_sorted = sorted(ws, key=lambda w: (w.word_no, w.x0, w.y0))
+        glued = _letterspaced_runs(ws_sorted)
 
         parts: list[str] = []
         spans: list[_Span] = []
         cursor = 0
         for i, w in enumerate(ws_sorted):
-            if i > 0:
+            if i > 0 and i not in glued:
                 parts.append(" ")
                 cursor += 1
             start = cursor

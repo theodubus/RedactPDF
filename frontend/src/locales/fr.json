@@ -122,5 +122,11 @@
   "ocrWarning.advice": "Pour que les images soient réellement vérifiées, revenez en mode « Vérifier » : les propositions y sont affichées, et vous confirmez.",
   "ocrWarning.back": "Revenir aux réglages",
   "ocrWarning.proceed": "Exporter quand même",
-  "review.proposed": "zone(s) proposée(s) par le détecteur, en tireté. Non vérifiées : regardez-les comme le reste."
+  "review.proposed": "zone(s) proposée(s) par le détecteur, en tireté. Non vérifiées : regardez-les comme le reste.",
+  "password.title": "Ce document est protégé par un mot de passe",
+  "password.body": "Il faut le mot de passe d'ouverture pour lire le document. Il sert uniquement à le déchiffrer en mémoire, le temps de la censure, et n'est ni enregistré ni envoyé ailleurs.",
+  "password.wrong": "Ce mot de passe ne convient pas. Vérifiez-le et réessayez.",
+  "password.placeholder": "Mot de passe d'ouverture",
+  "password.cancel": "Annuler",
+  "password.submit": "Déverrouiller"
 }

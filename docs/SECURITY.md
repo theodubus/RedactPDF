@@ -283,6 +283,60 @@ cannot see. Rules now run on a copy with every layer switched on. Nothing is
 redacted or moved by that, only revealed, so rectangles still come from the
 original coordinates.
 
+### The trap bench
+
+Every line below was measured on a constructed document in September 2026, not
+inferred from the code. It is the honest inventory of what the engine does with
+text that reaches the extractor in a shape the reader never sees.
+
+| Trap | Result |
+|---|---|
+| Page with `/Rotate 90` | redacted |
+| Text inside a nested Form XObject | redacted |
+| Invisible text (render mode 3) | redacted |
+| Decomposed accents (`e` + combining acute) | redacted |
+| Hebrew, right to left | redacted, box on the right glyphs |
+| Arabic, base letters against presentation forms | redacted |
+| Japanese, full name and two-kanji substring | redacted |
+| Ligature glyphs (`ffi`, `fi`, `fl`, `æ`, `œ`) | redacted, see above |
+| Text on a layer switched off | redacted, see above |
+| Letterspaced word (`B O U R D I L L O N`) | redacted, see below |
+| Word split across content streams or a font change | redacted |
+| Damaged `startxref` | repaired by the library, then redacted |
+| Owner password only (a "protected" PDF) | redacted |
+| Open password | refused with a code, unlocked when given one |
+| 2000 pages, target on each | 8.7 s, +33 MB, redacted |
+| 200 search rules at once | 0.7 s |
+
+Two of those needed fixing and two corrections to earlier claims came out of the
+bench.
+
+**Letterspaced words.** Above roughly 18 % tracking, measured on Helvetica, the
+extractor splits a word letter by letter because the gap between glyphs exceeds
+the width of a space: `BOURDILLON` comes out `B O U R D I L L O N`, a rule finds
+nothing, the audit re-runs the same rule and finds nothing, and the export
+succeeds with the name readable across the letterhead. Below that threshold the
+word stays whole, which is why this only shows up on titles and headers. The gap
+alone cannot decide, since at that setting it really is space-width; the signal
+is the **shape of the group**, a run of single-character words with regular gaps.
+Three at minimum, because "il y a" lines up only two.
+
+**Two claims corrected.** An earlier note here called spurious spaces inside
+words a confirmed silent failure. Re-measured properly, at realistic tracking
+(up to 14 % of the font size) the extractor does **not** split, and neither a
+font change mid-word nor two adjacent text objects splits it either. Only the
+letterspaced case above is real. The earlier trap forced a pathological glyph
+advance and proved nothing about real documents.
+
+### Adversarial load
+
+No guard on the number of rectangles: 5000 manual rectangles take **137 seconds**
+with no feedback. The app is local and single-user, so this is not an attack
+surface, but a runaway loop in a client would freeze it for minutes. A page
+carrying 3000 overlapping text lines takes 12 s and comes back as a refusal
+rather than a file, which is the honest outcome but means a pathologically dense
+page cannot be redacted.
+
 **Vector graphics are not covered.** The detector looks at raster images only. A
 chart drawn as lines and paths, a vector logo, and above all text converted to
 outlines are all invisible to the text rules and equally invisible to this check.

@@ -141,6 +141,17 @@ them) are matched as well.
 The tolerance widens what is **found**, never what is removed: a rule for
 "Griffith" does not touch "Grifth", which is a different word.
 
+**Letterspaced text** is handled too. A name set as `B O U R D I L L O N` across
+a letterhead reaches the extractor as ten separate letters, and searching the
+name used to find nothing at all. It is now glued back before matching, without
+gluing genuinely short words together.
+
+**Password-protected documents** are asked for their password rather than
+refused with a library error. It is used only to decrypt the file in memory while
+redacting, and is never stored or sent anywhere. A PDF carrying only an owner
+password (the common "protected" case, which restricts printing rather than
+opening) needs nothing.
+
 Text on a **hidden layer** is redacted like any other. It is invisible on screen
 but one click away in any reader, so treating it as absent would be a poor kind
 of honesty.

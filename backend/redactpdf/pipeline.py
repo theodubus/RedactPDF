@@ -281,6 +281,45 @@ def presets_internal_audit(
     }
 
 
+class PasswordRequired(ValueError):
+    """Le document est chiffré et le mot de passe manque ou ne convient pas.
+
+    Sous-classe de `ValueError` pour retomber sur le chemin 400 existant, comme
+    `RegexTimeout`. Le code porté par l'instance permet à l'interface de dire
+    quoi faire, au lieu d'afficher le message brut de PyMuPDF (« document closed
+    or encrypted »), qui n'apprend rien à personne.
+    """
+
+    def __init__(self, code: str) -> None:
+        super().__init__(code)
+        self.code = code
+
+
+def decrypted_view(pdf_bytes: bytes, password: str | None) -> bytes:
+    """Le document déchiffré une bonne fois, à l'entrée.
+
+    Tout le reste du traitement ouvre le PDF à plusieurs reprises (plan, zones
+    opaques, OCR, audit) : propager un mot de passe dans chacun de ces chemins
+    multiplierait les occasions d'en oublier un, et un seul oubli suffirait à
+    faire échouer l'export sans que la cause soit lisible. On paie une
+    réécriture, et tout l'aval voit un PDF ordinaire.
+
+    Un mot de passe **propriétaire** seul n'empêche pas l'ouverture : ce document
+    passe sans rien demander, et c'est le cas courant des PDF « protégés ».
+    """
+    doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")
+    try:
+        if not doc.needs_pass:
+            return pdf_bytes
+        if not password:
+            raise PasswordRequired("password_required")
+        if not doc.authenticate(password):
+            raise PasswordRequired("password_incorrect")
+        return bytes(doc.tobytes())
+    finally:
+        doc.close()
+
+
 def all_layers_visible(pdf_bytes: bytes) -> bytes:
     """Le document avec tous ses calques allumés, sans autre changement.
 

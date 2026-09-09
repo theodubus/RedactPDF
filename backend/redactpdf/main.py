@@ -18,12 +18,14 @@ from redactpdf.ocr import is_available as ocr_is_available
 from redactpdf.opaque import OpaqueRegion, covered_in_image, region_previews
 from redactpdf.paths import frontend_dist
 from redactpdf.pipeline import (
+    PasswordRequired,
     PresetsRequest,
     RedactionOptions,
     RegexRequest,
     SearchRequest,
     apply_plan,
     audit_plan,
+    decrypted_view,
     ocr_targets,
     plan_redactions,
     readable_view,
@@ -310,6 +312,10 @@ class ApplyPayload(StrictModel):
     # l'acquittement porte sur la page entière et non sur une boîte.
     acknowledged_font_pages: list[int] = Field(default_factory=list)
 
+    # Mot de passe d'ouverture, quand le document est chiffré. Jamais journalisé,
+    # jamais renvoyé : il ne sert qu'à déchiffrer le flux en mémoire.
+    password: str | None = None
+
 
 # Tolérance d'appariement entre une zone rapportée et son acquittement. Le client
 # renvoie la boîte telle qu'on la lui a donnée, arrondie au centième : un point
@@ -409,6 +415,12 @@ async def redact_apply(
 
     # Une seule construction : la vue sur laquelle on juge « qu'est-ce qui n'a pas
     # pu être lu » et le document produit doivent parler du même assainissement.
+    try:
+        pdf_bytes = decrypted_view(pdf_bytes, data.password)
+    except PasswordRequired as e:
+        detail = {"status": "encrypted", "reason": e.code}
+        raise HTTPException(status_code=400, detail=detail) from e
+
     redaction_options = RedactionOptions(
         image_mode=data.options.image_mode,
         apply_graphics=data.options.apply_graphics,

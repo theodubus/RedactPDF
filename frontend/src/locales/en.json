@@ -122,5 +122,11 @@
   "ocrWarning.advice": "To have the images actually checked, switch back to « Review »: suggestions are shown there and you confirm them.",
   "ocrWarning.back": "Back to settings",
   "ocrWarning.proceed": "Export anyway",
-  "review.proposed": "area(s) suggested by the detector, dashed. Not verified: look at them like the rest."
+  "review.proposed": "area(s) suggested by the detector, dashed. Not verified: look at them like the rest.",
+  "password.title": "This document is password protected",
+  "password.body": "The open password is needed to read it. It is used only to decrypt the document in memory while redacting, and is neither stored nor sent anywhere else.",
+  "password.wrong": "That password does not work. Check it and try again.",
+  "password.placeholder": "Open password",
+  "password.cancel": "Cancel",
+  "password.submit": "Unlock"
 }
