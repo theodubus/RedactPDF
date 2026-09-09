@@ -330,6 +330,10 @@ advance and proved nothing about real documents.
 
 ### Adversarial load
 
+A decompression bomb is not one: an image of 12000x12000 grey pixels, 137 KB on
+disk and 137 MB expanded, is handled in 3.6 s with 20 MB of extra memory, because
+the library streams it rather than materialising it.
+
 No guard on the number of rectangles: 5000 manual rectangles take **137 seconds**
 with no feedback. The app is local and single-user, so this is not an attack
 surface, but a runaway loop in a client would freeze it for minutes. A page
@@ -337,11 +341,29 @@ carrying 3000 overlapping text lines takes 12 s and comes back as a refusal
 rather than a file, which is the honest outcome but means a pathologically dense
 page cannot be redacted.
 
-**Vector graphics are not covered.** The detector looks at raster images only. A
-chart drawn as lines and paths, a vector logo, and above all text converted to
-outlines are all invisible to the text rules and equally invisible to this check.
-That last one is the dangerous case: a rule finds nothing, the audit finds
-nothing, and the export succeeds with the words plainly on screen.
+### Marks the extractor does not report as text
+
+**This is the widest hole left, and it is a silent one.** Anything the page paints
+that is not in the text layer is invisible to the rules and equally invisible to
+the audit: text converted to outlines, a vector chart carrying labels, and (
+measured in September 2026) text painted through a tiling **pattern**. The
+pattern case was built and rendered: the name is plainly legible on the page,
+`get_text()` returns only the rest of the page, a rule for it reports zero
+occurrences, and the export succeeds. A hand-drawn rectangle does remove it, so
+there is a remedy, but nothing tells the user to reach for it.
+
+Three ways to detect it were measured, and two of them do not work:
+
+| Approach | Result |
+|---|---|
+| `get_drawings()`, count vector objects | **0 drawings** on the pattern page: blind to it |
+| Amount of non-text ink, as a share of the page | pattern 0.09 %, plain text page 0.00 %, but an ordinary **table** 2.65 %: no threshold separates them |
+| OCR on a render of the page with its text layer removed | reads the name in **0.19 s**, and returns nothing at all on a plain text page |
+
+Only the third works, and it is not a new mechanism: it is the existing
+suggestion channel pointed at a rendered page instead of an embedded image. That
+keeps the honesty intact, since it would report a proposal and never a guarantee,
+which is the only claim a detector of this kind can support.
 
 Nothing is reported unless a **textual rule** was requested. Without one, the
 caller never expected the engine to read anything.
