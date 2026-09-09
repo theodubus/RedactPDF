@@ -62,8 +62,14 @@ python launch.py
 
 `launch.py` picks a free local port, serves the UI and the API from a single
 process (same origin, so no CORS and no proxy), opens your browser, and shuts
-the server down a few seconds after you close the tab. You only need to rebuild
-the frontend after changing UI source.
+the server down a few seconds after you close the tab.
+
+**`git pull` does not update the interface.** `frontend/dist` is a build
+artefact and is git-ignored, so a pull changes the sources under `frontend/src`
+and leaves the bundle `launch.py` actually serves untouched. Run `npm run build`
+after every pull that touched the frontend, or you will be testing the previous
+version of the UI against the new backend and wondering why nothing changed.
+This has cost a full round trip at least once.
 
 `REDACT_PORT` and `REDACT_NO_BROWSER` exist so the smoke test can drive the app
 deterministically; they work by hand too.

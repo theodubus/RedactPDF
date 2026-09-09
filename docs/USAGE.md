@@ -176,6 +176,14 @@ flow, or a non-interactive refusal for scripts. The three are described in
 Choosing "Ignore" is a real choice with a real cost: a value written inside an
 image will survive the export with no message at all.
 
+The check only runs when at least one **textual rule** is in play (a typed
+string, a regular expression or a detector). Export a document with nothing but
+hand-drawn rectangles and no area is ever reported, whatever the mode says. That
+is deliberate: with no textual rule you never asked the engine to find anything,
+so there is nothing it can have failed to find, and the friction belongs where a
+promise was made. It does mean the setting sits there looking active while doing
+nothing on a rectangles-only export.
+
 An image repeated across pages, a header banner for instance, is one screen and
 not one per page. Grouping needs both the same pixels (a hash of them, so only
 byte for byte identical images ever group) and the same coverage: two pages
