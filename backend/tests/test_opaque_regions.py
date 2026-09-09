@@ -81,8 +81,8 @@ def test_a_scan_no_longer_exports_silently() -> None:
     assert resp.status_code == 409, resp.text
     detail = resp.json()["detail"]
     assert detail["status"] == "inconclusive"
-    assert detail["reason"] == "opaque_regions"
-    assert len(detail["regions"]) == 1
+    assert len(detail["opaque_regions"]) == 1
+    assert detail["unreliable_fonts"] == []
 
 
 @pytest.mark.integration
@@ -91,7 +91,7 @@ def test_only_the_scanned_block_is_reported_on_a_hybrid_page() -> None:
     resp = _post(_hybrid(), {"searches": [{"query": "Dupont"}]})
 
     assert resp.status_code == 409, resp.text
-    regions = resp.json()["detail"]["regions"]
+    regions = resp.json()["detail"]["opaque_regions"]
     assert len(regions) == 1
     assert regions[0]["page_share"] > 0.05
 
@@ -120,7 +120,7 @@ def test_review_mode_accepts_an_acknowledgement() -> None:
     """L'humain a regardé la zone : l'export part."""
     pdf = _scan()
     first = _post(pdf, {"searches": [{"query": "Dupont"}]})
-    box = first.json()["detail"]["regions"][0]["bbox"]
+    box = first.json()["detail"]["opaque_regions"][0]["bbox"]
 
     resp = _post(
         pdf,
@@ -138,7 +138,7 @@ def test_block_mode_ignores_acknowledgements() -> None:
     """
     pdf = _scan()
     first = _post(pdf, {"searches": [{"query": "Dupont"}]})
-    box = first.json()["detail"]["regions"][0]["bbox"]
+    box = first.json()["detail"]["opaque_regions"][0]["bbox"]
 
     resp = _post(
         pdf,
@@ -156,7 +156,7 @@ def test_a_geometric_rule_covering_the_region_unlocks_block_mode() -> None:
     """Dessiner dessus traite la zone, et l'éteint même en mode le plus strict."""
     pdf = _scan()
     first = _post(pdf, {"searches": [{"query": "Dupont"}]})
-    x0, y0, x1, y1 = first.json()["detail"]["regions"][0]["bbox"]
+    x0, y0, x1, y1 = first.json()["detail"]["opaque_regions"][0]["bbox"]
 
     resp = _post(
         pdf,
@@ -180,7 +180,7 @@ def test_a_rectangle_that_does_not_quite_cover_still_reports() -> None:
     """
     pdf = _scan()
     first = _post(pdf, {"searches": [{"query": "Dupont"}]})
-    x0, y0, x1, y1 = first.json()["detail"]["regions"][0]["bbox"]
+    x0, y0, x1, y1 = first.json()["detail"]["opaque_regions"][0]["bbox"]
 
     resp = _post(
         pdf,

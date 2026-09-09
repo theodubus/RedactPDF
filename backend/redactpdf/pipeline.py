@@ -8,7 +8,15 @@ import pymupdf
 
 from redactpdf.audit import AuditOptions, audit_pdf_text, build_audit_for_search
 from redactpdf.multiline_regex_engine import find_redaction_rectangles_by_regex
-from redactpdf.opaque import OpaqueRegion, drop_covered, find_opaque_regions
+from redactpdf.opaque import (
+    OpaqueRegion,
+    UnreliableFont,
+    drop_covered,
+    drop_fully_covered_pages,
+    find_opaque_regions,
+    find_unreliable_fonts,
+    page_rects_of,
+)
 from redactpdf.presets import find_redaction_rectangles_for_presets
 from redactpdf.redaction import RedactionRect, redact_pdf_by_rectangles
 from redactpdf.regex_guard import RegexBudget
@@ -263,6 +271,30 @@ def unresolved_opaque_regions(
     # un rectangle, l'éteint pour de bon.
     covering = [(r.page, (r.x0, r.y0, r.x1, r.y1)) for r in plan.manual + plan.full_page]
     return drop_covered(regions, covering)
+
+
+def unreadable_fonts(
+    pdf_bytes: bytes,
+    plan: PlanResult,
+    *,
+    has_textual_rules: bool,
+) -> list[UnreliableFont]:
+    """Polices dont l'extraction ne rend rien d'exploitable, page par page.
+
+    Même logique que les zones opaques : sans règle textuelle il n'y a rien à
+    signaler, et une page entièrement couverte par une règle géométrique est
+    traitée. La couverture doit être totale ici : contrairement à une image, on ne
+    sait pas *où* est le texte concerné, puisque justement on ne sait pas le lire.
+    """
+    if not has_textual_rules:
+        return []
+
+    fonts = find_unreliable_fonts(pdf_bytes)
+    if not fonts:
+        return []
+
+    covering = [(r.page, (r.x0, r.y0, r.x1, r.y1)) for r in plan.manual + plan.full_page]
+    return drop_fully_covered_pages(fonts, covering, page_rects_of(pdf_bytes))
 
 
 def _merge_extractors(acc: dict[str, str], report: dict[str, Any]) -> None:

@@ -22,6 +22,7 @@ from redactpdf.pipeline import (
     apply_plan,
     audit_plan,
     plan_redactions,
+    unreadable_fonts,
     unresolved_opaque_regions,
 )
 from redactpdf.presets import DEFAULT_REGION, available_presets
@@ -285,6 +286,10 @@ class ApplyPayload(StrictModel):
     # le vérifier. Laissé au client, il suffirait de ne rien envoyer.
     acknowledged_regions: list[AcknowledgedRegionModel] = Field(default_factory=list)
 
+    # Pour une police illisible on ne sait pas *où* est le texte concerné, donc
+    # l'acquittement porte sur la page entière et non sur une boîte.
+    acknowledged_font_pages: list[int] = Field(default_factory=list)
+
 
 # Tolérance d'appariement entre une zone rapportée et son acquittement. Le client
 # renvoie la boîte telle qu'on la lui a donnée, arrondie au centième : un point
@@ -404,18 +409,25 @@ async def redact_apply(
                 plan,
                 has_textual_rules=bool(searches_req or regexes_req or presets_req),
             )
+            fonts = unreadable_fonts(
+                pdf_bytes,
+                plan,
+                has_textual_rules=bool(searches_req or regexes_req or presets_req),
+            )
             if mode == "review":
                 unresolved = [
                     r for r in unresolved if not _is_acknowledged(r, data.acknowledged_regions)
                 ]
-            if unresolved:
+                acked_pages = set(data.acknowledged_font_pages)
+                fonts = [f for f in fonts if f.page not in acked_pages]
+            if unresolved or fonts:
                 raise HTTPException(
                     status_code=409,
                     detail={
                         "status": "inconclusive",
-                        "reason": "opaque_regions",
                         "mode": mode,
-                        "regions": [r.as_dict() for r in unresolved],
+                        "opaque_regions": [r.as_dict() for r in unresolved],
+                        "unreliable_fonts": [f.as_dict() for f in fonts],
                     },
                 )
 

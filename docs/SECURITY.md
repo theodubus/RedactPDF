@@ -163,6 +163,26 @@ caller never expected the engine to read anything.
 | `review` *(default)* | Unresolved regions return **HTTP 409** with their coordinates. The caller resends with `acknowledged_regions` to proceed. |
 | `block` | Non-interactive. Only a geometric rule covering the region unlocks it; an acknowledgement does not. For scripts, which cannot click. |
 
+#### Fonts whose text cannot be read either
+
+The same failure with a different mechanism. A Type0 font encoded `Identity-H`
+maps codes to glyph indices inside that font and to nothing else, so `/ToUnicode`
+is the only bridge to Unicode. Without it, extraction returns garbage: measured
+on one embedded TrueType, `Jean Dupont 06 12 34 56 78` becomes
+`ðĊĆēÆêĚĕĔēęÆÖÜÆ×ØÆÙÚÆÛÜÆÝÞ`. The rule finds nothing, the audit finds nothing,
+and the export used to succeed with the name plainly visible on screen.
+
+The criterion is **not** "composite font without `/ToUnicode`". A first version
+assumed that and would have fired on every CJK document: registry CMaps such as
+`/UniGB-UTF16-H` carry Unicode by themselves and extract correctly with no
+`/ToUnicode` at all. Only `Identity-H` / `Identity-V` and Type3 (whose glyphs are
+drawing procedures) genuinely need it.
+
+Affected pages are reported alongside opaque regions in the same 409, under
+`unreliable_fonts`, and acknowledged by page number rather than by box: the tool
+does not know *where* the affected text sits, since it cannot read it. The only
+geometric remedy is covering the whole page.
+
 The acknowledgement travels in the request and the server recomputes the regions
 to check it against. Left to the client, it would be enough to send nothing.
 

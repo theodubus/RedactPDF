@@ -1,4 +1,9 @@
-"""Zones d'une page que les règles textuelles ne peuvent pas lire.
+"""Ce que les règles textuelles n'ont pas pu lire.
+
+Deux mécanismes différents, un seul mode d'échec. Une **zone opaque** est une
+image sans texte par-dessus ; une **police non fiable** est une police dont
+l'extraction ne rend pas de l'Unicode exploitable. Dans les deux cas la règle ne
+trouve rien, l'audit ne trouve rien non plus, et l'export réussissait en silence.
 
 Pourquoi ce module existe
 -------------------------
@@ -179,3 +184,129 @@ def _contains(outer: pymupdf.Rect, inner: pymupdf.Rect) -> bool:
         and inner.x1 <= outer.x1
         and inner.y1 <= outer.y1
     )
+
+
+# --------------------------------------------------------------------------
+# Polices dont l'extraction ne rend pas de l'Unicode exploitable
+#
+# Mesuré : la même police TrueType intégrée en /Identity-H rend
+#   avec /ToUnicode  ->  'Jean Dupont 06 12 34 56 78'
+#   sans /ToUnicode  ->  'ðĊĆēÆêĚĕĔēęÆÖÜÆ×ØÆÙÚÆÛÜÆÝÞ'
+# La règle ne trouve rien, l'audit non plus, et l'export partait en 200.
+#
+# Le critère n'est pas « composite sans /ToUnicode ». Une première version l'a
+# cru et se serait déclenchée sur tout document CJK : les polices intégrées de
+# PyMuPDF utilisent /UniGB-UTF16-H, une CMap de registre publiquement définie qui
+# donne l'Unicode à elle seule, et s'extraient parfaitement sans /ToUnicode.
+#
+# Ce qui rend une police illisible, c'est un encodage sans sens Unicode :
+#   /Identity-H et /Identity-V  le code EST l'indice de glyphe dans la police,
+#                               il ne veut rien dire hors d'elle
+#   Type3                       les glyphes sont des procédures de dessin
+# Dans ces cas /ToUnicode est la seule table de correspondance, et son absence
+# rend le texte inexploitable pour l'appariement comme pour l'audit.
+#
+# Une Type1 ou TrueType simple à encodage standard s'extrait correctement sans
+# /ToUnicode : Helvetica en est la preuve.
+# --------------------------------------------------------------------------
+
+# Encodages qui ne portent aucune information Unicode par eux-mêmes.
+_OPAQUE_ENCODING_PREFIX = "Identity"
+
+
+@dataclass(frozen=True)
+class UnreliableFont:
+    """Une police d'une page dont on ne sait pas lire le texte."""
+
+    page: int
+    name: str
+    subtype: str
+
+    def as_dict(self) -> dict[str, object]:
+        return {"page": self.page, "name": self.name, "subtype": self.subtype}
+
+
+def find_unreliable_fonts(
+    pdf_bytes: bytes, *, pages: list[int] | None = None
+) -> list[UnreliableFont]:
+    """Polices composites sans table `/ToUnicode`, page par page.
+
+    Comme les rectangles et les zones opaques : sur le document **d'origine**.
+    """
+    doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")
+    try:
+        if pages is None:
+            wanted: list[int] = list(range(doc.page_count))
+        else:
+            wanted = [p for p in pages if 0 <= p < doc.page_count]
+
+        out: list[UnreliableFont] = []
+        seen: set[tuple[int, str]] = set()
+        for index in wanted:
+            for font in doc.load_page(index).get_fonts(full=True):
+                xref, subtype, basefont = font[0], str(font[2]), str(font[3])
+                encoding = str(font[5] or "")
+
+                needs_tounicode = subtype == "Type3" or encoding.startswith(
+                    _OPAQUE_ENCODING_PREFIX
+                )
+                if not needs_tounicode:
+                    continue
+
+                try:
+                    kind, _ = doc.xref_get_key(xref, "ToUnicode")
+                except Exception:
+                    kind = "null"
+                if kind != "null":
+                    continue
+
+                key = (index, basefont)
+                if key in seen:
+                    continue
+                seen.add(key)
+                out.append(UnreliableFont(page=index, name=basefont, subtype=subtype))
+        return out
+    finally:
+        doc.close()
+
+
+def drop_fully_covered_pages(
+    fonts: list[UnreliableFont],
+    covering: list[tuple[int, tuple[float, float, float, float]]],
+    page_rects: dict[int, tuple[float, float, float, float]],
+    *,
+    tolerance: float = COVER_TOLERANCE_PT,
+) -> list[UnreliableFont]:
+    """Retire les polices des pages qu'une règle géométrique couvre entièrement.
+
+    Le seul remède géométrique à une police illisible est de couvrir toute la
+    page : contrairement à une zone opaque, on ne sait pas où le texte concerné se
+    trouve, puisque justement on ne sait pas le lire.
+    """
+    covered_pages = set()
+    for page, box in covering:
+        rect = page_rects.get(page)
+        if rect is None:
+            continue
+        core = pymupdf.Rect(
+            rect[0] + tolerance, rect[1] + tolerance, rect[2] - tolerance, rect[3] - tolerance
+        )
+        if not core.is_empty and _contains(pymupdf.Rect(box), core):
+            covered_pages.add(page)
+    return [f for f in fonts if f.page not in covered_pages]
+
+
+def page_rects_of(pdf_bytes: bytes) -> dict[int, tuple[float, float, float, float]]:
+    doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")
+    try:
+        return {
+            i: (
+                float(doc.load_page(i).rect.x0),
+                float(doc.load_page(i).rect.y0),
+                float(doc.load_page(i).rect.x1),
+                float(doc.load_page(i).rect.y1),
+            )
+            for i in range(doc.page_count)
+        }
+    finally:
+        doc.close()

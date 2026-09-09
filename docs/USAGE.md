@@ -138,6 +138,12 @@ answer is "there is something here I could not read". You get the coordinates,
 you look, and you either draw a rectangle over it or acknowledge that you
 checked. A region a rectangle already covers is never reported.
 
+A font can make a page unreadable the same way an image does: some PDFs encode
+text as glyph indices with no table back to Unicode, and the rules then see
+gibberish where you see a name. Those pages come back in the same 409 under
+`unreliable_fonts`, acknowledged per page rather than per box, because the tool
+cannot tell you where the affected text is when it cannot read it.
+
 `options.image_regions` chooses between not checking at all, this review flow,
 and a non-interactive mode for scripts. The three are described in
 [SECURITY.md → Opaque regions](SECURITY.md#opaque-regions-what-the-rules-could-not-read).
