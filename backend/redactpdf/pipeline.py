@@ -21,7 +21,7 @@ from redactpdf.opaque import (
 from redactpdf.presets import find_redaction_rectangles_for_presets
 from redactpdf.redaction import RedactionRect, redact_pdf_by_rectangles
 from redactpdf.regex_guard import RegexBudget
-from redactpdf.sanitize import sanitize_document
+from redactpdf.sanitize import sanitize_document, signature_fields
 from redactpdf.search import SearchOptions, find_redaction_rectangles
 
 
@@ -316,6 +316,22 @@ def decrypted_view(pdf_bytes: bytes, password: str | None) -> bytes:
         if not doc.authenticate(password):
             raise PasswordRequired("password_incorrect")
         return bytes(doc.tobytes())
+    finally:
+        doc.close()
+
+
+def signatures_in(pdf_bytes: bytes) -> list[str]:
+    """Les champs de signature du document d'entrée, pour pouvoir le dire.
+
+    Aucun caviardage ne préserve une signature : elle couvre les octets du
+    fichier et on les réécrit. La question n'est donc pas de la sauver, mais de
+    prévenir. Mesuré avant d'ajouter ceci, sur un PDF portant un champ de
+    signature et une règle « Dupont » : HTTP 200, le nom retiré, le widget de
+    signature retiré, et pas un mot du rapport à ce sujet.
+    """
+    doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")
+    try:
+        return signature_fields(doc)
     finally:
         doc.close()
 

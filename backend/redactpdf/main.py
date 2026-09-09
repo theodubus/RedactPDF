@@ -12,7 +12,12 @@ from starlette.responses import Response
 
 from redactpdf.audit import AuditOptions
 from redactpdf.heartbeat import heartbeat
-from redactpdf.ocr import OcrProposal, propose_from_regions
+from redactpdf.ocr import (
+    OcrProposal,
+    pages_with_unreported_marks,
+    propose_from_page_marks,
+    propose_from_regions,
+)
 from redactpdf.ocr import available_languages as ocr_languages
 from redactpdf.ocr import is_available as ocr_is_available
 from redactpdf.opaque import OpaqueRegion, covered_in_image, region_previews
@@ -29,6 +34,7 @@ from redactpdf.pipeline import (
     ocr_targets,
     plan_redactions,
     readable_view,
+    signatures_in,
     unreadable_fonts,
     unresolved_opaque_regions,
     with_ocr_proposals,
@@ -285,6 +291,19 @@ class ApplyPresetsModel(StrictModel):
         return cleaned
 
 
+# Plafond sur le nombre de rectangles d'une requête. Mesuré : 5000 rectangles
+# occupent le moteur 137 secondes, sans le moindre retour à l'utilisateur, et
+# l'interface reste figée tout ce temps sans rien dire.
+#
+# Ce n'est pas une protection contre un attaquant : l'application est locale et
+# mono-utilisateur, celui qui envoie la requête est celui qui attend. C'est une
+# protection contre l'accident, une boucle partie de travers dans un client, qui
+# autrement se présente comme une application plantée. Le plafond est haut, très
+# au-dessus de ce qu'un humain dessine à la main, et il rend un message plutôt
+# qu'un gel.
+MAX_RECTS_PER_REQUEST = 500
+
+
 class ApplyPayload(StrictModel):
     rects: list[RectModel] = Field(default_factory=list)
     # Page-wide rules. Always processed in strict mode (full image + graphics
@@ -413,14 +432,32 @@ async def redact_apply(
             pages=data.presets.scope.pages,
         )
 
-    # Une seule construction : la vue sur laquelle on juge « qu'est-ce qui n'a pas
-    # pu être lu » et le document produit doivent parler du même assainissement.
+    # Plafond vérifié avant d'ouvrir le document : un payload absurde ne doit
+    # rien coûter d'autre que sa validation. Les deux listes comptent ensemble,
+    # sinon le plafond se contourne en répartissant.
+    total_rects = len(data.rects) + len(data.full_page_rects)
+    if total_rects > MAX_RECTS_PER_REQUEST:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "status": "too_many_rects",
+                "count": total_rects,
+                "limit": MAX_RECTS_PER_REQUEST,
+            },
+        )
+
     try:
         pdf_bytes = decrypted_view(pdf_bytes, data.password)
     except PasswordRequired as e:
         detail = {"status": "encrypted", "reason": e.code}
         raise HTTPException(status_code=400, detail=detail) from e
 
+    # Lu sur l'entrée, avant tout : après l'assainissement le champ n'existe plus,
+    # et c'est justement ce qu'il faut annoncer.
+    signatures = signatures_in(pdf_bytes)
+
+    # Une seule construction : la vue sur laquelle on juge « qu'est-ce qui n'a pas
+    # pu être lu » et le document produit doivent parler du même assainissement.
     redaction_options = RedactionOptions(
         image_mode=data.options.image_mode,
         apply_graphics=data.options.apply_graphics,
@@ -473,28 +510,45 @@ async def redact_apply(
                 #
                 # Tourne **avant** le 409 pour que la revue montre ce qui est déjà
                 # proposé, ce qui est tout l'intérêt annoncé de la combinaison.
+                ocr_searches = [
+                    SearchOptions(
+                        query=s.query,
+                        case_sensitive=s.case_sensitive,
+                        whole_word=s.whole_word,
+                        ignore_accents=s.ignore_accents,
+                    )
+                    for s in (searches_req or [])
+                ]
+                ocr_regexes = [
+                    (list(r.patterns), r.case_sensitive, r.multiline, r.ignore_accents)
+                    for r in (regexes_req or [])
+                ]
+                ocr_presets = list(presets_req.presets) if presets_req else []
                 ocr_proposals = propose_from_regions(
                     view,
                     ocr_targets(view, plan),
-                    searches=[
-                        SearchOptions(
-                            query=s.query,
-                            case_sensitive=s.case_sensitive,
-                            whole_word=s.whole_word,
-                            ignore_accents=s.ignore_accents,
-                        )
-                        for s in (searches_req or [])
-                    ],
-                    regex_patterns=[
-                        (list(r.patterns), r.case_sensitive, r.multiline, r.ignore_accents)
-                        for r in (regexes_req or [])
-                    ],
-                    presets=list(presets_req.presets) if presets_req else (),
+                    searches=ocr_searches,
+                    regex_patterns=ocr_regexes,
+                    presets=ocr_presets,
                     language=data.options.ocr_language,
                 )
                 # Dans `all_rects` pour être retirées, dans `ocr` pour être
                 # nommées, et surtout nulle part ailleurs : une proposition ne
                 # doit jamais éteindre un signalement.
+                # Et sur ce que la page **peint** sans que l'extracteur le
+                # rapporte : texte converti en courbes, étiquettes d'un graphique
+                # vectoriel, texte peint par un motif de tuilage. Mesuré sur ce
+                # dernier : nom lisible à l'écran, zéro occurrence, export en 200.
+                # Les pages sont filtrées avant, pour ne pas payer un rendu et un
+                # OCR sur un document qui ne peint rien d'autre que son texte.
+                ocr_proposals += propose_from_page_marks(
+                    view,
+                    pages_with_unreported_marks(view),
+                    searches=ocr_searches,
+                    regex_patterns=ocr_regexes,
+                    presets=ocr_presets,
+                    language=data.options.ocr_language,
+                )
                 plan = with_ocr_proposals(plan, [p.as_rect() for p in ocr_proposals])
             if mode == "review":
                 unresolved = [
@@ -587,6 +641,21 @@ async def redact_apply(
             "rects": [p.as_dict() for p in ocr_proposals],
         }
 
+    if signatures:
+        # Le fichier de sortie n'est plus celui qui a été signé, par construction :
+        # la signature couvre des octets qu'on vient de réécrire. Rien à corriger
+        # là-dedans, seulement à dire, sinon l'utilisateur découvre la perte chez
+        # le destinataire.
+        composite["signatures"] = {
+            "count": len(signatures),
+            "fields": signatures,
+            "note": (
+                "Le document d'origine portait une signature. Caviarder réécrit "
+                "le fichier, donc la signature ne s'applique plus au résultat et "
+                "a été retirée. Un document caviardé ne peut pas rester signé."
+            ),
+        }
+
     headers: dict[str, Any] = {
         "Content-Disposition": 'attachment; filename="redacted.pdf"',
         "X-Redaction-Audit-Status": "pass",
@@ -600,6 +669,7 @@ async def redact_apply(
         # Compté à part de tout le reste : ces occurrences ne sont pas du même
         # niveau de certitude, les additionner effacerait la distinction.
         "X-Redaction-Ocr-Proposals": str(len(ocr_proposals)),
+        "X-Redaction-Signatures-Removed": str(len(signatures)),
     }
     _add_report_headers(headers, composite)
     return Response(content=out_pdf, media_type="application/pdf", headers=headers)

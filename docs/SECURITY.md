@@ -334,12 +334,20 @@ A decompression bomb is not one: an image of 12000x12000 grey pixels, 137 KB on
 disk and 137 MB expanded, is handled in 3.6 s with 20 MB of extra memory, because
 the library streams it rather than materialising it.
 
-No guard on the number of rectangles: 5000 manual rectangles take **137 seconds**
-with no feedback. The app is local and single-user, so this is not an attack
-surface, but a runaway loop in a client would freeze it for minutes. A page
-carrying 3000 overlapping text lines takes 12 s and comes back as a refusal
-rather than a file, which is the honest outcome but means a pathologically dense
-page cannot be redacted.
+A request carries at most **500 rectangles** (`rects` and `full_page_rects`
+counted together, so the cap cannot be halved by splitting across the two
+fields). Without it, 5000 manual rectangles took **137 seconds** with no
+feedback. The app is local and single-user, so this was never an attack surface;
+it is a guard against the accident, a client loop gone wrong, which otherwise
+presents as a frozen application. The cap is checked before the document is
+opened, so an absurd payload costs a Pydantic validation and nothing more.
+Measured: 499 rectangles return a file in 1.5 s, 501 return HTTP 400
+(`status: too_many_rects`) immediately. No hand draws 500 boxes, so nothing real
+is constrained.
+
+A page carrying 3000 overlapping text lines takes 12 s and comes back as a
+refusal rather than a file, which is the honest outcome but means a
+pathologically dense page cannot be redacted.
 
 ### Marks the extractor does not report as text
 
@@ -362,8 +370,26 @@ Three ways to detect it were measured, and two of them do not work:
 
 Only the third works, and it is not a new mechanism: it is the existing
 suggestion channel pointed at a rendered page instead of an embedded image. That
-keeps the honesty intact, since it would report a proposal and never a guarantee,
+keeps the honesty intact, since it reports a proposal and never a guarantee,
 which is the only claim a detector of this kind can support.
+
+**It is implemented** (`ocr.propose_from_page_marks`), on the same terms as every
+other suggestion: off unless `options.ocr_proposals` is set, gated on a textual
+rule, reported in the `ocr_proposals` block with `guaranteed: false`, and unable
+to silence a review. The page is first rendered with its text layer removed
+(`_strip_marks_only`, an `apply_redactions` pass that erases text while leaving
+pixels and line art), so a page whose marks are all ordinary text produces a
+blank render and costs one probe.
+
+The probe is what keeps this affordable, and its resolution was measured rather
+than picked. At 36 dpi a 0.4 pt hairline outline registered 0.014 % ink, below
+the 0.02 % floor, and was missed; at 72 dpi the same outline registers 0.252 %,
+for about 7 ms more per page. Only a page that passes the probe is rendered at
+200 dpi and read. End to end: the pattern trap yields 1 proposal in 0.2 s, while
+20 pages of plain text and 20 pages of tables together yield 0 proposals in 0.2 s.
+
+What remains outside it is what remains outside any pixel detector: the faint
+rotated watermark described above, and languages with no model shipped.
 
 Nothing is reported unless a **textual rule** was requested. Without one, the
 caller never expected the engine to read anything.
@@ -388,6 +414,26 @@ assumed that and would have fired on every CJK document: registry CMaps such as
 `/UniGB-UTF16-H` carry Unicode by themselves and extract correctly with no
 `/ToUnicode` at all. Only `Identity-H` / `Identity-V` and Type3 (whose glyphs are
 drawing procedures) genuinely need it.
+
+The Type3 half of that criterion was long asserted and never measured on a real
+font. The first attempt rewrote an Helvetica's `/Subtype` to `/Type3`, producing
+a font with no `/CharProcs` and no `/Widths`, whose extraction behaviour says
+nothing about the real case. Rebuilt properly (CharProcs, Encoding/Differences,
+Widths, FontMatrix), the measurement splits in two:
+
+| Character codes used | Extraction |
+|---|---|
+| 65 to 67, glyph names unknown to the reader | `ABC` |
+| 1 to 3, as a subset font numbers them | `\x01\x02\x03` |
+
+MuPDF falls back to reading the code as Latin-1 when the glyph name means
+nothing to it. A Type3 built by subsetting or by a scanner numbers its glyphs
+from 1, which is the second row: the rule reads control characters, the audit
+reads the same, and without the detector the export would be a 200 with the text
+plainly on screen. Nothing in the font dictionary distinguishes the two rows, so
+the detector refuses both. Over-refusal in the first case, and it is the right
+way round: a hand-drawn rectangle still removes the glyphs, and a page with no
+textual rule is never flagged at all.
 
 Affected pages are reported alongside opaque regions in the same 409, under
 `unreliable_fonts`, and acknowledged by page number rather than by box: the tool
@@ -508,6 +554,27 @@ continue to follow the user's chosen image mode on the same page.
      rather than left to be discovered.
    - Dense tables and payslips are where this shows up. If a document is set
      that tightly, read the exported file before sending it.
+
+6. **A redacted document cannot stay signed**
+   - A digital signature covers the bytes of the file. Redacting rewrites them.
+     No implementation preserves both, and that is a definition rather than a
+     trade-off: any tool that claims otherwise is either not redacting or not
+     signing.
+   - What was fixable was everything around it, and two defects were found by
+     measuring rather than reasoning. On a PDF carrying one signature field, the
+     output kept `<</SigFlags 3/Fields null>>` in its `/AcroForm`. `/Fields` is
+     required and must be an array, so `null` is malformed; and `SigFlags 3`
+     survived the disappearance of the only signature field, so a reader
+     announced a signed document with nothing left to verify against
+     (`get_sigflags()` still returned 3 on the output).
+   - `/AcroForm` is now dropped whole when annotations are removed, which is the
+     default. Removing every annotation removes every field, so the form has
+     nothing left to describe. `get_sigflags()` returns -1 on the output.
+   - The remaining gap was silence: the export returned 200, the target was gone,
+     the signature was gone with it, and nothing said so. The success report now
+     carries a `signatures` block (count, field names, and the reason) and the
+     response an `X-Redaction-Signatures-Removed` header. The UI does not surface
+     it yet, since a successful export currently has no notification area.
 
 ## Operational Recommendations
 

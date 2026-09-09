@@ -164,6 +164,84 @@ def resolve_language(requested: str | None) -> str | None:
     return sorted(langs)[0]
 
 
+# Une page vaut un OCR de son rendu s'il y reste de l'encre une fois le texte
+# retiré. Mesuré : une page de texte ordinaire tombe à 0,00 %, la page du piège
+# au motif à 0,09 %. Le seuil ne sert qu'à éviter de payer un OCR pour rien, il
+# ne décide de rien : une page de tableau le franchit aussi, et l'OCR n'y trouve
+# simplement rien, ce qui est correct.
+PAGE_MARK_MIN_INK = 0.0002
+
+# Résolution du pré-contrôle. 36 dpi coûtait 3 ms par page mais faisait
+# disparaître les traits fins : un texte détouré en contour de 0,4 pt y tombait à
+# 0,014 %, sous le seuil, donc jamais lu. À 72 dpi le même texte donne 0,25 %,
+# pour 7 ms par page, soit moins d'une seconde sur cent pages. Le filtre ne sert
+# qu'à éviter des OCR inutiles ; le rendre myope pour gagner 4 ms serait un
+# mauvais échange.
+PAGE_MARK_PROBE_DPI = 72
+
+# Résolution du rendu. Assez pour lire un nom, pas plus : le coût de l'OCR suit
+# le nombre de pixels, et on paie ici par page et non par image.
+PAGE_MARK_DPI = 200
+
+
+def pages_with_unreported_marks(pdf_bytes: bytes) -> list[int]:
+    """Pages qui peignent quelque chose que l'extracteur ne rapporte pas.
+
+    Le vrai trou n'est pas « le vectoriel » mais toute marque visible absente de
+    la couche texte : texte converti en courbes, étiquettes d'un graphique, et
+    texte peint à travers un motif de tuilage. Mesuré sur ce dernier : le nom est
+    parfaitement lisible à l'écran, `get_text()` ne le rapporte pas, la règle
+    rend zéro occurrence et l'export part en 200.
+
+    Deux autres pistes de détection ont été mesurées et écartées.
+    `get_drawings()` rend **zéro dessin** sur la page du motif, donc compter les
+    objets vectoriels y est aveugle. Et la quantité d'encre ne sépare rien : le
+    motif en produit 0,09 % quand un tableau parfaitement légitime en produit
+    2,65 %. Il ne reste que le rendu, puis un OCR.
+    """
+    doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")
+    stripped = _strip_marks_only(doc)
+    try:
+        if stripped is None:
+            return []
+        out: list[int] = []
+        for index in range(stripped.page_count):
+            page = stripped.load_page(index)
+            pix = page.get_pixmap(dpi=PAGE_MARK_PROBE_DPI, colorspace=pymupdf.csGRAY)
+            data = pix.samples
+            if not data:
+                continue
+            dark = sum(1 for value in data if value < 200)
+            if dark / len(data) >= PAGE_MARK_MIN_INK:
+                out.append(index)
+        return out
+    finally:
+        if stripped is not None:
+            stripped.close()
+        doc.close()
+
+
+def _strip_marks_only(doc: pymupdf.Document) -> pymupdf.Document | None:
+    """Une copie sans texte **ni images** : il ne reste que les autres marques.
+
+    Les images ont déjà leur propre chemin, celui des zones opaques, qui les
+    montre à l'humain. Les garder ici ferait payer un OCR deux fois pour le même
+    contenu et signalerait des pages qui sont déjà traitées.
+    """
+    try:
+        copy = pymupdf.open("pdf", doc.tobytes())
+        for page in copy:
+            page.add_redact_annot(page.rect)
+            page.apply_redactions(
+                images=pymupdf.PDF_REDACT_IMAGE_REMOVE,
+                graphics=pymupdf.PDF_REDACT_LINE_ART_NONE,
+                text=pymupdf.PDF_REDACT_TEXT_REMOVE,
+            )
+        return copy
+    except Exception:
+        return None
+
+
 def _page_from_unit(
     transform: tuple[float, float, float, float, float, float], x: float, y: float
 ) -> tuple[float, float]:
@@ -218,6 +296,136 @@ def _ocr_region(doc: pymupdf.Document, region: OpaqueRegion, language: str) -> b
         return None
 
 
+def propose_from_page_marks(
+    pdf_bytes: bytes,
+    pages: Sequence[int],
+    *,
+    searches: Sequence[SearchOptions] = (),
+    regex_patterns: Sequence[tuple[list[str], bool, bool, bool]] = (),
+    presets: Sequence[str] = (),
+    language: str | None = None,
+    budget: RegexBudget | None = None,
+) -> list[OcrProposal]:
+    """Ce que les règles trouvent dans un **rendu** de page privé de sa couche texte.
+
+    Même principe que `propose_from_regions`, et surtout les mêmes fonctions de
+    règle : le mini-PDF produit par l'OCR est un PDF comme un autre. Ce qui change
+    est la source des pixels, une page rendue plutôt qu'une image extraite, et
+    c'est ce qui atteint le texte converti en courbes, les étiquettes d'un
+    graphique vectoriel et le texte peint par un motif.
+
+    Le texte est retiré du rendu, sinon l'OCR proposerait à nouveau ce que les
+    règles ont déjà lu, en moins bien. Les images aussi, elles ont leur propre
+    chemin.
+
+    La garantie ne bouge pas d'un pouce : ce sont des propositions, l'audit ne
+    les couvre pas, et elles n'éteignent aucun signalement.
+    """
+    from redactpdf.multiline_regex_engine import find_redaction_rectangles_by_regex
+
+    lang = resolve_language(language)
+    if lang is None or not pages:
+        return []
+    if not (searches or regex_patterns or presets):
+        return []
+
+    doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")
+    stripped = _strip_marks_only(doc)
+    out: list[OcrProposal] = []
+    try:
+        if stripped is None:
+            return []
+        for index in pages:
+            if not 0 <= index < stripped.page_count:
+                continue
+            page = stripped.load_page(index)
+            box = page.rect
+            pix = page.get_pixmap(dpi=PAGE_MARK_DPI)
+            if pix.alpha:
+                pix = pymupdf.Pixmap(pix, 0)
+            try:
+                mini_bytes = bytes(pix.pdfocr_tobytes(language=lang, tessdata=tessdata_dir()))
+            except Exception:
+                continue
+            mini = pymupdf.open(stream=mini_bytes, filetype="pdf")
+            try:
+                if mini.page_count == 0:
+                    continue
+                mini_box = mini.load_page(0).rect
+                if mini_box.width <= 0 or mini_box.height <= 0:
+                    continue
+                # Un rendu de page pleine : le retour au repère de la page est une
+                # simple mise à l'échelle, pas une matrice de placement.
+                sx = box.width / mini_box.width
+                sy = box.height / mini_box.height
+                for label, rect in _rules_on(
+                    mini_bytes,
+                    searches=searches,
+                    regex_patterns=regex_patterns,
+                    presets=presets,
+                    budget=budget,
+                    find_by_regex=find_redaction_rectangles_by_regex,
+                ):
+                    out.append(
+                        OcrProposal(
+                            page=index,
+                            bbox=(
+                                box.x0 + rect.x0 * sx,
+                                box.y0 + rect.y0 * sy,
+                                box.x0 + rect.x1 * sx,
+                                box.y0 + rect.y1 * sy,
+                            ),
+                            rule=label,
+                        )
+                    )
+            finally:
+                mini.close()
+        return out
+    finally:
+        if stripped is not None:
+            stripped.close()
+        doc.close()
+
+
+def _rules_on(
+    mini_bytes: bytes,
+    *,
+    searches: Sequence[SearchOptions],
+    regex_patterns: Sequence[tuple[list[str], bool, bool, bool]],
+    presets: Sequence[str],
+    budget: RegexBudget | None,
+    find_by_regex: object,
+) -> list[tuple[str, RedactionRect]]:
+    """Les règles de l'utilisateur, appliquées telles quelles au mini-PDF de l'OCR.
+
+    Extraite pour que les deux sources de pixels, image extraite et page rendue,
+    passent par exactement le même appariement. Une seconde copie dériverait, et
+    « caviarder Dupont » ne voudrait plus dire la même chose selon d'où viennent
+    les pixels.
+    """
+    found: list[tuple[str, RedactionRect]] = []
+    for opts in searches:
+        for rect in find_redaction_rectangles(mini_bytes, opts, budget=budget):
+            found.append((f"search:{opts.query}", rect))
+    for patterns, case_sensitive, multiline, ignore_accents in regex_patterns:
+        label = f"regex:{patterns[0] if patterns else ''}"
+        for rect in find_by_regex(  # type: ignore[operator]
+            mini_bytes,
+            patterns,
+            case_sensitive=case_sensitive,
+            multiline=multiline,
+            ignore_accents=ignore_accents,
+            budget=budget,
+        ):
+            found.append((label, rect))
+    if presets:
+        for rect in find_redaction_rectangles_for_presets(
+            mini_bytes, list(presets), budget=budget
+        ):
+            found.append(("preset", rect))
+    return found
+
+
 def propose_from_regions(
     pdf_bytes: bytes,
     regions: Sequence[OpaqueRegion],
@@ -258,27 +466,14 @@ def propose_from_regions(
                 if width <= 0 or height <= 0:
                     continue
 
-                found: list[tuple[str, RedactionRect]] = []
-                for opts in searches:
-                    label = f"search:{opts.query}"
-                    for rect in find_redaction_rectangles(mini_bytes, opts, budget=budget):
-                        found.append((label, rect))
-                for patterns, case_sensitive, multiline, ignore_accents in regex_patterns:
-                    label = f"regex:{patterns[0] if patterns else ''}"
-                    for rect in find_redaction_rectangles_by_regex(
-                        mini_bytes,
-                        patterns,
-                        case_sensitive=case_sensitive,
-                        multiline=multiline,
-                        ignore_accents=ignore_accents,
-                        budget=budget,
-                    ):
-                        found.append((label, rect))
-                if presets:
-                    for rect in find_redaction_rectangles_for_presets(
-                        mini_bytes, list(presets), budget=budget
-                    ):
-                        found.append(("preset", rect))
+                found = _rules_on(
+                    mini_bytes,
+                    searches=searches,
+                    regex_patterns=regex_patterns,
+                    presets=presets,
+                    budget=budget,
+                    find_by_regex=find_redaction_rectangles_by_regex,
+                )
 
                 for label, rect in found:
                     out.append(

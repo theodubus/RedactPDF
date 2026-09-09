@@ -123,6 +123,11 @@ rule.
 The report marks those matches `spans_line_break`, the UI turns that into an
 explanation, and the way out is a manual rectangle over each half.
 
+A second case is not about rules at all: a request carrying more than **500
+rectangles** is refused straight away with `status: too_many_rects`. That is far
+beyond anything drawn by hand; it exists so a client loop gone wrong reports
+something instead of freezing the app for minutes.
+
 ### What a typed rule tolerates
 
 You type the letters; the document may store them differently. Two cases are
@@ -244,6 +249,19 @@ letterhead logo does not deserve a confirmation screen, but it can carry an
 employer name, and reading it costs about a tenth of a second (measured on a real
 payslip: a 202x122 logo, 0.11 s, "REPUBLIQUE FRANCAISE" read).
 
+It also runs on **marks that are not images and not text**: text converted to
+outlines, a label inside a vector chart, a name painted through a fill pattern.
+Those are drawn on the page like anything else and are perfectly legible on
+screen, but extraction never reports them, so a rule for them finds nothing and
+the audit confirms nothing, in both directions. The page is rendered with its
+text layer removed and the leftover marks are read. A page whose marks are all
+ordinary text renders blank and costs a single cheap probe: measured, 20 pages of
+plain text and 20 pages of tables together produce zero suggestions in 0.2 s,
+while a name painted through a pattern produces one in 0.2 s.
+
+Same terms as every other suggestion: it is a proposal, not a guarantee, and a
+hand-drawn rectangle remains the way to be certain.
+
 That last row is the risky one, and the app warns you before exporting rather
 than afterwards: you get black boxes over a scan, which looks handled, while only
 what a rough detector happened to find actually is. A document that looks handled
@@ -277,6 +295,17 @@ weaker than the one a typed rule carries, is in
 [SECURITY.md → Important Limitations](SECURITY.md#important-limitations).
 
 ---
+
+## A signed document does not come back signed
+
+Redacting rewrites the file, and a signature covers exactly those bytes, so it
+no longer applies. Nothing can preserve both. The export removes the signature
+fields with the rest of the form rather than leaving a form that claims a
+signature it no longer has, and the report says how many were removed under
+`signatures`, alongside an `X-Redaction-Signatures-Removed` header.
+
+If the recipient needs a signature, the document has to be signed again after
+redaction, not before.
 
 ## Check the output yourself
 

@@ -78,10 +78,9 @@ def _drop_annot_references(doc: pymupdf.Document, page: pymupdf.Page) -> None:
     module : on ne fuit pas par un objet que rien ne désigne, et `garbage=4` à
     l'enregistrement le fait disparaître physiquement.
 
-    `/AcroForm/Fields` est coupé avec, car c'est le second chemin vers un widget :
-    sa valeur saisie survivrait au vidage de `/Annots` si le formulaire la
-    désignait encore. Retirer toutes les annotations d'un document, c'est retirer
-    tous ses champs, donc le formulaire n'a plus de contenu à décrire.
+    Le formulaire est coupé avec, par `_drop_acroform`, car c'est le second
+    chemin vers un widget : sa valeur saisie survivrait au vidage de `/Annots` si
+    le formulaire la désignait encore.
     """
     try:
         if doc.xref_get_key(page.xref, "Annots")[0] != "null":
@@ -89,12 +88,72 @@ def _drop_annot_references(doc: pymupdf.Document, page: pymupdf.Page) -> None:
     except Exception:
         pass
 
+
+def _drop_acroform(doc: pymupdf.Document) -> None:
+    """Retire `/AcroForm` en entier, pas seulement ses `/Fields`.
+
+    Retirer toutes les annotations d'un document, c'est retirer tous ses champs :
+    le formulaire n'a plus rien à décrire. Une première version se contentait de
+    couper `/Fields`, et laissait derrière elle un dictionnaire qui mentait deux
+    fois. Mesuré sur un PDF portant un champ de signature :
+
+        entrée   <</SigFlags 3/Fields[7 0 R]>>
+        sortie   <</SigFlags 3/Fields null>>
+
+    `/Fields` est obligatoire et doit être un tableau quand `/AcroForm` existe,
+    donc `null` produit un formulaire malformé ; et `/SigFlags 3` survivait à la
+    disparition du seul champ de signature, si bien qu'un lecteur annonçait un
+    document signé là où il n'y avait plus rien à vérifier. `get_sigflags()`
+    rendait encore 3 sur la sortie.
+
+    Une valeur nulle vaut une clé absente en PDF, donc écrire `null` sur
+    `/AcroForm` suffit à faire disparaître l'ensemble ; `garbage=4` retire
+    ensuite les objets devenus inatteignables.
+    """
     try:
         catalog = doc.pdf_catalog()
-        if catalog and doc.xref_get_key(catalog, "AcroForm/Fields")[0] != "null":
-            doc.xref_set_key(catalog, "AcroForm/Fields", "null")
+        if catalog and doc.xref_get_key(catalog, "AcroForm")[0] != "null":
+            doc.xref_set_key(catalog, "AcroForm", "null")
     except Exception:
         pass
+
+
+def signature_fields(doc: pymupdf.Document) -> list[str]:
+    """Noms des champs de signature du document, lus **avant** caviardage.
+
+    Aucun caviardage ne peut préserver une signature cryptographique : elle
+    couvre les octets du fichier, et on les réécrit. Ce n'est pas un défaut à
+    corriger, c'est la définition d'une signature. Ce qui manquait, c'est de le
+    dire : l'export partait en 200, le nom visé avait bien disparu, et la
+    signature avec, sans que rien dans le rapport ne le mentionne.
+
+    On lit `/AcroForm/Fields` plutôt que les widgets des pages : un champ de
+    signature peut n'avoir aucune apparence sur une page.
+    """
+    names: list[str] = []
+    try:
+        catalog = doc.pdf_catalog()
+        if not catalog:
+            return names
+        kind, value = doc.xref_get_key(catalog, "AcroForm/Fields")
+    except Exception:
+        return names
+    if kind != "array":
+        return names
+
+    for token in str(value).strip("[] ").split("0 R"):
+        token = token.strip()
+        if not token.isdigit():
+            continue
+        xref = int(token)
+        try:
+            if doc.xref_get_key(xref, "FT")[1] != "/Sig":
+                continue
+            name_kind, name = doc.xref_get_key(xref, "T")
+        except Exception:
+            continue
+        names.append(str(name).strip("()") if name_kind == "string" else f"#{xref}")
+    return names
 
 
 def sanitize_document(
@@ -163,6 +222,9 @@ def sanitize_document(
             # porte la garantie, la boucle n'étant qu'un chemin poli vers le même
             # résultat (elle tient la comptabilité du formulaire quand elle marche).
             _drop_annot_references(doc, page)
+
+        # Une fois, pour le document : le formulaire est au catalogue, pas aux pages.
+        _drop_acroform(doc)
 
     if remove_outline:
         try:

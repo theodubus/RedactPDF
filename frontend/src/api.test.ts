@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { redactApply } from "./api";
+import { encryptedReason, redactApply } from "./api";
 
 // Le payload construit ici est la seule chose que le backend verra. Une option
 // remplie d'une valeur par défaut de ce côté-ci écrase le défaut du serveur, et
@@ -63,5 +63,43 @@ describe("construction du payload", () => {
 
     const searches = payload().searches as { options: Record<string, unknown> }[];
     expect(searches[0].options.whole_word).toBe(true);
+  });
+});
+
+// Le corps d'un 400 « document chiffré ». Les deux formes ci-dessous sont les
+// octets réels renvoyés par le backend, relevés sur un PDF AES-256 :
+//
+//   sans mot de passe      {"detail":{"status":"encrypted","reason":"password_required"}}
+//   mauvais mot de passe   {"detail":{"status":"encrypted","reason":"password_incorrect"}}
+//
+// Cette fonction lit une forme de réponse serveur, exactement comme
+// `serverReviewItems`, qui n'avait été testée que contre la forme imaginée : le
+// carrousel ne s'ouvrait jamais et le test passait. On teste donc contre la
+// mesure, pas contre le souvenir.
+describe("encryptedReason", () => {
+  it("lit la forme enveloppée par FastAPI", () => {
+    expect(encryptedReason({ detail: { status: "encrypted", reason: "password_required" } })).toBe(
+      "password_required",
+    );
+    expect(encryptedReason({ detail: { status: "encrypted", reason: "password_incorrect" } })).toBe(
+      "password_incorrect",
+    );
+  });
+
+  it("accepte aussi la forme nue", () => {
+    expect(encryptedReason({ status: "encrypted", reason: "password_incorrect" })).toBe(
+      "password_incorrect",
+    );
+  });
+
+  it("retombe sur password_required quand la raison est inconnue", () => {
+    expect(encryptedReason({ detail: { status: "encrypted" } })).toBe("password_required");
+  });
+
+  it("rend null sur tout ce qui n'est pas un refus de chiffrement", () => {
+    expect(encryptedReason({ detail: { status: "inconclusive", opaque_regions: [] } })).toBeNull();
+    expect(encryptedReason({ detail: "Not Found" })).toBeNull();
+    expect(encryptedReason(null)).toBeNull();
+    expect(encryptedReason("erreur")).toBeNull();
   });
 });

@@ -328,3 +328,117 @@ def test_an_image_below_the_review_threshold_is_still_read() -> None:
 
     assert resp.status_code == 200, resp.text[:200]
     assert int(resp.headers["X-Redaction-Ocr-Proposals"]) >= 1
+
+
+def _pattern_document() -> bytes:
+    """Un nom peint par un motif de tuilage : visible, absent de la couche texte.
+
+    Construit à la main : aucune API de haut niveau ne pose un motif portant du
+    texte. C'est pourtant une forme banale, produite par les outils de mise en
+    page pour les fonds et les tampons répétés.
+    """
+    doc = pymupdf.open()
+    page = doc.new_page()
+    page.insert_text((72, 300), "texte normal", fontsize=12)
+    raw = doc.tobytes()
+    doc.close()
+
+    out = pymupdf.open(stream=raw, filetype="pdf")
+    pg = out[0]
+    font_xref = pg.get_fonts(full=True)[0][0]
+    kind, value = out.xref_get_key(pg.xref, "Resources")
+    res = int(value.split()[0]) if kind == "xref" else pg.xref
+
+    pattern = out.get_new_xref()
+    out.update_object(
+        pattern,
+        "<< /Type /Pattern /PatternType 1 /PaintType 1 /TilingType 1 "
+        "/BBox [0 0 220 50] /XStep 220 /YStep 50 "
+        f"/Resources << /Font << /F0 {font_xref} 0 R >> >> >>",
+    )
+    out.update_stream(pattern, f"BT /F0 16 Tf 5 20 Td ({TARGET}) Tj ET".encode(), new=True)
+    out.xref_set_key(res, "Pattern", f"<< /P0 {pattern} 0 R >>")
+
+    kind, value = out.xref_get_key(pg.xref, "Contents")
+    contents = int(value.strip().lstrip("[").split()[0])
+    out.update_stream(
+        contents,
+        out.xref_stream(contents) + b"\nq /Pattern cs /P0 scn 60 400 300 60 re f Q",
+    )
+    data = out.tobytes()
+    out.close()
+    return data
+
+
+@pytest.mark.integration
+def test_a_name_painted_by_a_pattern_is_proposed() -> None:
+    """Le trou le plus large qui restait, et il était silencieux.
+
+    Tout ce que la page peint sans que l'extracteur le rapporte échappe aux
+    règles **et** à l'audit : texte converti en courbes, étiquettes d'un
+    graphique vectoriel, texte peint par un motif. Mesuré sur ce dernier : le nom
+    est parfaitement lisible à l'écran, une règle rend zéro occurrence, l'export
+    part en 200.
+
+    Deux détections ont été mesurées et écartées avant celle-ci. `get_drawings()`
+    rend zéro dessin sur cette page. Et la quantité d'encre ne sépare rien : le
+    motif en produit 0,09 % quand un tableau légitime en produit 2,65 %.
+    """
+    pdf = _pattern_document()
+    assert TARGET not in pymupdf.open(stream=pdf, filetype="pdf")[0].get_text()
+
+    sans = _post(pdf, {"searches": [{"query": TARGET}], "options": {"image_regions": "ignore"}})
+    avec = _post(
+        pdf,
+        {
+            "searches": [{"query": TARGET}],
+            "options": {"image_regions": "ignore", "ocr_proposals": True},
+        },
+    )
+
+    assert sans.headers["X-Redaction-Ocr-Proposals"] == "0"
+    assert int(avec.headers["X-Redaction-Ocr-Proposals"]) >= 1
+
+
+@pytest.mark.unit
+def test_a_plain_text_page_costs_nothing() -> None:
+    """Le pré-contrôle existe pour ne pas payer un OCR par page sur tout document.
+
+    Une page dont l'encre se réduit à son texte ne peint rien que les règles ne
+    voient déjà : elle est écartée avant le rendu.
+    """
+    from redactpdf.ocr import pages_with_unreported_marks
+
+    doc = pymupdf.open()
+    for index in range(5):
+        page = doc.new_page()
+        page.insert_text((72, 120), f"page {index}, dossier ordinaire", fontsize=12)
+    pdf = doc.tobytes()
+    doc.close()
+
+    assert pages_with_unreported_marks(pdf) == []
+
+
+@pytest.mark.unit
+def test_a_hairline_outline_is_not_missed_by_the_probe() -> None:
+    """Le pré-contrôle tournait à 36 dpi et devenait myope.
+
+    Un texte détouré en 0,4 pt y tombait à 0,014 % d'encre, sous le seuil, donc
+    jamais lu. À 72 dpi il donne 0,25 %, pour 7 ms par page.
+    """
+    from redactpdf.ocr import pages_with_unreported_marks
+
+    doc = pymupdf.open()
+    page = doc.new_page()
+    page.insert_text((72, 300), "texte normal", fontsize=12)
+    shape = page.new_shape()
+    for k in range(9):
+        x = 80 + k * 40
+        shape.draw_rect(pymupdf.Rect(x, 200, x + 8, 240))
+        shape.draw_rect(pymupdf.Rect(x + 10, 210, x + 24, 218))
+    shape.finish(color=(0, 0, 0), width=0.4)
+    shape.commit()
+    pdf = doc.tobytes()
+    doc.close()
+
+    assert pages_with_unreported_marks(pdf) == [0]

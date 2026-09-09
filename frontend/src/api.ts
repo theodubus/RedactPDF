@@ -103,6 +103,16 @@ export type RedactSuccess = {
     occurrencesRegex?: string;
     occurrencesPresets?: string;
     occurrencesTotal?: string;
+
+    /**
+     * Nombre de champs de signature que portait le document d'entrée.
+     *
+     * Caviarder réécrit les octets du fichier, donc la signature ne s'applique
+     * plus au résultat : aucune implémentation ne peut préserver les deux. Le
+     * backend le compte pour qu'on puisse le dire ; l'interface ne l'affiche pas
+     * encore, faute de surface de notification sur un export réussi.
+     */
+    signaturesRemoved?: string;
   };
 };
 
@@ -234,6 +244,7 @@ export async function redactApply(params: {
       occurrencesRegex: getHeader(resp.headers, "X-Redaction-Regex-Occurrences"),
       occurrencesPresets: getHeader(resp.headers, "X-Redaction-Presets-Occurrences"),
       occurrencesTotal: getHeader(resp.headers, "X-Redaction-Total-Occurrences"),
+      signaturesRemoved: getHeader(resp.headers, "X-Redaction-Signatures-Removed"),
     },
   };
 }
