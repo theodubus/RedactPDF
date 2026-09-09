@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import io
 import re
-import unicodedata
 from dataclasses import dataclass
 from typing import Any
 
 import pymupdf
 import pypdf
 
+from redactpdf.folding import fold_char, fold_keep_len
 from redactpdf.regex_guard import RegexBudget, compile_pattern
 from redactpdf.regex_guard import finditer as guarded_finditer
 
@@ -23,22 +23,7 @@ class AuditOptions:
     max_matches_per_page: int = 50
 
 
-def _fold_keep_len(s: str) -> str:
-    """
-    Accent folding that preserves string length 1:1 (important for index-based spans).
-    For each char, NFKD-decompose and keep the first non-combining codepoint.
-    """
-    out: list[str] = []
-    for ch in s or "":
-        decomp = unicodedata.normalize("NFKD", ch)
-        base = ""
-        for c in decomp:
-            if unicodedata.combining(c):
-                continue
-            base = c
-            break
-        out.append(base if base else ch)
-    return "".join(out)
+_fold_keep_len = fold_keep_len
 
 
 def _fold_regex_pattern_best_effort(pattern: str) -> str:
@@ -93,22 +78,104 @@ def _make_snippet(text: str, start: int, end: int, radius: int = 30) -> str:
 
 def _strip_accents_keep_len(s: str) -> str:
     """
-    Best-effort accent folding with length preservation.
-    For each character:
-      - NFKD decomposes accents (e + ◌́)
-      - remove combining marks
-      - if multiple base chars result (rare, ligatures), keep the first char
-    This keeps indices stable enough for audit position reporting.
+    Repliage des accents à longueur constante, pour l'audit.
+
+    Délègue à `folding.fold_char`, qui est la seule définition de la règle : cette
+    fonction en portait autrefois sa propre copie, et c'est ainsi que la
+    recherche et l'audit ont fini par ne plus dire la même chose du même
+    document. Voir l'en-tête de `folding.py`.
     """
     out: list[str] = []
     for ch in s:
-        decomp = unicodedata.normalize("NFKD", ch)
-        base = "".join(c for c in decomp if not unicodedata.combining(c))
+        base = fold_char(ch)
         if not base:
             out.append(ch)
         else:
             out.append(base[0])
     return "".join(out)
+
+
+# Ce qu'un glyphe unique peut cacher. À gauche le caractère tel qu'il est dans le
+# document, à droite les lettres que l'utilisateur tape. Deux familles :
+#
+# - les ligatures typographiques (U+FB00..U+FB06), produites par LaTeX, InDesign
+#   et Word dès qu'un mot contient ff, fi, fl ; « Griffith » s'écrit « Griﬃth »
+#   et ne correspond à rien si on cherche la suite de lettres ;
+# - les lettres soudées du latin (æ, œ), que personne ne tape au clavier :
+#   « Lætitia » se cherche « Laetitia », « cœur » se cherche « coeur ».
+#
+# Ce n'est pas du confort : sans ça, la règle et l'audit ratent tous les deux, et
+# l'export part en 200 avec le nom parfaitement lisible à l'écran.
+_LIGATURES: dict[str, str] = {
+    "\ufb00": "ff",
+    "\ufb01": "fi",
+    "\ufb02": "fl",
+    "\ufb03": "ffi",
+    "\ufb04": "ffl",
+    "\ufb05": "ft",
+    "\ufb06": "st",
+    "\u00e6": "ae",
+    "\u0153": "oe",
+}
+
+# Les suites de lettres à surveiller, les plus longues d'abord : sans cet ordre,
+# « ff » l'emporterait sur « ffi » et couperait la correspondance en deux.
+_EXPANSIONS: list[tuple[str, str]] = sorted(
+    ((letters, glyph) for glyph, letters in _LIGATURES.items()),
+    key=lambda pair: -len(pair[0]),
+)
+
+
+def _alternative_for(fragment: str, glyph: str) -> str:
+    """Le glyphe dans la casse du fragment saisi.
+
+    Sans ça, chercher « LAETITIA » sur un document contenant « LÆTITIA »
+    échouerait en mode sensible à la casse, alors que c'est le même nom.
+    """
+    return glyph.upper() if fragment[:1].isupper() else glyph
+
+
+def escape_literal(text: str) -> str:
+    """`re.escape`, plus la tolérance aux glyphes qui portent plusieurs lettres.
+
+    Le motif s'élargit ici plutôt que le texte de ne se replier ailleurs : le
+    repliage doit conserver la longueur, puisque les index servent à retrouver
+    les boîtes de glyphes, et développer « ﬃ » en « ffi » y ajouterait deux
+    caractères qui ne correspondent à aucun glyphe. Une alternance, elle, fait
+    correspondre le motif à **un** caractère du document, donc à un glyphe, donc
+    au bon rectangle.
+    """
+    out: list[str] = []
+    i = 0
+    while i < len(text):
+        matched = False
+        for letters, glyph in _EXPANSIONS:
+            fragment = text[i : i + len(letters)]
+            if fragment.lower() == letters:
+                other = _alternative_for(fragment, glyph)
+                out.append(f"(?:{re.escape(fragment)}|{re.escape(other)})")
+                i += len(letters)
+                matched = True
+                break
+        if matched:
+            continue
+        ch = text[i]
+        if ch in _LIGATURES:
+            # L'utilisateur a tapé le glyphe : on accepte aussi les lettres.
+            out.append(f"(?:{re.escape(ch)}|{re.escape(_LIGATURES[ch])})")
+        else:
+            out.append(re.escape(ch))
+        i += 1
+    return "".join(out)
+
+
+def has_ligature_alternatives(text: str) -> bool:
+    """Vrai si la requête contient de quoi rendre `escape_literal` non trivial.
+
+    Sert au chemin rapide de `search.py`, qui n'a aucun moyen d'exprimer une
+    alternance : il doit alors céder la place au moteur regex.
+    """
+    return escape_literal(text) != re.escape(text)
 
 
 def build_whole_word_pattern(query: str) -> str:
@@ -127,9 +194,9 @@ def build_whole_word_pattern(query: str) -> str:
         raise ValueError("query must be non-empty")
 
     if len(tokens) == 1:
-        core = re.escape(tokens[0])
+        core = escape_literal(tokens[0])
     else:
-        core = r"\s+".join(re.escape(t) for t in tokens)
+        core = r"\s+".join(escape_literal(t) for t in tokens)
 
     return rf"(?<!\w){core}(?!\w)"
 
@@ -154,9 +221,13 @@ def build_audit_for_search(
             ignore_accents=ignore_accents,
         )
 
+    # Même en sous-mot, l'audit passe par un motif et non par la chaîne brute :
+    # sinon il ne connaîtrait pas les ligatures que la recherche, elle, sait
+    # traiter, et les deux ne diraient plus la même chose du même document. C'est
+    # exactement la dérive que ce module existe pour empêcher.
     return AuditOptions(
-        patterns=[q],
-        regex=False,
+        patterns=[escape_literal(q)],
+        regex=True,
         case_sensitive=case_sensitive,
         ignore_accents=ignore_accents,
     )

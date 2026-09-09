@@ -123,6 +123,13 @@ def plan_redactions(
     if not pdf_bytes:
         raise ValueError("Empty PDF bytes")
 
+    # Les règles travaillent sur un document dont tous les calques sont allumés.
+    # Ce n'est pas une entorse à « les rectangles viennent de l'original » : rien
+    # n'est caviardé ici, on rend seulement visible ce que l'original contient
+    # déjà. Les coordonnées sont inchangées, et le caviardage s'applique bien
+    # aux octets d'origine.
+    pdf_bytes = all_layers_visible(pdf_bytes)
+
     # Un seul budget pour toute la phase : les motifs sont exécutés ligne par
     # ligne et règle par règle, un délai par appel serait multiplié d'autant.
     budget = RegexBudget()
@@ -272,6 +279,40 @@ def presets_internal_audit(
         "presets": presets.presets,
         "matches": matches,
     }
+
+
+def all_layers_visible(pdf_bytes: bytes) -> bytes:
+    """Le document avec tous ses calques allumés, sans autre changement.
+
+    Un PDF peut porter des groupes de contenu optionnel (OCG) éteints par
+    défaut. `get_text()` respecte cet état, donc la règle **ne voit rien** :
+    mesuré le 9 septembre 2026, un nom posé sur un calque masqué rendait zéro
+    rectangle, et seul l'audit à deux moteurs rattrapait, en refusant l'export.
+
+    Refus honnête, mais impasse : l'utilisateur ne peut pas dessiner de rectangle
+    sur un texte qu'il ne voit pas. Or ce texte est bien dans le fichier, et
+    n'importe quel lecteur rallume le calque d'un clic.
+
+    Allumer un calque ne caviarde rien et ne déplace rien : les coordonnées
+    restent celles de l'original, l'invariant du plan est intact. On révèle, on
+    ne modifie pas.
+
+    Rend les octets d'origine quand il n'y a pas de calque, ce qui est le cas de
+    l'immense majorité des documents : inutile de réécrire un PDF pour rien.
+    """
+    doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")
+    try:
+        ocgs = doc.get_ocgs()
+        if not ocgs:
+            return pdf_bytes
+        doc.set_layer(-1, on=list(ocgs.keys()), off=[])
+        return bytes(doc.tobytes())
+    except Exception:
+        # Un document dont on ne sait pas manipuler les calques reste traité tel
+        # quel : mieux vaut le contrôle habituel que pas de contrôle du tout.
+        return pdf_bytes
+    finally:
+        doc.close()
 
 
 def readable_view(pdf_bytes: bytes, options: RedactionOptions) -> bytes:

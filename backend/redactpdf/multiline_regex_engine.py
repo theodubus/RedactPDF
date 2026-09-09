@@ -8,6 +8,7 @@ from typing import Any
 import pymupdf  # PyMuPDF
 import regex
 
+from redactpdf.folding import fold_char
 from redactpdf.redaction import RedactionRect
 from redactpdf.regex_guard import (
     RegexBudget,
@@ -15,22 +16,27 @@ from redactpdf.regex_guard import (
 )
 from redactpdf.regex_guard import finditer as guarded_finditer
 
+_fold_char = fold_char
+
 
 def _fold_keep_len(s: str) -> str:
     """
     Accent folding that preserves length 1:1 (critical for span->rect mapping).
+
+    Un caractère dont la décomposition contient **plusieurs** lettres est laissé
+    tel quel. C'est le cas des ligatures typographiques : « ﬃ » se décompose en
+    « ffi », et l'ancienne version en gardait la première lettre, donc « Griﬃth »
+    devenait « Grifth ». Une requête « Griffith » ne pouvait plus correspondre,
+    ni pour la règle ni pour l'audit, et l'export partait en 200 avec le nom
+    intact et lisible à l'écran. Mesuré le 9 septembre 2026.
+
+    On ne peut pas non plus les développer ici : la fonction doit rendre autant
+    de caractères qu'elle en reçoit, sans quoi les index ne désignent plus les
+    bonnes boîtes de glyphes. C'est donc le **motif** qui s'élargit, dans
+    `audit.escape_literal`, et cette fonction se contente de ne plus détruire
+    l'information.
     """
-    out: list[str] = []
-    for ch in s or "":
-        decomp = unicodedata.normalize("NFKD", ch)
-        base = ""
-        for c in decomp:
-            if unicodedata.combining(c):
-                continue
-            base = c
-            break
-        out.append(base if base else ch)
-    return "".join(out)
+    return "".join(_fold_char(ch) for ch in s or "")
 
 
 def _fold_regex_pattern_best_effort(pattern: str) -> str:
@@ -166,15 +172,7 @@ def _fold_text_and_map_indices(s: str) -> tuple[str, list[int]]:
             j += 1
 
         # Fold the base char (1 output char)
-        decomp = unicodedata.normalize("NFKD", ch)
-        base = ""
-        for c in decomp:
-            if unicodedata.combining(c):
-                continue
-            base = c
-            break
-
-        out.append(base if base else ch)
+        out.append(_fold_char(ch))
         boundaries.append(j)
         i = j
 

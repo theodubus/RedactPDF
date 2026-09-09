@@ -123,6 +123,28 @@ rule.
 The report marks those matches `spans_line_break`, the UI turns that into an
 explanation, and the way out is a manual rectangle over each half.
 
+### What a typed rule tolerates
+
+You type the letters; the document may store them differently. Two cases are
+handled without you having to know about them:
+
+- **Ligatures.** Typesetting software turns `ff`, `fi`, `fl`, `ffi` and `ffl`
+  into a single glyph. Searching "Griffith" finds it in a document that stores
+  "Griﬃth", and typing the ligature works too.
+- **Welded letters.** "Laetitia" finds "Lætitia", "coeur" finds "cœur", in both
+  directions.
+
+Accents are folded by default, so "Bourdillon" finds "Bourdillón" and decomposed
+accents (an `e` followed by a combining acute, which is how macOS often writes
+them) are matched as well.
+
+The tolerance widens what is **found**, never what is removed: a rule for
+"Griffith" does not touch "Grifth", which is a different word.
+
+Text on a **hidden layer** is redacted like any other. It is invisible on screen
+but one click away in any reader, so treating it as absent would be a poor kind
+of honesty.
+
 ### Regions the rules could not read
 
 A third outcome, distinct from both: **HTTP 409**, meaning nothing is known to

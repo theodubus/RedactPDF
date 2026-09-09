@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 
 import pymupdf
 
-from redactpdf.audit import build_whole_word_pattern
+from redactpdf.audit import build_whole_word_pattern, escape_literal, has_ligature_alternatives
 from redactpdf.multiline_regex_engine import find_redaction_rectangles_by_regex
 from redactpdf.redaction import RedactionRect
 from redactpdf.regex_guard import RegexBudget
@@ -44,8 +43,8 @@ def _build_substring_pattern(query: str) -> str:
         raise ValueError("query must be non-empty")
 
     if len(tokens) == 1:
-        return re.escape(tokens[0])
-    return r"\s+".join(re.escape(t) for t in tokens)
+        return escape_literal(tokens[0])
+    return r"\s+".join(escape_literal(t) for t in tokens)
 
 
 def find_redaction_rectangles(
@@ -68,9 +67,11 @@ def find_redaction_rectangles(
             budget=budget,
         )
 
-    # If ignore_accents=True, we cannot rely on page.search_for().
-    # We reuse the regex engine with a literal/whitespace-flex regex.
-    if opts.ignore_accents:
+    # Idem quand la requête contient une suite de lettres qu'un glyphe unique peut
+    # porter : `page.search_for` cherche une chaîne, il ne sait pas exprimer
+    # « ffi ou ﬃ ». Sans ce détour, le chemin rapide ratait « Griffith » écrit
+    # « Griﬃth » en silence, et l'audit aussi, puisqu'il cherche la même chose.
+    if opts.ignore_accents or has_ligature_alternatives(query):
         pattern = _build_substring_pattern(query)
         return find_redaction_rectangles_by_regex(
             pdf_bytes=pdf_bytes,
@@ -78,7 +79,7 @@ def find_redaction_rectangles(
             case_sensitive=opts.case_sensitive,
             pages=opts.pages,
             multiline=_MULTILINE_SEARCH,
-            ignore_accents=True,
+            ignore_accents=opts.ignore_accents,
             budget=budget,
         )
 

@@ -247,6 +247,42 @@ Neither is a hole in the guarantee, because the guarantee never covered this
 detector. The real safety net is unchanged: the area is still reported for human
 review, and a suggestion does not remove that.
 
+### Text a rule used to walk straight past
+
+Two shapes were found by building traps in September 2026, not by reading code.
+Both are fixed, both have regression tests, and both were verified to fail again
+when the fix is removed.
+
+**A glyph carrying several letters.** LaTeX, InDesign and Word replace `ff`, `fi`
+and `fl` with a single ligature glyph, so "Griffith" is stored as `Gri` + U+FB03 +
+`th`. The folding step has to return one character per character, since indices
+map back to glyph boxes, so it kept only the first letter: "Griﬃth" folded to
+"Grifth" and a rule for "Griffith" matched nothing. The audit re-runs the same
+rule, so it saw nothing either: **HTTP 200, the name plainly readable on screen**.
+The same held for the welded letters `æ` and `œ`, which nobody types ("Lætitia"
+is searched as "Laetitia").
+
+The fix widens the **pattern**, not the text: `ffi` becomes `(?:ffi|ﬃ)`, so the
+match covers one document character, which is one glyph, which is the right
+rectangle. Folding no longer destroys those glyphs either, and that half is
+load-bearing in the other direction: without it the alternation collapsed to
+`(?:ffi|f)` and a rule for "Griffith" would delete "Grifth", a different word.
+
+That bug also exposed a structural one. The folding rule existed in **four**
+copies across two modules. Fixing three of them made the search say "no match"
+while the audit said "the target survived", on a document containing neither. It
+now lives once, in `redactpdf/folding.py`, and a test fails if a second copy
+appears.
+
+**Text on a layer that is switched off.** A PDF can carry optional content groups
+that are hidden by default. Extraction respects that state, so the rules were
+blind while any reader turns the layer back on with one click. Here the two-engine
+audit did its job and refused the export, which is the outcome that whole design
+exists for. But it was a dead end: you cannot draw a rectangle over text you
+cannot see. Rules now run on a copy with every layer switched on. Nothing is
+redacted or moved by that, only revealed, so rectangles still come from the
+original coordinates.
+
 **Vector graphics are not covered.** The detector looks at raster images only. A
 chart drawn as lines and paths, a vector logo, and above all text converted to
 outlines are all invisible to the text rules and equally invisible to this check.
