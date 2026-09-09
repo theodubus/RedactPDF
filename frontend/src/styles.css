@@ -675,12 +675,6 @@ body,
   opacity: 0.8;
 }
 
-/* Le tireté ambre des propositions, pour que la légende désigne le bon tracé. */
-.reviewProposedHint::before {
-  background: rgba(184, 134, 11, 0.18);
-  border: 1px dashed #b8860b;
-}
-
 .reviewCoverageHint::before {
   content: "";
   display: inline-block;
@@ -690,6 +684,17 @@ body,
   vertical-align: baseline;
   background: rgba(28, 124, 74, 0.22);
   border: 1px solid #1c7c4a;
+}
+
+/* Le tireté ambre des propositions. Sélecteur **doublé** à dessein : l'élément
+   porte les deux classes, donc à spécificité égale c'est l'ordre du fichier qui
+   tranchait, et la pastille des propositions ressortait verte comme celle des
+   rectangles. Une légende qui montre la mauvaise couleur fait lire une
+   suggestion comme une décision, ce que toute la mise en forme cherche à
+   éviter. Doubler la classe met la règle hors de portée d'un déplacement. */
+.reviewCoverageHint.reviewProposedHint::before {
+  background: rgba(184, 134, 11, 0.18);
+  border: 1px dashed #b8860b;
 }
 
 .sectionHint {
