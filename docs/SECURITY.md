@@ -19,6 +19,13 @@ RedactPDF is a local PDF redaction tool intended to produce a **new exported PDF
 
 - Export is done as a new file.
 - Redaction is followed by automated audit checks.
+- **The audit reads the output with two independent engines**, PyMuPDF and
+  `pypdf`, and one match from either is enough to refuse the export. Reading
+  back with only the library that performed the redaction would correlate the
+  engine's blind spots with the check's: whatever it failed to match, it would
+  also fail to find. The report carries an `extractors` map naming each engine
+  and whether it ran, on success as well as on failure, because a pass validated
+  by one reader is not a pass validated by two.
 - Backend supports three image-redaction modes (`none`, `remove`, `pixels`)
   + vector-graphics removal + metadata/annotation/attachment sanitation.
 - The `pixels` image mode rewrites the bitmap of the targeted region (and

@@ -59,6 +59,11 @@ dependencies = [
   # en retour arriere catastrophique sans qu'on puisse l'interrompre, et il ne
   # relache pas le GIL pendant le parcours. Voir redactpdf/regex_guard.py.
   "regex==2026.9.3",
+  # Second moteur d'extraction pour l'audit. Dépendance d'exécution et non de
+  # test : relire la sortie avec la bibliothèque qui vient de l'écrire corrèle
+  # les angles morts du caviardage et ceux du contrôle. Pur Python, donc sans
+  # effet sur l'empaquetage figé.
+  "pypdf==6.6.2",
 ]
 
 [project.optional-dependencies]
@@ -73,7 +78,6 @@ dev = [
   # le disait. La version suit celle de `regex` ci-dessus.
   "types-regex==2026.9.3.20260903",
   "reportlab==4.4.9",
-  "pypdf==6.6.2",
   # Tests à base de propriétés : voir tests/test_properties.py. Deux invariants
   # y vivent dont l'espace d'entrée est Unicode entier, hors de portée d'exemples
   # écrits à la main.

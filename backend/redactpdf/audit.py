@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import io
 import re
 import unicodedata
 from dataclasses import dataclass
 from typing import Any
 
 import pymupdf
+import pypdf
 
 from redactpdf.regex_guard import RegexBudget, compile_pattern
 from redactpdf.regex_guard import finditer as guarded_finditer
@@ -264,6 +266,43 @@ def audit_text(
     return matches, per_page
 
 
+# --------------------------------------------------------------------------
+# Extraction : deux moteurs, pas un
+#
+# L'audit relisait la sortie avec PyMuPDF, c'est-à-dire la bibliothèque qui
+# venait de la caviarder. Un angle mort d'extraction faisait donc rater la cible
+# au moteur *et* au contrôle : deux échecs corrélés par construction, ce qui est
+# la pire propriété possible pour une vérification.
+#
+# `pypdf` est pur Python, donc sans conséquence sur l'empaquetage figé. Les deux
+# moteurs lisent, et une correspondance trouvée par l'un suffit à faire échouer
+# l'export. Sur les quinze fixtures, quatorze extractions sont identiques au
+# caractère près ; la quinzième, le texte pivoté, diffère d'une espace. C'est
+# précisément là que le désaccord est utile.
+# --------------------------------------------------------------------------
+
+_PRIMARY_ENGINE = "pymupdf"
+
+
+def _extract_pages_pymupdf(pdf_bytes: bytes) -> list[str]:
+    doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")
+    try:
+        return [doc.load_page(i).get_text("text") or "" for i in range(doc.page_count)]
+    finally:
+        doc.close()
+
+
+def _extract_pages_pypdf(pdf_bytes: bytes) -> list[str]:
+    reader = pypdf.PdfReader(io.BytesIO(pdf_bytes))
+    return [(page.extract_text() or "") for page in reader.pages]
+
+
+_EXTRACTORS: list[tuple[str, Any]] = [
+    (_PRIMARY_ENGINE, _extract_pages_pymupdf),
+    ("pypdf", _extract_pages_pypdf),
+]
+
+
 def audit_pdf_text(
     pdf_bytes: bytes, opts: AuditOptions, *, budget: RegexBudget | None = None
 ) -> dict[str, Any]:
@@ -283,41 +322,77 @@ def audit_pdf_text(
     matched_pages: set[int] = set()
     total_matches = 0
 
-    doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")
-    try:
-        for page_index in range(doc.page_count):
-            page_number = page_index + 1
-            page = doc.load_page(page_index)
-            text = page.get_text("text") or ""
+    pages_by_engine: dict[str, list[str]] = {}
+    engine_status: dict[str, str] = {}
+
+    for engine, extract in _EXTRACTORS:
+        try:
+            pages_by_engine[engine] = extract(pdf_bytes)
+            engine_status[engine] = "ok"
+        except Exception as e:  # noqa: BLE001 - un moteur muet ne doit pas masquer l'autre
+            engine_status[engine] = f"failed: {type(e).__name__}"
+
+    if not pages_by_engine:
+        raise ValueError("no text extractor could read the output PDF")
+
+    page_count_max = max(len(v) for v in pages_by_engine.values())
+
+    for page_index in range(page_count_max):
+        page_number = page_index + 1
+
+        # Union par (motif, rang de l'occurrence) : si un moteur voit trois « Dupont »
+        # et l'autre deux, on en retient trois. Le désaccord penche vers le signalement.
+        best: dict[tuple[str, int], dict[str, Any]] = {}
+        seen_by: dict[tuple[str, int], list[str]] = {}
+
+        for engine, pages in pages_by_engine.items():
+            if page_index >= len(pages):
+                continue
+            text = pages[page_index] or ""
             if not text:
                 continue
 
-            page_matches, page_count = audit_text(
-                text, opts, page_number=page_number, budget=budget
-            )
-            if page_count:
-                matched_pages.add(page_number)
+            found, _ = audit_text(text, opts, page_number=page_number, budget=budget)
 
-            remaining = opts.max_total_matches - total_matches
-            if remaining <= 0:
-                break
+            rank: dict[str, int] = {}
+            for m in found:
+                pat = str(m["pattern"])
+                key = (pat, rank.get(pat, 0))
+                rank[pat] = rank.get(pat, 0) + 1
+                seen_by.setdefault(key, []).append(engine)
+                # On garde la variante PyMuPDF quand elle existe : c'est celle dont les
+                # offsets s'alignent sur la géométrie du moteur de caviardage.
+                if key not in best or engine == _PRIMARY_ENGINE:
+                    best[key] = m
 
-            if len(page_matches) > remaining:
-                page_matches = page_matches[:remaining]
-                page_count = len(page_matches)
+        if not best:
+            continue
 
-            matches.extend(page_matches)
-            total_matches += page_count
+        page_matches = [
+            {**best[k], "seen_by": sorted(seen_by[k])}
+            for k in sorted(best, key=lambda k: (k[0], k[1]))
+        ]
+        page_matches = page_matches[: opts.max_matches_per_page]
 
-            if total_matches >= opts.max_total_matches:
-                break
-    finally:
-        doc.close()
+        matched_pages.add(page_number)
+
+        remaining = opts.max_total_matches - total_matches
+        if remaining <= 0:
+            break
+        if len(page_matches) > remaining:
+            page_matches = page_matches[:remaining]
+
+        matches.extend(page_matches)
+        total_matches += len(page_matches)
+
+        if total_matches >= opts.max_total_matches:
+            break
 
     return {
         "status": "pass" if total_matches == 0 else "fail",
         "total_matches": total_matches,
         "matched_pages": sorted(matched_pages),
+        "extractors": engine_status,
         "options": {
             "regex": opts.regex,
             "case_sensitive": opts.case_sensitive,

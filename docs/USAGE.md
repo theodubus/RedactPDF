@@ -143,6 +143,11 @@ pdfimages -png redacted.pdf /tmp/out && ls /tmp/out*
 pdfinfo redacted.pdf
 ```
 
+The audit already applies this principle internally: it re-reads the output with
+both PyMuPDF and `pypdf`, and either one finding a target is enough to refuse the
+export. These commands extend the idea to a third implementation that the project
+does not depend on at all.
+
 The first one is the important one: `pdftotext` is poppler, while the redaction
 was done by PyMuPDF. If a different implementation cannot find the text either,
 that is worth more than an assurance from the tool that removed it. The test

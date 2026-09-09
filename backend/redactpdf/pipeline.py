@@ -229,6 +229,17 @@ def presets_internal_audit(
     }
 
 
+def _merge_extractors(acc: dict[str, str], report: dict[str, Any]) -> None:
+    """Retient l'état de chaque moteur de lecture, la panne l'emportant sur « ok ».
+
+    Sans cela, `extractors` n'apparaîtrait que dans un rapport d'échec, alors que
+    c'est sur un succès qu'on a besoin de savoir combien de lecteurs l'ont validé.
+    """
+    for engine, status in (report.get("extractors") or {}).items():
+        if acc.get(engine) in (None, "ok"):
+            acc[engine] = status
+
+
 def audit_plan(
     out_pdf: bytes,
     *,
@@ -248,6 +259,14 @@ def audit_plan(
 
     failures: dict[str, Any] = {}
 
+    # Quels moteurs ont réellement lu la sortie. Un « pass » obtenu avec un
+
+    # seul lecteur ne vaut pas un « pass » obtenu avec deux, et la différence
+
+    # doit rester lisible dans le rapport de succès, pas seulement d'échec.
+
+    extractors: dict[str, str] = {}
+
     # --- Searches audit (cohérent avec whole_word / case_sensitive), par règle
     if searches:
         failed: list[dict[str, Any]] = []
@@ -259,6 +278,7 @@ def audit_plan(
                 ignore_accents=s.ignore_accents,
             )
             report = audit_pdf_text(out_pdf, s_opts, budget=budget)
+            _merge_extractors(extractors, report)
             if report["status"] != "pass":
                 failed.append(
                     {
@@ -290,6 +310,7 @@ def audit_plan(
                 ignore_accents=r.ignore_accents,
             )
             report = audit_pdf_text(out_pdf, r_opts, budget=budget)
+            _merge_extractors(extractors, report)
             if report["status"] != "pass":
                 failed.append(
                     {
@@ -319,6 +340,7 @@ def audit_plan(
     # --- Extra audit (optional banlist)
     if extra_audit is not None:
         report = audit_pdf_text(out_pdf, extra_audit, budget=budget)
+        _merge_extractors(extractors, report)
         if report["status"] != "pass":
             failures["audit"] = report
 
@@ -328,6 +350,7 @@ def audit_plan(
             "components_failed": sorted(failures.keys()),
             "components": failures,
             "diagnostics": _diagnose(failures),
+            "extractors": extractors,
         }
 
     return {
@@ -336,6 +359,7 @@ def audit_plan(
         "matched_pages": [],
         "options": {"mode": "apply_combined"},
         "components": {},
+        "extractors": extractors,
     }
 
 
