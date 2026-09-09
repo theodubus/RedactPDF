@@ -8,6 +8,7 @@ import pymupdf
 
 from redactpdf.audit import AuditOptions, audit_pdf_text, build_audit_for_search
 from redactpdf.multiline_regex_engine import find_redaction_rectangles_by_regex
+from redactpdf.opaque import OpaqueRegion, drop_covered, find_opaque_regions
 from redactpdf.presets import find_redaction_rectangles_for_presets
 from redactpdf.redaction import RedactionRect, redact_pdf_by_rectangles
 from redactpdf.regex_guard import RegexBudget
@@ -233,6 +234,35 @@ def presets_internal_audit(
         "presets": presets.presets,
         "matches": matches,
     }
+
+
+def unresolved_opaque_regions(
+    pdf_bytes: bytes,
+    plan: PlanResult,
+    *,
+    has_textual_rules: bool,
+) -> list[OpaqueRegion]:
+    """Zones que les règles textuelles n'ont pas pu lire et que rien ne couvre.
+
+    Calculé sur le PDF **d'origine** : la question est « qu'est-ce que les règles
+    pouvaient lire au moment où elles ont travaillé », et une zone déjà caviardée
+    n'y répondrait plus. Même invariant que pour les rectangles.
+
+    Sans règle textuelle il n'y a rien à signaler : l'utilisateur n'a jamais
+    attendu du moteur qu'il lise quoi que ce soit.
+    """
+    if not has_textual_rules:
+        return []
+
+    regions = find_opaque_regions(pdf_bytes)
+    if not regions:
+        return []
+
+    # Une zone déjà couverte par une règle géométrique est traitée. C'est ce qui
+    # rend le contrôle vivable : le geste naturel devant un signalement, dessiner
+    # un rectangle, l'éteint pour de bon.
+    covering = [(r.page, (r.x0, r.y0, r.x1, r.y1)) for r in plan.manual + plan.full_page]
+    return drop_covered(regions, covering)
 
 
 def _merge_extractors(acc: dict[str, str], report: dict[str, Any]) -> None:

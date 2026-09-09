@@ -123,6 +123,25 @@ rule.
 The report marks those matches `spans_line_break`, the UI turns that into an
 explanation, and the way out is a manual rectangle over each half.
 
+### Regions the rules could not read
+
+A third outcome, distinct from both: **HTTP 409**, meaning nothing is known to
+have leaked but part of the page was unreadable to the rules. A scan, or the
+scanned block on an otherwise typed invoice, is an image with no extractable
+text: a rule for `Dupont` finds nothing there, and so does the audit. Until this
+check existed, that produced a perfectly successful export with the name plainly
+visible in the picture.
+
+The check is geometric and never looks inside the image, so it cannot tell a
+scanned table from a photograph. That is the point: in both cases the honest
+answer is "there is something here I could not read". You get the coordinates,
+you look, and you either draw a rectangle over it or acknowledge that you
+checked. A region a rectangle already covers is never reported.
+
+`options.image_regions` chooses between not checking at all, this review flow,
+and a non-interactive mode for scripts. The three are described in
+[SECURITY.md → Opaque regions](SECURITY.md#opaque-regions-what-the-rules-could-not-read).
+
 The full list of limits, including the guarantee a preset carries, which is
 weaker than the one a typed rule carries, is in
 [SECURITY.md → Important Limitations](SECURITY.md#important-limitations).

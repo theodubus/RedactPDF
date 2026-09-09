@@ -140,6 +140,37 @@ accent-sensitive. Those patterns are only ever *checked*, never redacted, so a
 miss there does not hide a redaction failure; it only declines to raise a flag
 the caller asked for.
 
+### Opaque regions: what the rules could not read
+
+An image with no text drawn over it is a region the text rules cannot see. The
+detector is geometric: an image is flagged when it covers at least **0.5 %** of
+the page and at most **5 %** of its area carries text blocks. The second
+threshold is what excludes an image used as a background behind real text, where
+the rules read fine.
+
+The size threshold is deliberately low. A false flag costs one thumbnail to look
+at; a missing flag costs a leak, which is the same asymmetry that governs every
+other default here. Measured: a 40x40 pt logo covers 0.3 % of A4 and is ignored;
+the scanned identity block in `docs/demo-invoice.pdf` covers 7.7 % and is
+reported, correctly, since it holds a name and an ID number.
+
+Nothing is reported unless a **textual rule** was requested. Without one, the
+caller never expected the engine to read anything.
+
+| `options.image_regions` | Behaviour |
+|---|---|
+| `ignore` | No check. An explicit, named choice, not a silent fallback. |
+| `review` *(default)* | Unresolved regions return **HTTP 409** with their coordinates. The caller resends with `acknowledged_regions` to proceed. |
+| `block` | Non-interactive. Only a geometric rule covering the region unlocks it; an acknowledgement does not. For scripts, which cannot click. |
+
+The acknowledgement travels in the request and the server recomputes the regions
+to check it against. Left to the client, it would be enough to send nothing.
+
+`block` is not a stricter policy than `review`, it is the variant for callers
+with no interface. The 409 is distinct from the 400 that means targeted content
+survived: a script can tell "unresolved region" from "leak" without parsing the
+body.
+
 ### Unknown payload keys are rejected
 
 The API refuses any key it does not recognise, with HTTP 422 naming the
@@ -163,11 +194,21 @@ continue to follow the user's chosen image mode on the same page.
 
 ## Important Limitations
 
-1. **OCR completeness**
-   - Not guaranteed for all scan/layout conditions. Text inside an image is
-     not seen by the search/regex/preset rules; only manual rectangles or
-     full-page redaction will reliably hide it. Use the `pixels` image mode
-     (or `remove`) so the bitmap actually loses the targeted content.
+1. **Text inside an image is invisible to text rules, and the export says so**
+   - Search, regex and preset rules read extracted text. A scan has none, so
+     they find nothing, and until 9 September 2026 that produced a successful
+     export with the data plainly readable. Measured, not assumed.
+   - The export now refuses instead. Before applying anything, each page is
+     scanned for **opaque regions**: an image large enough to matter with
+     essentially no text drawn over it. The check is purely geometric. It does
+     not look inside the image and does not claim to; it answers "is there a
+     region here the rules could not read", which stays true whether that region
+     holds a scanned table or a photograph.
+   - A region already covered by a geometric rule (manual rectangle, whole page)
+     is not reported: it is handled. `options.image_regions` decides the rest,
+     see [Opaque regions](#opaque-regions-what-the-rules-could-not-read).
+   - Only manual rectangles or full-page redaction reliably remove such content.
+     Use the `pixels` image mode (or `remove`) so the bitmap actually loses it.
 2. **Vector graphics are not pixel-redacted**
    - When a redaction rectangle partially covers a vector path, modes
      `pixels` and `remove` delete the **whole path**, not just the

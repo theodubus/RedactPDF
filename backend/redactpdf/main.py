@@ -12,6 +12,7 @@ from starlette.responses import Response
 
 from redactpdf.audit import AuditOptions
 from redactpdf.heartbeat import heartbeat
+from redactpdf.opaque import OpaqueRegion
 from redactpdf.paths import frontend_dist
 from redactpdf.pipeline import (
     PresetsRequest,
@@ -21,6 +22,7 @@ from redactpdf.pipeline import (
     apply_plan,
     audit_plan,
     plan_redactions,
+    unresolved_opaque_regions,
 )
 from redactpdf.presets import DEFAULT_REGION, available_presets
 from redactpdf.redaction import RedactionRect
@@ -122,6 +124,14 @@ class OptionsModel(StrictModel):
     remove_outline: bool = True
     remove_document_actions: bool = True
 
+    # Que faire d'une zone que les règles textuelles n'ont pas pu lire (une image
+    # sans texte par-dessus, typiquement un scan) :
+    #   ignore  l'appelant déclare ne pas vouloir de contrôle sur les images
+    #   review  défaut : la zone est rapportée, l'export part une fois acquittée
+    #   block   non interactif : seule une règle géométrique déverrouille,
+    #           l'acquittement ne compte pas. Pour les scripts, qui ne cliquent pas.
+    image_regions: Literal["ignore", "review", "block"] = "review"
+
 
 class AuditModel(StrictModel):
     patterns: list[str] = Field(..., description="List of strings/regex to ban")
@@ -166,6 +176,13 @@ class SearchOptionsModel(StrictModel):
     case_sensitive: bool = False
     whole_word: bool = True
     ignore_accents: bool = True
+
+
+class AcknowledgedRegionModel(StrictModel):
+    """« J'ai regardé cette zone et je la laisse passer. »"""
+
+    page: int = Field(ge=0)
+    bbox: list[float] = Field(min_length=4, max_length=4)
 
 
 class ScopeModel(StrictModel):
@@ -264,6 +281,32 @@ class ApplyPayload(StrictModel):
     options: OptionsModel = Field(default_factory=OptionsModel)
     audit: AuditModel | None = None
 
+    # L'acquittement voyage dans la requête et le serveur recalcule les zones pour
+    # le vérifier. Laissé au client, il suffirait de ne rien envoyer.
+    acknowledged_regions: list[AcknowledgedRegionModel] = Field(default_factory=list)
+
+
+# Tolérance d'appariement entre une zone rapportée et son acquittement. Le client
+# renvoie la boîte telle qu'on la lui a donnée, arrondie au centième : un point
+# de marge suffit et évite qu'un arrondi fasse échouer un acquittement légitime.
+_ACK_TOLERANCE_PT = 1.0
+
+
+def _is_acknowledged(region: OpaqueRegion, acks: list[AcknowledgedRegionModel]) -> bool:
+    x0, y0, x1, y1 = region.bbox
+    for ack in acks:
+        if ack.page != region.page:
+            continue
+        a0, b0, a1, b1 = ack.bbox
+        if (
+            abs(a0 - x0) <= _ACK_TOLERANCE_PT
+            and abs(b0 - y0) <= _ACK_TOLERANCE_PT
+            and abs(a1 - x1) <= _ACK_TOLERANCE_PT
+            and abs(b1 - y1) <= _ACK_TOLERANCE_PT
+        ):
+            return True
+    return False
+
 
 @router.post("/redact/apply")
 async def redact_apply(
@@ -349,6 +392,33 @@ async def redact_apply(
             full_page_rects=full_page_rects or None,
         )
 
+        # Avant d'appliquer : y a-t-il une zone que les règles textuelles n'ont pas
+        # pu lire ? Mesuré le 9 sept. 2026, un scan sans couche texte renvoyait 200
+        # avec la donnée lisible à l'oeil. On refuse plutôt que de rendre un fichier
+        # dont on ne peut pas répondre, et on le fait ici pour ne pas gaspiller le
+        # travail de caviardage sur une requête qui sera refusée.
+        mode = data.options.image_regions
+        if mode != "ignore":
+            unresolved = unresolved_opaque_regions(
+                pdf_bytes,
+                plan,
+                has_textual_rules=bool(searches_req or regexes_req or presets_req),
+            )
+            if mode == "review":
+                unresolved = [
+                    r for r in unresolved if not _is_acknowledged(r, data.acknowledged_regions)
+                ]
+            if unresolved:
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "status": "inconclusive",
+                        "reason": "opaque_regions",
+                        "mode": mode,
+                        "regions": [r.as_dict() for r in unresolved],
+                    },
+                )
+
         out_pdf = apply_plan(
             pdf_bytes,
             plan,
@@ -362,6 +432,10 @@ async def redact_apply(
                 remove_document_actions=data.options.remove_document_actions,
             ),
         )
+    except HTTPException:
+        # Le refus pour zone non résolue est une réponse construite, pas une panne :
+        # sans cette clause, le filet à 500 ci-dessous l'avalait.
+        raise
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
