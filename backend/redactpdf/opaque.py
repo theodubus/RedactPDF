@@ -366,6 +366,54 @@ def _preview_cap(count: int) -> int:
     return _PREVIEW_FLOOR_PX
 
 
+def _strip_text(doc: pymupdf.Document) -> pymupdf.Document | None:
+    """Une copie du document sans sa couche texte, images et tracés intacts.
+
+    Sert de repli quand l'image n'est pas extractible par référence : elle est
+    alors dans le flux d'apparence d'une annotation, ou en ligne dans le contenu
+    de la page, et `Pixmap(doc, xref)` ne peut rien en faire. Rendre la région de
+    page telle quelle remettrait le texte dans la vignette, c'est-à-dire le défaut
+    exact que ce module vient de corriger.
+
+    `apply_redactions` avec `images` et `graphics` à *none* ne retire que le
+    texte, ce qui laisse la vignette montrer les pixels et rien d'autre.
+    """
+    try:
+        copy = pymupdf.open("pdf", doc.tobytes())
+        for page in copy:
+            page.add_redact_annot(page.rect)
+            page.apply_redactions(
+                images=pymupdf.PDF_REDACT_IMAGE_NONE,
+                graphics=pymupdf.PDF_REDACT_LINE_ART_NONE,
+                text=pymupdf.PDF_REDACT_TEXT_REMOVE,
+            )
+        return copy
+    except Exception:
+        return None
+
+
+def _render_region(
+    doc: pymupdf.Document, page_number: int, bbox: tuple[float, float, float, float], cap: int
+) -> dict[str, str] | None:
+    """La région rendue depuis un document déjà débarrassé de son texte."""
+    try:
+        page = doc.load_page(page_number)
+        rect = pymupdf.Rect(*bbox) & page.rect
+        if rect.is_empty:
+            return None
+        longest = max(rect.width, rect.height)
+        dpi = 72 if longest <= 0 else max(72, min(600, int(72 * cap / longest)))
+        pix = page.get_pixmap(clip=rect, dpi=dpi)
+        if pix.alpha:
+            pix = pymupdf.Pixmap(pix, 0)
+        return {
+            "mime": "image/jpeg",
+            "data": base64.b64encode(pix.tobytes("jpeg", jpg_quality=82)).decode("ascii"),
+        }
+    except Exception:
+        return None
+
+
 def _encode_image(doc: pymupdf.Document, xref: int, cap: int) -> dict[str, str] | None:
     """Les pixels de l'image, réduits à `cap` sur le grand côté, en JPEG base64.
 
@@ -402,23 +450,34 @@ def region_previews(
     """
     if not regions:
         return {}
-    wanted: dict[str, int] = {}
+    wanted: dict[str, tuple[int, int, tuple[float, float, float, float]]] = {}
     for region in regions:
         if region.digest and region.digest not in wanted:
-            wanted[region.digest] = region.xref
+            wanted[region.digest] = (region.xref, region.page, region.bbox)
     if not wanted:
         return {}
 
     cap = _preview_cap(len(wanted))
     doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")
+    stripped: pymupdf.Document | None = None
     try:
         out: dict[str, dict[str, str]] = {}
-        for digest, xref in wanted.items():
-            encoded = _encode_image(doc, xref, cap)
+        for digest, (xref, page_number, bbox) in wanted.items():
+            encoded = _encode_image(doc, xref, cap) if xref else None
+            if encoded is None:
+                # Pas d'objet image atteignable : apparence d'annotation, ou image
+                # en ligne dans le contenu. On rend la région, mais sur une copie
+                # sans texte, jamais sur la page telle quelle.
+                if stripped is None:
+                    stripped = _strip_text(doc)
+                if stripped is not None:
+                    encoded = _render_region(stripped, page_number, bbox, cap)
             if encoded is not None:
                 out[digest] = encoded
         return out
     finally:
+        if stripped is not None:
+            stripped.close()
         doc.close()
 
 

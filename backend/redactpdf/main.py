@@ -22,6 +22,7 @@ from redactpdf.pipeline import (
     apply_plan,
     audit_plan,
     plan_redactions,
+    readable_view,
     unreadable_fonts,
     unresolved_opaque_regions,
 )
@@ -387,6 +388,18 @@ async def redact_apply(
             pages=data.presets.scope.pages,
         )
 
+    # Une seule construction : la vue sur laquelle on juge « qu'est-ce qui n'a pas
+    # pu être lu » et le document produit doivent parler du même assainissement.
+    redaction_options = RedactionOptions(
+        image_mode=data.options.image_mode,
+        apply_graphics=data.options.apply_graphics,
+        sanitize_metadata=data.options.sanitize_metadata,
+        remove_annotations=data.options.remove_annotations,
+        remove_attachments=data.options.remove_attachments,
+        remove_outline=data.options.remove_outline,
+        remove_document_actions=data.options.remove_document_actions,
+    )
+
     try:
         plan = plan_redactions(
             pdf_bytes,
@@ -404,13 +417,19 @@ async def redact_apply(
         # travail de caviardage sur une requête qui sera refusée.
         mode = data.options.image_regions
         if mode != "ignore":
+            # La question porte sur le document **tel qu'il sortira**, porteurs
+            # retirés : une image qui ne vit que dans l'apparence d'une annotation
+            # supprimée n'existera pas dans l'export, et la faire relire revient à
+            # faire vérifier ce qu'on efface. Sans caviardage en revanche, sinon
+            # une zone déjà noircie ne répondrait plus à la question.
+            view = readable_view(pdf_bytes, redaction_options)
             unresolved = unresolved_opaque_regions(
-                pdf_bytes,
+                view,
                 plan,
                 has_textual_rules=bool(searches_req or regexes_req or presets_req),
             )
             fonts = unreadable_fonts(
-                pdf_bytes,
+                view,
                 plan,
                 has_textual_rules=bool(searches_req or regexes_req or presets_req),
             )
@@ -440,23 +459,11 @@ async def redact_apply(
                         "mode": mode,
                         "opaque_regions": regions_out,
                         "unreliable_fonts": [f.as_dict() for f in fonts],
-                        "previews": region_previews(pdf_bytes, unresolved),
+                        "previews": region_previews(view, unresolved),
                     },
                 )
 
-        out_pdf = apply_plan(
-            pdf_bytes,
-            plan,
-            options=RedactionOptions(
-                image_mode=data.options.image_mode,
-                apply_graphics=data.options.apply_graphics,
-                sanitize_metadata=data.options.sanitize_metadata,
-                remove_annotations=data.options.remove_annotations,
-                remove_attachments=data.options.remove_attachments,
-                remove_outline=data.options.remove_outline,
-                remove_document_actions=data.options.remove_document_actions,
-            ),
-        )
+        out_pdf = apply_plan(pdf_bytes, plan, options=redaction_options)
     except HTTPException:
         # Le refus pour zone non résolue est une réponse construite, pas une panne :
         # sans cette clause, le filet à 500 ci-dessous l'avalait.

@@ -11,6 +11,7 @@ import base64
 import io
 import json
 
+import pymupdf
 import pytest
 from fastapi.testclient import TestClient
 from PIL import Image, ImageDraw
@@ -19,7 +20,7 @@ from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas
 
 from redactpdf.main import app
-from redactpdf.opaque import covered_in_image, find_opaque_regions
+from redactpdf.opaque import _strip_text, covered_in_image, find_opaque_regions
 
 client = TestClient(app)
 
@@ -382,3 +383,101 @@ def test_a_rotated_image_needs_the_inverse_matrix_not_a_rule_of_three() -> None:
 
     assert len(covered) == 1
     assert covered[0]["bbox"] == pytest.approx([0.0, 0.0, 0.5, 0.5], abs=0.02)
+
+
+def _image_inside_an_annotation() -> bytes:
+    """Une image qui ne vit que dans l'apparence d'une annotation.
+
+    La forme trouvée sur une convention de stage réelle : une signature scannée
+    posée en annotation `/Stamp`. `get_image_info` la voit sur la page, mais son
+    xref vaut 0, elle n'est dans les ressources d'aucune page.
+    """
+    doc = pymupdf.open()
+    page = doc.new_page()
+    page.insert_text((60, 60), "Nom et signature du representant")
+
+    # Construit à la main, car les tampons intégrés de PyMuPDF sont du tracé
+    # vectoriel : il faut une vraie image dans le flux d'apparence pour
+    # reproduire le cas. Une image brute, sans filtre, suffit et reste lisible.
+    img = doc.get_new_xref()
+    doc.update_object(
+        img,
+        "<< /Type /XObject /Subtype /Image /Width 8 /Height 8"
+        " /ColorSpace /DeviceGray /BitsPerComponent 8 /Length 64 >>",
+    )
+    doc.update_stream(img, bytes(range(0, 256, 4)), new=True)
+
+    body = b"q 200 0 0 100 0 0 cm /Im0 Do Q"
+    ap = doc.get_new_xref()
+    doc.update_object(
+        ap,
+        "<< /Type /XObject /Subtype /Form /BBox [0 0 200 100]"
+        f" /Resources << /XObject << /Im0 {img} 0 R >> >> /Length {len(body)} >>",
+    )
+    doc.update_stream(ap, body, new=True)
+
+    annot = doc.get_new_xref()
+    doc.update_object(
+        annot,
+        "<< /Type /Annot /Subtype /Stamp /F 4 /Rect [300 300 500 400]"
+        f" /AP << /N {ap} 0 R >> >>",
+    )
+    doc.xref_set_key(page.xref, "Annots", f"[ {annot} 0 R ]")
+
+    out = doc.tobytes()
+    doc.close()
+    return out
+
+
+@pytest.mark.integration
+def test_an_image_the_sanitation_deletes_is_not_put_up_for_review() -> None:
+    """Faire relire ce qu'on est en train d'effacer n'a aucun sens.
+
+    L'assainissement supprime les annotations par défaut, donc l'image que
+    celle-ci porte n'existera pas dans l'export. Elle ajoutait pourtant un écran
+    de revue, et comme son xref vaut 0 la vignette échouait : l'interface
+    retombait sur le rendu de la page entière, texte sélectionnable compris,
+    c'est-à-dire exactement ce que le carrousel ne doit jamais montrer.
+    """
+    resp = _post(_image_inside_an_annotation(), {"searches": [{"query": "Dupont"}]})
+
+    assert resp.status_code == 200, resp.text[:300]
+
+
+@pytest.mark.integration
+def test_the_same_image_is_reviewed_when_the_annotation_is_kept() -> None:
+    """Symétrique du test précédent : si l'annotation reste, la zone reste.
+
+    C'est bien l'assainissement qui décide, pas une exception câblée sur les
+    annotations. Et la vignette existe malgré le xref absent, parce qu'elle est
+    rendue depuis une copie sans texte.
+    """
+    resp = _post(
+        _image_inside_an_annotation(),
+        {"searches": [{"query": "Dupont"}], "options": {"remove_annotations": False}},
+    )
+
+    assert resp.status_code == 409, resp.text[:300]
+    detail = resp.json()["detail"]
+    regions = detail["opaque_regions"]
+    assert len(regions) == 1
+    assert regions[0]["digest"] in detail["previews"], "aucune vignette : repli non déclenché"
+
+
+@pytest.mark.unit
+def test_stripping_text_keeps_the_pixels() -> None:
+    """Le repli ne doit retirer que le texte, sinon la vignette perd son sujet."""
+    doc = pymupdf.open()
+    page = doc.new_page()
+    page.insert_text((60, 60), "TEXTE QUI N'EST PAS DANS L'IMAGE")
+    page.insert_image(pymupdf.Rect(50, 50, 400, 200), stream=_png("photo").getvalue())
+    source = pymupdf.open("pdf", doc.tobytes())
+    doc.close()
+
+    stripped = _strip_text(source)
+
+    assert stripped is not None
+    assert stripped[0].get_text().strip() == ""
+    assert len(stripped[0].get_image_info()) == 1
+    stripped.close()
+    source.close()

@@ -20,6 +20,7 @@ from redactpdf.opaque import (
 from redactpdf.presets import find_redaction_rectangles_for_presets
 from redactpdf.redaction import RedactionRect, redact_pdf_by_rectangles
 from redactpdf.regex_guard import RegexBudget
+from redactpdf.sanitize import sanitize_document
 from redactpdf.search import SearchOptions, find_redaction_rectangles
 
 
@@ -242,6 +243,53 @@ def presets_internal_audit(
         "presets": presets.presets,
         "matches": matches,
     }
+
+
+def readable_view(pdf_bytes: bytes, options: RedactionOptions) -> bytes:
+    """Le document débarrassé de ses porteurs, mais **sans caviardage**.
+
+    C'est là-dessus qu'on demande « qu'est-ce que les règles n'ont pas pu lire »,
+    et non sur l'original. Une image qui ne vit que dans l'apparence d'une
+    annotation que l'assainissement supprime n'existera pas dans le fichier
+    rendu : la faire relire, c'est demander de vérifier quelque chose qu'on est
+    en train d'effacer. Mesuré sur une convention de stage réelle, un tampon
+    « Draft » ajoutait un cinquième écran de revue pour une image absente de
+    l'export, et cette image-là n'était même pas extractible.
+
+    Sans caviardage, en revanche : le plan des rectangles reste calculé sur
+    l'original, et une zone déjà noircie ne répondrait plus à la question posée.
+    L'assainissement, lui, ne retire que des porteurs hors flux de contenu, donc
+    il ne peut pas cacher du texte qu'une règle visait.
+
+    Rend les octets d'origine quand il n'y a rien à retirer : inutile de
+    reconstruire un document pour n'en rien changer.
+    """
+    if not (
+        options.sanitize_metadata
+        or options.remove_annotations
+        or options.remove_attachments
+        or options.remove_outline
+        or options.remove_document_actions
+    ):
+        return pdf_bytes
+
+    doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")
+    try:
+        sanitize_document(
+            doc,
+            sanitize_metadata=options.sanitize_metadata,
+            remove_annotations=options.remove_annotations,
+            remove_attachments=options.remove_attachments,
+            remove_outline=options.remove_outline,
+            remove_document_actions=options.remove_document_actions,
+        )
+        return bytes(doc.tobytes(garbage=4, deflate=True))
+    except Exception:
+        # Un assainissement qui échoue ne doit pas faire disparaître le contrôle :
+        # on retombe sur l'original, quitte à signaler une zone de trop.
+        return pdf_bytes
+    finally:
+        doc.close()
 
 
 def unresolved_opaque_regions(

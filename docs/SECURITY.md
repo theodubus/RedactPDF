@@ -179,6 +179,15 @@ region carries the `digest` of its pixels, so a header banner repeated on thirty
 pages is one review screen and thirty acknowledgements. Grouping happens only on
 an identical digest **and** identical existing coverage, never on a guess.
 
+The question is asked of the document **as it will be exported**, sanitation
+applied, redaction not yet. An image that only lives inside the appearance of an
+annotation that sanitation deletes will not be in the output, so putting it up
+for review means asking someone to check what is being erased. Measured on a real
+internship agreement: a scanned signature placed as a stamp annotation added a
+fifth review screen for an image the export did not contain. Redaction is
+deliberately not applied first, since an area already blacked out would no longer
+answer the question.
+
 The 409 carries the pixels of each flagged image, base64 in `previews`, keyed by
 digest so repeated images travel once. It is the image alone, not the page region
 under it: text drawn over an image is precisely what the rules did read, and
@@ -188,6 +197,18 @@ coordinates, normalised to [0, 1] and computed with the inverse of the placement
 matrix so they stay correct on a rotated or flipped image. Preview resolution
 steps down as the number of distinct images grows, from 1600 px on the long side
 for a handful to 700 px past forty.
+
+Some images have no reachable object: an inline image in the content stream, or
+one inside an annotation appearance, both report an xref of zero. Those are
+rendered from a copy of the document with its text layer removed and its images
+and line art left intact, never from the page as it stands, so page text can
+never appear in a thumbnail.
+
+**Vector graphics are not covered.** The detector looks at raster images only. A
+chart drawn as lines and paths, a vector logo, and above all text converted to
+outlines are all invisible to the text rules and equally invisible to this check.
+That last one is the dangerous case: a rule finds nothing, the audit finds
+nothing, and the export succeeds with the words plainly on screen.
 
 Nothing is reported unless a **textual rule** was requested. Without one, the
 caller never expected the engine to read anything.
