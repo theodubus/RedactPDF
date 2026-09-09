@@ -534,3 +534,118 @@ body,
   padding: 14px;
 }
 
+
+/* --------------------------------------------------------------------------
+   Revue avant export
+   L'outil ne sait pas lire l'image, alors il la montre à quelqu'un qui sait.
+   Un bouton par élément, jamais une validation d'ensemble : une case
+   « tout confirmer » se coche sans regarder.
+   -------------------------------------------------------------------------- */
+
+.reviewOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+  padding: 24px;
+}
+
+.reviewPanel {
+  background: var(--panel, #fff);
+  color: inherit;
+  border-radius: 10px;
+  padding: 20px 24px;
+  max-width: 780px;
+  width: 100%;
+  max-height: 90vh;
+  overflow: auto;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+}
+
+.reviewTitle {
+  font-weight: 600;
+  font-size: 1.05rem;
+  margin-bottom: 6px;
+}
+
+.reviewIntro {
+  margin: 0 0 12px;
+  opacity: 0.8;
+  font-size: 0.9rem;
+}
+
+.reviewCount {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.7;
+  font-size: 0.85rem;
+  margin-bottom: 10px;
+}
+
+.reviewItemLabel {
+  font-weight: 500;
+  margin-bottom: 8px;
+}
+
+.reviewThumb {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid rgba(128, 128, 128, 0.4);
+  border-radius: 4px;
+  background: #fff;
+}
+
+.thumbFailed {
+  padding: 24px;
+  text-align: center;
+  border: 1px dashed rgba(128, 128, 128, 0.5);
+  border-radius: 4px;
+  opacity: 0.7;
+}
+
+.reviewItemHint {
+  margin: 10px 0 0;
+  font-size: 0.88rem;
+  opacity: 0.85;
+}
+
+.reviewNav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 16px 0;
+}
+
+.reviewDot {
+  min-width: 30px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  border: 1px solid rgba(128, 128, 128, 0.5);
+  background: transparent;
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+
+.reviewDot.done {
+  border-color: #2e7d32;
+  color: #2e7d32;
+}
+
+.reviewDot.active {
+  outline: 2px solid currentColor;
+  outline-offset: 1px;
+}
+
+.reviewActions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.reviewActions button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}

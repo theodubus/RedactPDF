@@ -86,5 +86,17 @@
   "form.imageMode.pixels.help": "Seule la zone intersectée de l'image est noircie ; le reste de l'image reste visible. Recompression possiblement avec perte.",
   "result.error.why": "Pourquoi l'export est refusé",
   "result.diagnostic.lineBreakSplit": "Le texte visé est réparti sur deux lignes ou deux cellules que le moteur ne fusionne pas volontairement : c'est ce qui l'empêche de caviarder par erreur deux colonnes sans rapport. Il n'a donc pas pu le cibler, et le texte est toujours dans le document.",
-  "result.diagnostic.lineBreakSplit.action": "Tracez un rectangle sur chaque partie signalée ci-dessous, puis relancez."
+  "result.diagnostic.lineBreakSplit.action": "Tracez un rectangle sur chaque partie signalée ci-dessous, puis relancez.",
+  "review.title": "Vérification avant export",
+  "review.intro": "Ces éléments ne peuvent pas être vérifiés automatiquement. Regardez chacun, puis confirmez.",
+  "review.page": "page",
+  "review.checked": "J'ai vérifié",
+  "review.export": "Exporter",
+  "review.cancel": "Annuler",
+  "review.item.rect": "Rectangle dessiné",
+  "review.item.rect.hint": "Voici ce qui va disparaître. Vérifiez que c'est bien la bonne zone.",
+  "review.item.opaque": "Zone illisible",
+  "review.item.opaque.hint": "Les règles de texte n'ont pas pu lire cette zone. Si elle contient une donnée à retirer, dessinez un rectangle dessus.",
+  "review.item.font": "Police illisible",
+  "review.item.font.hint": "Sur cette page, le texte est encodé d'une façon que les règles ne savent pas lire. Ce que vous voyez à l'écran leur échappe."
 }

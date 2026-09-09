@@ -86,5 +86,17 @@
   "form.imageMode.pixels.help": "Only the area intersected by the redaction is blackened. The rest of the image stays visible (possibly with lossy re-encoding).",
   "result.error.why": "Why the export was refused",
   "result.diagnostic.lineBreakSplit": "The targeted text is split across two lines or two cells that the engine deliberately refuses to merge -- that refusal is what stops it from redacting two unrelated columns by mistake. It could not target the text, so the text is still in the document.",
-  "result.diagnostic.lineBreakSplit.action": "Draw a rectangle over each part listed below, then submit again."
+  "result.diagnostic.lineBreakSplit.action": "Draw a rectangle over each part listed below, then submit again.",
+  "review.title": "Check before exporting",
+  "review.intro": "These cannot be checked automatically. Look at each one, then confirm.",
+  "review.page": "page",
+  "review.checked": "I have checked this",
+  "review.export": "Export",
+  "review.cancel": "Cancel",
+  "review.item.rect": "Drawn rectangle",
+  "review.item.rect.hint": "This is what will disappear. Check it is the right area.",
+  "review.item.opaque": "Unreadable region",
+  "review.item.opaque.hint": "The text rules could not read this region. If it holds something to remove, draw a rectangle over it.",
+  "review.item.font": "Unreadable font",
+  "review.item.font.hint": "On this page the text is encoded in a way the rules cannot read. What you see on screen is invisible to them."
 }

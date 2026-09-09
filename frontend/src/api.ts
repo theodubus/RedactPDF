@@ -107,6 +107,10 @@ export async function redactApply(params: {
   sanitizeMetadata?: boolean;
   removeAnnotations?: boolean;
   removeAttachments?: boolean;
+  // Acquittements des zones que le serveur a refusé de lire. Il recalcule les
+  // zones pour les vérifier : envoyer n'importe quoi ne débloque rien.
+  acknowledgedRegions?: { page: number; bbox: number[] }[];
+  acknowledgedFontPages?: number[];
 }): Promise<RedactSuccess> {
   const form = new FormData();
   form.append("file", params.file);
@@ -164,6 +168,8 @@ export async function redactApply(params: {
     options,
     // audit additionnel facultatif : on laisse null (audit_plan gère déjà search/regex/presets)
     audit: null,
+    acknowledged_regions: params.acknowledgedRegions ?? [],
+    acknowledged_font_pages: params.acknowledgedFontPages ?? [],
   };
 
   form.append("payload", JSON.stringify(payload));

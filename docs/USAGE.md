@@ -144,6 +144,20 @@ gibberish where you see a name. Those pages come back in the same 409 under
 `unreliable_fonts`, acknowledged per page rather than per box, because the tool
 cannot tell you where the affected text is when it cannot read it.
 
+In the app this arrives as a review step rather than an error. Each flagged item
+is shown one at a time, **rendered from the page** so you can read what the tool
+could not, with its own "I have checked this" button. Export stays disabled until
+every item has been confirmed individually: a single "confirm all" gets clicked
+without looking, which is precisely what this step exists to prevent.
+
+Hand-drawn rectangles go through the same step before the request is sent, for a
+different reason. Nothing can verify them: there is no rule to replay, the
+rectangle *is* the instruction, so a rectangle dropped on the wrong line destroys
+the wrong content and leaves the target visible with nothing to catch it. Showing
+you what is about to disappear is the only check available. Those confirmations
+stay in the browser and are never sent, since the server has no way to tell a
+real confirmation from a claimed one.
+
 `options.image_regions` chooses between not checking at all, this review flow,
 and a non-interactive mode for scripts. The three are described in
 [SECURITY.md → Opaque regions](SECURITY.md#opaque-regions-what-the-rules-could-not-read).

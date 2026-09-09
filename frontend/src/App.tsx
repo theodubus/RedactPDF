@@ -1,6 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useI18n } from "./i18nContext";
 import { fetchConfig, FALLBACK_REGION, redactApply, RedactApiError } from "./api";
+import { ReviewCarousel } from "./review/ReviewCarousel";
+import { useReviewDocument } from "./review/useReviewDocument";
+import {
+  rectReviewItems,
+  serverReviewItems,
+  toAcknowledgements,
+} from "./review/reviewItems";
+import type { ReviewItem } from "./review/reviewItems";
 import type { ImageMode, PresetKey, RuleInput } from "./api";
 
 import { HeaderBar } from "./components/HeaderBar";
@@ -37,6 +45,13 @@ export default function App() {
   const [isDrawingRect, setIsDrawingRect] = useState(false);
   const [presets, setPresets] = useState<Record<PresetKey, boolean>>(EMPTY_PRESETS);
   const [imageMode, setImageMode] = useState<ImageMode>("pixels");
+
+  // Revue avant export. Deux sources, deux moments : les rectangles sont connus
+  // du client dès le clic, les zones illisibles seulement après un 409.
+  const [review, setReview] = useState<{ items: ReviewItem[]; fromServer: boolean } | null>(
+    null,
+  );
+  const reviewDoc = useReviewDocument(review ? file : null);
   const [isDragOver, setIsDragOver] = useState(false);
 
   const [submitting, setSubmitting] = useState(false);
@@ -251,7 +266,25 @@ export default function App() {
       return;
     }
 
+    // Les rectangles se relisent d'abord, sans passer par le serveur : lui ne peut
+    // pas vérifier qu'un humain les a regardés, le rectangle *étant* l'instruction.
+    // Un rectangle mal placé est un échec qu'aucun audit ne rattrape.
+    const rectItems = rectReviewItems(rectsForApi);
+    if (rectItems.length > 0) {
+      setReview({ items: rectItems, fromServer: false });
+      return;
+    }
+
+    void runExport();
+  };
+
+  const runExport = async (items?: ReviewItem[]) => {
+    if (!file) return;
+
+    setErrorInfo(null);
     setSubmitting(true);
+
+    const acks = items ? toAcknowledgements(items) : undefined;
 
     try {
       const r = await redactApply({
@@ -265,10 +298,25 @@ export default function App() {
         sanitizeMetadata: true,
         removeAnnotations: true,
         removeAttachments: true,
+        acknowledgedRegions: acks?.acknowledged_regions,
+        acknowledgedFontPages: acks?.acknowledged_font_pages,
       });
 
       downloadBlob(r.pdfBlob, "redacted.pdf");
     } catch (err) {
+      // 409 : rien n'a fui, mais une partie de la page échappait aux règles. Ce
+      // n'est pas une erreur à afficher, c'est une revue à faire faire.
+      // `items` non défini veut dire qu'on n'avait encore rien acquitté. Un second
+      // 409 sur une requête qui en portait déjà signale que les acquittements ne
+      // correspondent pas à ce que le serveur recalcule : le rouvrir bouclerait
+      // sans fin, mieux vaut montrer l'erreur.
+      if (err instanceof RedactApiError && err.status === 409 && !items) {
+        const serverItems = serverReviewItems(err.report);
+        if (serverItems.length > 0) {
+          setReview({ items: serverItems, fromServer: true });
+          return;
+        }
+      }
       setErrorInfo(
         err instanceof RedactApiError
           ? { status: err.status, report: err.report, rawMessage: err.message }
@@ -282,6 +330,20 @@ export default function App() {
   return (
     <div className="page pageLayout">
       <input ref={fileInputRef} type="file" accept="application/pdf" onChange={onPickFile} hidden />
+
+      {review ? (
+        <ReviewCarousel
+          t={t}
+          doc={reviewDoc}
+          items={review.items}
+          onCancel={() => setReview(null)}
+          onConfirmAll={() => {
+            const { items, fromServer } = review;
+            setReview(null);
+            void runExport(fromServer ? items : undefined);
+          }}
+        />
+      ) : null}
 
       <HeaderBar
         lang={lang}
