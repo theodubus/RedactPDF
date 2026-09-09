@@ -33,6 +33,16 @@ export type PresetKey = "email" | "phone" | "credit_card";
 
 export type ImageMode = "none" | "remove" | "pixels";
 
+/**
+ * Que faire des zones que les règles textuelles n'ont pas pu lire.
+ *
+ * `review` est le défaut : le serveur rend un 409 portant les zones, l'interface
+ * les fait défiler, et l'export repart avec les acquittements. `block` refuse
+ * sans recours (mode non interactif : seule une règle géométrique déverrouille).
+ * `ignore` exporte sans regarder, et c'est un choix nommé, pas un repli.
+ */
+export type ImageRegionsMode = "review" | "block" | "ignore";
+
 export type RectInput = {
   page: number;
   x0: number;
@@ -103,6 +113,7 @@ export async function redactApply(params: {
   rules: RuleInput[];
   presets: PresetKey[];
   imageMode?: ImageMode;
+  imageRegions?: ImageRegionsMode;
   applyGraphics?: boolean;
   sanitizeMetadata?: boolean;
   removeAnnotations?: boolean;
@@ -154,6 +165,7 @@ export async function redactApply(params: {
   // d'assainissement sur `false`, c'est-à-dire l'inverse du défaut serveur.
   const options: Record<string, unknown> = {};
   if (params.imageMode !== undefined) options.image_mode = params.imageMode;
+  if (params.imageRegions !== undefined) options.image_regions = params.imageRegions;
   if (params.applyGraphics !== undefined) options.apply_graphics = params.applyGraphics;
   if (params.sanitizeMetadata !== undefined) options.sanitize_metadata = params.sanitizeMetadata;
   if (params.removeAnnotations !== undefined) options.remove_annotations = params.removeAnnotations;

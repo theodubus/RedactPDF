@@ -142,17 +142,35 @@ the caller asked for.
 
 ### Opaque regions: what the rules could not read
 
-An image with no text drawn over it is a region the text rules cannot see. The
-detector is geometric: an image is flagged when it covers at least **0.5 %** of
-the page and at most **5 %** of its area carries text blocks. The second
-threshold is what excludes an image used as a background behind real text, where
-the rules read fine.
+An image is a region the text rules cannot see. The detector is geometric and has
+exactly one criterion: the image covers at least **0.5 %** of the page. Text
+drawn over it does not exempt it.
 
 The size threshold is deliberately low. A false flag costs one thumbnail to look
 at; a missing flag costs a leak, which is the same asymmetry that governs every
 other default here. Measured: a 40x40 pt logo covers 0.3 % of A4 and is ignored;
 the scanned identity block in `docs/demo-invoice.pdf` covers 7.7 % and is
 reported, correctly, since it holds a name and an ID number.
+
+An earlier version had a second criterion, and it was wrong. It skipped any image
+where more than 5 % of the area sat under a text block, on the theory that an
+image under text is a background the rules already read. Measured on a real
+academic transcript: a full-page scan covering 93.7 % of the page, carrying the
+institution name, the document title and every column heading as pixels, with a
+sparse text layer holding only the variable fields and covering 18.6 % of the
+scan. Skipped. A rule on the institution name returned HTTP 200 having redacted
+nothing.
+
+A ratio of area ignores shape, the same reason the 95 % coverage threshold below
+was removed. 18.6 % coverage does not say the rules read the image, only that
+18.6 % of its surface happens to lie under a line of text. The other 81.4 % was
+read by nobody. A watermark under a full page of text is now flagged too, and
+that is correct: it carries a word nothing can read.
+
+Because that makes flagging much more common, identical images are grouped. Each
+region carries the `digest` of its pixels, so a header banner repeated on thirty
+pages is one review screen and thirty acknowledgements. Grouping happens only on
+an identical digest, never on a guess.
 
 Nothing is reported unless a **textual rule** was requested. Without one, the
 caller never expected the engine to read anything.

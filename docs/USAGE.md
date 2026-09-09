@@ -144,23 +144,34 @@ gibberish where you see a name. Those pages come back in the same 409 under
 `unreliable_fonts`, acknowledged per page rather than per box, because the tool
 cannot tell you where the affected text is when it cannot read it.
 
-In the app this arrives as a review step rather than an error. Each flagged item
+In the app this arrives as a review step rather than an error. Each flagged area
 is shown one at a time, **rendered from the page** so you can read what the tool
-could not, with its own "I have checked this" button. Export stays disabled until
-every item has been confirmed individually: a single "confirm all" gets clicked
-without looking, which is precisely what this step exists to prevent.
+could not, with its own "I have checked this" button. It opens fitted to the
+panel so you see the whole area at once, and "Enlarge" renders it at a size where
+small print is legible. Export stays disabled until every screen has been
+confirmed individually: a single "confirm all" gets clicked without looking,
+which is precisely what this step exists to prevent.
 
-Hand-drawn rectangles go through the same step before the request is sent, for a
-different reason. Nothing can verify them: there is no rule to replay, the
-rectangle *is* the instruction, so a rectangle dropped on the wrong line destroys
-the wrong content and leaves the target visible with nothing to catch it. Showing
-you what is about to disappear is the only check available. Those confirmations
-stay in the browser and are never sent, since the server has no way to tell a
-real confirmation from a claimed one.
+Rectangles you drew yourself are **not** part of that carousel, and an earlier
+version was wrong to put them there. A rectangle is the instruction: drawing it
+already says what you want gone, the preview already shows it in place, and
+asking you to confirm that you meant to draw what you drew adds no information.
+Friction spent there is friction unavailable where it counts. They appear instead
+as **coverage**: while you look at an unreadable area, anything already handled
+inside it is drawn over the thumbnail in green, so your decision is about what
+remains rather than about the whole area.
 
-`options.image_regions` chooses between not checking at all, this review flow,
-and a non-interactive mode for scripts. The three are described in
+The mode selector sits under "Unreadable areas" in the sidebar, and
+`options.image_regions` is the API equivalent: not checking at all, this review
+flow, or a non-interactive refusal for scripts. The three are described in
 [SECURITY.md → Opaque regions](SECURITY.md#opaque-regions-what-the-rules-could-not-read).
+Choosing "Ignore" is a real choice with a real cost: a value written inside an
+image will survive the export with no message at all.
+
+An image repeated across pages, a header banner for instance, is one screen and
+not one per page. Grouping is done on a hash of the pixels, so it only ever
+groups images that are byte for byte identical, and confirming the screen
+acknowledges every page it appears on.
 
 The full list of limits, including the guarantee a preset carries, which is
 weaker than the one a typed rule carries, is in

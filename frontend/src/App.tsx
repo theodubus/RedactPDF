@@ -3,18 +3,15 @@ import { useI18n } from "./i18nContext";
 import { fetchConfig, FALLBACK_REGION, redactApply, RedactApiError } from "./api";
 import { ReviewCarousel } from "./review/ReviewCarousel";
 import { useReviewDocument } from "./review/useReviewDocument";
-import {
-  rectReviewItems,
-  serverReviewItems,
-  toAcknowledgements,
-} from "./review/reviewItems";
-import type { ReviewItem } from "./review/reviewItems";
-import type { ImageMode, PresetKey, RuleInput } from "./api";
+import { serverReviewItems, toAcknowledgements } from "./review/reviewItems";
+import type { CoveredArea, ReviewItem } from "./review/reviewItems";
+import type { ImageMode, ImageRegionsMode, PresetKey, RuleInput } from "./api";
 
 import { HeaderBar } from "./components/HeaderBar";
 import { RulesSection } from "./components/Rules/RulesSection";
 import { PresetsSection } from "./components/PresetsSection";
 import { ImageModeSection } from "./components/ImageModeSection";
+import { ImageRegionsSection } from "./components/ImageRegionsSection";
 import { ResultPanel } from "./components/ResultPanel";
 import { PdfViewer } from "./components/PdfViewer";
 
@@ -45,12 +42,12 @@ export default function App() {
   const [isDrawingRect, setIsDrawingRect] = useState(false);
   const [presets, setPresets] = useState<Record<PresetKey, boolean>>(EMPTY_PRESETS);
   const [imageMode, setImageMode] = useState<ImageMode>("pixels");
+  const [imageRegions, setImageRegions] = useState<ImageRegionsMode>("review");
 
-  // Revue avant export. Deux sources, deux moments : les rectangles sont connus
-  // du client dès le clic, les zones illisibles seulement après un 409.
-  const [review, setReview] = useState<{ items: ReviewItem[]; fromServer: boolean } | null>(
-    null,
-  );
+  // Revue avant export : uniquement ce que le moteur n'a pas su lire, connu après
+  // un 409. Les rectangles dessinés n'y défilent pas, ils s'y affichent comme
+  // déjà traité (voir `review/reviewItems.ts`).
+  const [review, setReview] = useState<{ items: ReviewItem[] } | null>(null);
   const reviewDoc = useReviewDocument(review ? file : null);
   const [isDragOver, setIsDragOver] = useState(false);
 
@@ -129,6 +126,20 @@ export default function App() {
   const fullPageRectsForApi = useMemo(() => {
     return rules.flatMap((r) => (r.kind === "page" ? [r.rect] : []));
   }, [rules]);
+
+  // Ce qui est déjà traité, à montrer par-dessus une zone que le moteur n'a pas
+  // su lire : la décision porte alors sur ce qui reste, pas sur la zone entière.
+  // Les rectangles pleine page en font partie ; ils couvrent souvent la zone
+  // entièrement, auquel cas le serveur ne la signale plus du tout.
+  const coveredAreas = useMemo<CoveredArea[]>(
+    () =>
+      [...rectsForApi, ...fullPageRectsForApi].map((r) => ({
+        page: r.page,
+        bbox: [r.x0, r.y0, r.x1, r.y1] as [number, number, number, number],
+        source: "manual" as const,
+      })),
+    [rectsForApi, fullPageRectsForApi],
+  );
 
   const hasAnythingToDo = rules.length > 0 || selectedPresets.length > 0;
 
@@ -266,15 +277,6 @@ export default function App() {
       return;
     }
 
-    // Les rectangles se relisent d'abord, sans passer par le serveur : lui ne peut
-    // pas vérifier qu'un humain les a regardés, le rectangle *étant* l'instruction.
-    // Un rectangle mal placé est un échec qu'aucun audit ne rattrape.
-    const rectItems = rectReviewItems(rectsForApi);
-    if (rectItems.length > 0) {
-      setReview({ items: rectItems, fromServer: false });
-      return;
-    }
-
     void runExport();
   };
 
@@ -294,6 +296,7 @@ export default function App() {
         rules: rulesForApi,
         presets: selectedPresets,
         imageMode,
+        imageRegions,
         applyGraphics: imageMode !== "none",
         sanitizeMetadata: true,
         removeAnnotations: true,
@@ -304,16 +307,24 @@ export default function App() {
 
       downloadBlob(r.pdfBlob, "redacted.pdf");
     } catch (err) {
-      // 409 : rien n'a fui, mais une partie de la page échappait aux règles. Ce
-      // n'est pas une erreur à afficher, c'est une revue à faire faire.
+      // 409 : rien n'a fui, mais une partie de la page échappait aux règles. En
+      // mode `review` ce n'est pas une erreur à afficher, c'est une revue à faire
+      // faire. En mode `block` c'en est une : le serveur y refuse les
+      // acquittements, ouvrir un carrousel promettrait un déblocage qui ne
+      // viendra pas, et seule une règle géométrique lève le refus.
       // `items` non défini veut dire qu'on n'avait encore rien acquitté. Un second
       // 409 sur une requête qui en portait déjà signale que les acquittements ne
       // correspondent pas à ce que le serveur recalcule : le rouvrir bouclerait
       // sans fin, mieux vaut montrer l'erreur.
-      if (err instanceof RedactApiError && err.status === 409 && !items) {
+      if (
+        err instanceof RedactApiError &&
+        err.status === 409 &&
+        !items &&
+        imageRegions === "review"
+      ) {
         const serverItems = serverReviewItems(err.report);
         if (serverItems.length > 0) {
-          setReview({ items: serverItems, fromServer: true });
+          setReview({ items: serverItems });
           return;
         }
       }
@@ -336,11 +347,12 @@ export default function App() {
           t={t}
           doc={reviewDoc}
           items={review.items}
+          covered={coveredAreas}
           onCancel={() => setReview(null)}
           onConfirmAll={() => {
-            const { items, fromServer } = review;
+            const { items } = review;
             setReview(null);
-            void runExport(fromServer ? items : undefined);
+            void runExport(items);
           }}
         />
       ) : null}
@@ -415,6 +427,8 @@ export default function App() {
             <PresetsSection t={t} presets={presets} togglePreset={togglePreset} />
 
             <ImageModeSection t={t} mode={imageMode} setMode={setImageMode} />
+
+            <ImageRegionsSection t={t} mode={imageRegions} setMode={setImageRegions} />
           </div>
 
           <button className="button toolsSubmitButton" type="submit" disabled={submitting}>

@@ -25,11 +25,27 @@ Conséquence assumée : une grande image décorative est signalée. Ce n'est pas
 faux positif, c'est une affirmation vraie que l'utilisateur trouvera pénible. Le
 traitement est le carrousel d'acquittement, pas une heuristique plus fine.
 
-Le cas hybride, qui a tué la première version
----------------------------------------------
+Le cas hybride, qui a tué deux versions
+---------------------------------------
 Tester « la page a-t-elle du texte » ne détecte rien sur une page qui mêle un
 en-tête en dur et un tableau scanné : la page a du texte, et la zone reste
 invisible aux règles. D'où la mesure par image plutôt que par page.
+
+La deuxième version a refait la même faute d'un cran plus bas. Elle écartait une
+image dont plus de 5 % de la surface passait sous un bloc de texte, au motif
+qu'une image sous du texte est un fond. Mesuré le 9 septembre 2026 sur un relevé
+de notes réel : un scan pleine page (93,7 % de la page) portant tout le
+formulaire en pixels, surmonté de neuf blocs de texte épars qui en couvraient
+18,6 %. Écarté, donc. Une règle sur le nom de l'établissement, écrit dans
+l'image, rendait HTTP 200 sans rien caviarder.
+
+Un ratio de surface ignore la forme, exactement comme le seuil de couverture à
+95 % écarté plus bas. 18,6 % de couverture ne dit pas que les règles ont lu
+l'image, seulement que 18,6 % de sa surface se trouve sous une ligne de texte.
+Les 81,4 % restants n'ont été lus par personne. Le critère a donc disparu : une
+image assez grande est signalée, qu'il y ait du texte par-dessus ou non. Un
+filigrane sous une page de texte est signalé lui aussi, et c'est correct : il
+porte un mot que rien ne peut lire.
 """
 from __future__ import annotations
 
@@ -42,10 +58,6 @@ import pymupdf
 # 7,7 %. Le seuil est bas parce qu'un signalement de trop coûte une vignette à
 # faire défiler, alors qu'un signalement manquant coûte une fuite.
 MIN_PAGE_SHARE = 0.005
-
-# Au-delà, l'image sert de fond à du vrai texte (filigrane, bandeau, trame) : les
-# règles lisent ce qui est écrit dessus, l'image ne cache rien.
-MAX_TEXT_RATIO = 0.05
 
 # Marge tolérée sur chaque bord quand on juge qu'un rectangle couvre une zone.
 # Deux points : de quoi absorber un tracé à la main imprécis, pas de quoi laisser
@@ -60,12 +72,20 @@ COVER_TOLERANCE_PT = 2.0
 
 @dataclass(frozen=True)
 class OpaqueRegion:
-    """Une zone que les règles textuelles n'ont pas pu lire."""
+    """Une zone que les règles textuelles n'ont pas pu lire.
+
+    `digest` est l'empreinte des pixels, rendue par PyMuPDF. Deux zones qui la
+    partagent sont la même image : un bandeau d'en-tête répété sur trente pages
+    donne trente zones et une seule empreinte. C'est ce qui permet de ne la faire
+    regarder qu'une fois sans mentir, puisque ce sont littéralement les mêmes
+    pixels.
+    """
 
     page: int
     bbox: tuple[float, float, float, float]
     page_share: float
     text_ratio: float
+    digest: str
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -73,11 +93,12 @@ class OpaqueRegion:
             "bbox": [round(v, 2) for v in self.bbox],
             "page_share": round(self.page_share, 4),
             "text_ratio": round(self.text_ratio, 4),
+            "digest": self.digest,
         }
 
 
 def _regions_on_page(
-    page: pymupdf.Page, page_number: int, *, min_share: float, max_text_ratio: float
+    page: pymupdf.Page, page_number: int, *, min_share: float
 ) -> list[OpaqueRegion]:
     text_rects = [pymupdf.Rect(b[:4]) for b in page.get_text("blocks") if b[6] == 0]
     page_area = abs(page.rect)
@@ -85,7 +106,8 @@ def _regions_on_page(
         return []
 
     out: list[OpaqueRegion] = []
-    for info in page.get_image_info():
+    # `hashes=True` : sans lui PyMuPDF ne calcule pas l'empreinte des pixels.
+    for info in page.get_image_info(hashes=True):
         rect = pymupdf.Rect(info["bbox"])
         area = abs(rect)
         if area <= 0:
@@ -93,15 +115,19 @@ def _regions_on_page(
         share = area / page_area
         if share < min_share:
             continue
+        # `text_ratio` est reporté, pas filtré. Il dit à l'utilisateur combien de
+        # la zone se trouve sous du texte déjà lisible ; il ne dit pas que les
+        # règles ont lu l'image, et une version antérieure qui s'en servait comme
+        # critère écartait un scan pleine page pour 18,6 % de recouvrement.
         covered = sum(abs(rect & t) for t in text_rects) / area
-        if covered > max_text_ratio:
-            continue
+        digest = info.get("digest")
         out.append(
             OpaqueRegion(
                 page=page_number,
                 bbox=(float(rect.x0), float(rect.y0), float(rect.x1), float(rect.y1)),
                 page_share=share,
                 text_ratio=covered,
+                digest=digest.hex() if isinstance(digest, bytes) else str(digest or ""),
             )
         )
     return out
@@ -112,7 +138,6 @@ def find_opaque_regions(
     *,
     pages: list[int] | None = None,
     min_share: float = MIN_PAGE_SHARE,
-    max_text_ratio: float = MAX_TEXT_RATIO,
 ) -> list[OpaqueRegion]:
     """Zones opaques du document **d'origine**.
 
@@ -129,12 +154,7 @@ def find_opaque_regions(
         out: list[OpaqueRegion] = []
         for index in wanted:
             out.extend(
-                _regions_on_page(
-                    doc.load_page(index),
-                    index,
-                    min_share=min_share,
-                    max_text_ratio=max_text_ratio,
-                )
+                _regions_on_page(doc.load_page(index), index, min_share=min_share)
             )
         return out
     finally:

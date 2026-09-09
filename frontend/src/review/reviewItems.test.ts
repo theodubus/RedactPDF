@@ -2,85 +2,143 @@ import { describe, expect, it } from "vitest";
 
 import {
   allConfirmed,
-  rectReviewItems,
+  coverageFor,
+  reviewSteps,
   serverReviewItems,
   toAcknowledgements,
 } from "./reviewItems";
+import type { CoveredArea, ReviewItem } from "./reviewItems";
+
+const opaque = (page: number, digest = "", bbox = [10, 10, 200, 100]): ReviewItem => ({
+  kind: "opaque",
+  id: `opaque:${page}:${bbox.map((v) => v.toFixed(2)).join(",")}`,
+  page,
+  bbox: bbox as [number, number, number, number],
+  digest,
+  pageShare: 0.5,
+  textRatio: 0,
+});
 
 describe("serverReviewItems", () => {
-  it("lit les deux natures du corps d'un 409", () => {
+  it("lit un corps enveloppé par FastAPI dans `detail`", () => {
+    // La forme réelle. Une première version ne lisait que le niveau racine et le
+    // carrousel ne s'ouvrait jamais ; le test de l'époque recevait la forme
+    // imaginée, pas celle du serveur.
     const items = serverReviewItems({
-      opaque_regions: [{ page: 0, bbox: [10, 20, 30, 40] }],
-      unreliable_fonts: [{ page: 1, name: "Faux" }],
-    });
-
-    expect(items.map((i) => i.kind)).toEqual(["opaque", "font"]);
-  });
-
-  it("ne montre qu'une entrée par page pour les polices", () => {
-    const items = serverReviewItems({
-      unreliable_fonts: [
-        { page: 2, name: "A" },
-        { page: 2, name: "B" },
-        { page: 3, name: "C" },
-      ],
-    });
-
-    expect(items.map((i) => i.page)).toEqual([2, 3]);
-  });
-
-  it("accepte la forme réelle de l'API, enveloppée dans `detail`", () => {
-    // Bug attrapé par un passage réel dans le navigateur : `RedactApiError`
-    // transporte le corps entier, et FastAPI enveloppe tout dans `detail`. Le
-    // carrousel ne s'ouvrait jamais, et ce fichier ne le voyait pas parce qu'il
-    // lui donnait la forme imaginée plutôt que la vraie.
-    const items = serverReviewItems({
-      detail: { opaque_regions: [{ page: 0, bbox: [40, 210, 540, 320] }] },
+      detail: {
+        status: "inconclusive",
+        opaque_regions: [{ page: 0, bbox: [10, 10, 200, 100], digest: "ab", page_share: 0.9 }],
+        unreliable_fonts: [],
+      },
     });
 
     expect(items).toHaveLength(1);
-    expect(items[0].kind).toBe("opaque");
+    expect(items[0]).toMatchObject({ kind: "opaque", page: 0, digest: "ab", pageShare: 0.9 });
   });
 
-  it("ignore un corps mal formé plutôt que de planter l'export", () => {
+  it("lit aussi un détail nu", () => {
+    const items = serverReviewItems({
+      opaque_regions: [{ page: 2, bbox: [0, 0, 50, 50] }],
+    });
+    expect(items).toHaveLength(1);
+    expect(items[0].page).toBe(2);
+  });
+
+  it("ignore une boîte mal formée plutôt que de fabriquer une zone", () => {
+    const items = serverReviewItems({ opaque_regions: [{ page: 0, bbox: [1, 2] }] });
+    expect(items).toEqual([]);
+  });
+
+  it("n'ouvre qu'une entrée par page pour les polices illisibles", () => {
+    // On ne sait pas *où* est le texte concerné : l'acquittement porte sur la
+    // page, deux polices sur la même page ne font pas deux écrans.
+    const items = serverReviewItems({
+      detail: {
+        unreliable_fonts: [
+          { page: 1, name: "AAAA+Foo" },
+          { page: 1, name: "BBBB+Bar" },
+          { page: 3, name: "CCCC+Baz" },
+        ],
+      },
+    });
+    expect(items.map((i) => i.page)).toEqual([1, 3]);
+  });
+
+  it("rend une liste vide sur un corps qui n'est pas un objet", () => {
     expect(serverReviewItems(null)).toEqual([]);
-    expect(serverReviewItems({ opaque_regions: [{ page: 0, bbox: [1, 2] }] })).toEqual([]);
+    expect(serverReviewItems("boom")).toEqual([]);
   });
 });
 
-describe("toAcknowledgements", () => {
-  it("n'acquitte jamais un rectangle auprès du serveur", () => {
-    // Le serveur ne peut pas vérifier qu'un humain a regardé un rectangle : le
-    // rectangle *est* l'instruction. Envoyer un acquittement donnerait une
-    // garantie que personne ne tient.
-    const items = [
-      ...rectReviewItems([{ page: 0, x0: 1, y0: 2, x1: 3, y1: 4 }]),
-      ...serverReviewItems({ opaque_regions: [{ page: 0, bbox: [5, 6, 7, 8] }] }),
-    ];
+describe("reviewSteps", () => {
+  it("regroupe les zones qui partagent une empreinte", () => {
+    // Un bandeau répété est la même image : un seul écran, mais l'acquittement
+    // porte sur les trois pages.
+    const steps = reviewSteps([opaque(0, "aa"), opaque(1, "aa"), opaque(2, "aa")]);
 
-    const acks = toAcknowledgements(items);
-    expect(acks.acknowledged_regions).toEqual([{ page: 0, bbox: [5, 6, 7, 8] }]);
+    expect(steps).toHaveLength(1);
+    expect(steps[0].pages).toEqual([0, 1, 2]);
+    expect(steps[0].members).toHaveLength(3);
   });
 
-  it("dédoublonne les pages de police", () => {
-    const items = serverReviewItems({ unreliable_fonts: [{ page: 4, name: "A" }] });
+  it("ne regroupe jamais sans empreinte", () => {
+    // Sans empreinte on ne sait pas que ce sont les mêmes pixels. Grouper serait
+    // une supposition, et une supposition qui fait sauter une vérification.
+    const steps = reviewSteps([opaque(0), opaque(1)]);
+    expect(steps).toHaveLength(2);
+  });
 
-    expect(toAcknowledgements(items).acknowledged_font_pages).toEqual([4]);
+  it("sépare deux images différentes sur la même page", () => {
+    const steps = reviewSteps([
+      opaque(0, "aa", [0, 0, 100, 100]),
+      opaque(0, "bb", [200, 0, 300, 100]),
+    ]);
+    expect(steps).toHaveLength(2);
   });
 });
 
 describe("allConfirmed", () => {
-  const items = serverReviewItems({
-    opaque_regions: [{ page: 0, bbox: [1, 2, 3, 4] }],
-    unreliable_fonts: [{ page: 1, name: "F" }],
+  it("exige un clic par écran", () => {
+    const steps = reviewSteps([opaque(0, "aa"), opaque(1, "bb")]);
+    expect(allConfirmed(steps, new Set([steps[0].head.id]))).toBe(false);
+    expect(allConfirmed(steps, new Set(steps.map((s) => s.head.id)))).toBe(true);
+  });
+});
+
+describe("coverageFor", () => {
+  const covered: CoveredArea[] = [
+    { page: 0, bbox: [20, 20, 60, 40], source: "manual" },
+    { page: 0, bbox: [500, 500, 520, 520], source: "manual" },
+    { page: 1, bbox: [20, 20, 60, 40], source: "manual" },
+  ];
+
+  it("ne retient que ce qui recoupe la zone montrée", () => {
+    // Montrer une couverture qui tombe ailleurs sur la page ferait croire la zone
+    // traitée alors qu'elle ne l'est pas.
+    const areas = coverageFor(opaque(0, "aa"), covered);
+    expect(areas).toHaveLength(1);
+    expect(areas[0].bbox).toEqual([20, 20, 60, 40]);
   });
 
-  it("exige chaque élément, pas une validation globale", () => {
-    expect(allConfirmed(items, new Set([items[0].id]))).toBe(false);
-    expect(allConfirmed(items, new Set(items.map((i) => i.id)))).toBe(true);
+  it("montre toute la page pour une police illisible", () => {
+    // On ne sait pas où est le texte concerné : la zone est la page entière.
+    const font: ReviewItem = { kind: "font", id: "font:1", page: 1, name: "AAAA+Foo" };
+    expect(coverageFor(font, covered)).toHaveLength(1);
+  });
+});
+
+describe("toAcknowledgements", () => {
+  it("acquitte chaque page d'un groupe, pas seulement celle montrée", () => {
+    const steps = reviewSteps([opaque(0, "aa"), opaque(1, "aa")]);
+    const acks = toAcknowledgements(steps.flatMap((s) => s.members));
+    expect(acks.acknowledged_regions.map((r) => r.page)).toEqual([0, 1]);
   });
 
-  it("un identifiant inventé ne débloque rien", () => {
-    expect(allConfirmed(items, new Set(["opaque:0:autre"]))).toBe(false);
+  it("dédoublonne les pages des polices", () => {
+    const items: ReviewItem[] = [
+      { kind: "font", id: "font:1", page: 1, name: "A" },
+      { kind: "font", id: "font:1b", page: 1, name: "B" },
+    ];
+    expect(toAcknowledgements(items).acknowledged_font_pages).toEqual([1]);
   });
 });

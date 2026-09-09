@@ -1,5 +1,12 @@
 import { JsonBlock } from "./JsonBlock";
 
+// Un 409 n'est pas un 400. Le 400 dit « la donnée visée est toujours dans le
+// fichier », le 409 dit « une zone a échappé aux règles, je ne peux rien
+// affirmer dessus ». Les confondre sous « audit en erreur » effacerait la seule
+// distinction que ce contrat apporte, et ferait chercher une fuite là où il n'y
+// en a pas.
+const INCONCLUSIVE = 409;
+
 // Le backend renvoie des codes, pas des phrases : il ignore la langue de
 // l'utilisateur. La table ci-dessous est la seule chose à étendre quand un
 // nouveau diagnostic apparaît, et un code inconnu est ignoré plutôt que rendu
@@ -24,10 +31,17 @@ export function ResultPanel(props: {
   if (!errorInfo) return null;
 
   const diagnostics = readDiagnostics(errorInfo.report);
+  const inconclusive = errorInfo.status === INCONCLUSIVE;
 
   return (
     <div>
-      <div className="resultTitle bad">{t("result.error.title")}</div>
+      <div className="resultTitle bad">
+        {t(inconclusive ? "result.inconclusive.title" : "result.error.title")}
+      </div>
+
+      {inconclusive ? (
+        <div className="errorBox">{t("result.inconclusive.help")}</div>
+      ) : null}
 
       {errorInfo.status ? (
         <div className="kv">

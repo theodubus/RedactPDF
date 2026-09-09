@@ -40,6 +40,14 @@ just produced**. If anything you targeted is still findable in there, you do not
 get the file. You get a report naming what survived, on which page, and whether
 the engine was able to locate it at all.
 
+There is a third answer, and it matters more than it looks. An audit can only
+report that a target survived; it can never report that it was unable to look. A
+name printed inside a scan is invisible to the rules and equally invisible to the
+check, so the export used to succeed with the name plainly on screen. RedactPDF
+now says so instead: an area it could not read stops the export and is shown to
+you, rendered from the page, to confirm one by one. You can turn that off, but
+only by naming the choice.
+
 That check has caught real failures, and it has blind spots of its own. Both are
 written down in [docs/SECURITY.md](docs/SECURITY.md) rather than left implied;
 read it before trusting the tool with anything that matters. And if you would

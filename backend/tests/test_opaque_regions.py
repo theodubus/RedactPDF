@@ -18,6 +18,7 @@ from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas
 
 from redactpdf.main import app
+from redactpdf.opaque import find_opaque_regions
 
 client = TestClient(app)
 
@@ -58,6 +59,33 @@ def _hybrid() -> bytes:
     c.drawImage(ImageReader(_png("Tableau scanne : Jean Dupont")),
                 60, height - 320, width=460, height=92)
     c.drawImage(ImageReader(_png("logo", (60, 60))), 480, height - 70, width=40, height=40)
+    c.showPage()
+    c.save()
+    return buf.getvalue()
+
+
+def _scanned_form() -> bytes:
+    """Un formulaire scanné en pleine page, surmonté de quelques champs en dur.
+
+    La forme exacte d'un relevé de notes réel mesuré le 9 septembre 2026 : le
+    scan occupe 93,7 % de la page et porte tout le formulaire en pixels (nom de
+    l'établissement, titre, en-têtes de colonnes) ; la couche texte ne porte que
+    les champs variables, et couvre 18,6 % de la surface du scan.
+
+    La version qui écartait une image dès 5 % de recouvrement rendait ici HTTP
+    200 sans rien caviarder.
+    """
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf, pagesize=A4)
+    width, height = A4
+    c.drawImage(
+        ImageReader(_png("POLYTECHNIQUE   BULLETIN   SIGLE  CREDITS  NOTE", (1600, 2100))),
+        10, 10, width=width - 20, height=height - 20,
+    )
+    c.setFont("Helvetica", 10)
+    # Les champs variables, en dur, épars sur le scan.
+    for i in range(9):
+        c.drawString(40, height - 90 - i * 70, "Jean Dupont" + " x" * 30)
     c.showPage()
     c.save()
     return buf.getvalue()
@@ -192,3 +220,45 @@ def test_a_rectangle_that_does_not_quite_cover_still_reports() -> None:
         },
     )
     assert resp.status_code == 409, resp.text
+
+
+@pytest.mark.integration
+def test_a_scanned_form_under_a_text_layer_is_still_reported() -> None:
+    """Régression : le ratio de texte écartait un scan pleine page.
+
+    Le critère « au-delà de 5 % de recouvrement, l'image est un fond » a été
+    retiré. Un ratio de surface ignore la forme : 18,6 % de la zone sous une
+    ligne de texte ne dit rien des 81,4 % que personne n'a lus. Le seul critère
+    restant est la taille.
+    """
+    resp = _post(_scanned_form(), {"searches": [{"query": "Dupont"}]})
+
+    assert resp.status_code == 409, resp.text
+    regions = resp.json()["detail"]["opaque_regions"]
+    assert len(regions) == 1
+    assert regions[0]["page_share"] > 0.9
+    # Le ratio reste reporté : il informe, il ne filtre plus.
+    assert regions[0]["text_ratio"] > 0.05
+
+
+@pytest.mark.unit
+def test_the_same_image_on_several_pages_shares_one_digest() -> None:
+    """Un bandeau répété est la même image : l'empreinte permet de ne la montrer qu'une fois.
+
+    Sans cela, retirer le critère de recouvrement rendrait un document de trente
+    pages illisible en revue, ce qui reviendrait à le rendre inutilisable.
+    """
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf, pagesize=A4)
+    width, height = A4
+    banner = ImageReader(_png("EN-TETE CONFIDENTIEL"))
+    for _ in range(3):
+        c.drawImage(banner, 40, height - 160, width=500, height=110)
+        c.showPage()
+    c.save()
+
+    regions = find_opaque_regions(buf.getvalue())
+
+    assert [r.page for r in regions] == [0, 1, 2]
+    assert len({r.digest for r in regions}) == 1
+    assert regions[0].digest != ""

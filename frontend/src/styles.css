@@ -553,16 +553,27 @@ body,
   padding: 24px;
 }
 
+/* Colonne : l'en-tête et les actions restent en place, seule la vignette défile.
+   Une version précédente laissait tout le panneau défiler ; sur un scan pleine
+   page la vignette faisait mille pixels de haut et poussait « J'ai vérifié »
+   hors de l'écran. Cacher le bouton n'est pas de la friction, c'est un bug. */
 .reviewPanel {
   background: var(--panel, #fff);
   color: inherit;
   border-radius: 10px;
   padding: 20px 24px;
-  max-width: 780px;
+  max-width: 900px;
   width: 100%;
   max-height: 90vh;
-  overflow: auto;
+  display: flex;
+  flex-direction: column;
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+}
+
+.reviewItem {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
 }
 
 .reviewTitle {
@@ -589,13 +600,34 @@ body,
   margin-bottom: 8px;
 }
 
+/* `width`/`height` en auto sous une double contrainte : le navigateur garde le
+   rapport intrinsèque du canvas. Une zone pleine page tient donc à l'écran d'un
+   coup, et une bande étroite reste rendue à la largeur du panneau. */
 .reviewThumb {
   display: block;
-  width: 100%;
+  margin: 0 auto;
+  width: auto;
   height: auto;
+  max-width: 100%;
+  max-height: 58vh;
   border: 1px solid rgba(128, 128, 128, 0.4);
   border-radius: 4px;
   background: #fff;
+}
+
+/* Agrandi : plus de contrainte de hauteur, `.reviewItem` défile. On y perd la vue
+   d'ensemble, on y gagne de pouvoir lire un nom. Les deux sont nécessaires, d'où
+   la bascule plutôt qu'un compromis qui ne servirait ni l'un ni l'autre. */
+.reviewThumbZoomed {
+  max-height: none;
+  width: 100%;
+  max-width: none;
+}
+
+.reviewZoom {
+  margin-top: 8px;
+  font-size: 0.82rem;
+  padding: 3px 10px;
 }
 
 .thumbFailed {
@@ -612,11 +644,37 @@ body,
   opacity: 0.85;
 }
 
+/* Le trait vert de la vignette : dire de quelle couleur on parle, sinon la
+   surimpression n'est qu'un aplat de plus. */
+.reviewCoverageHint {
+  margin: 6px 0 0;
+  font-size: 0.82rem;
+  opacity: 0.8;
+}
+
+.reviewCoverageHint::before {
+  content: "";
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 6px;
+  vertical-align: baseline;
+  background: rgba(28, 124, 74, 0.22);
+  border: 1px solid #1c7c4a;
+}
+
+.sectionHint {
+  margin: 8px 0 0;
+  font-size: 0.82rem;
+  opacity: 0.75;
+}
+
 .reviewNav {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
   margin: 16px 0;
+  flex: 0 0 auto;
 }
 
 .reviewDot {
@@ -643,6 +701,7 @@ body,
   display: flex;
   gap: 8px;
   justify-content: flex-end;
+  flex: 0 0 auto;
 }
 
 .reviewActions button:disabled {
