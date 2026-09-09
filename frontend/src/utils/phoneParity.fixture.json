@@ -1,0 +1,305 @@
+{
+  "_comment": "Genere par backend/tests/test_phone_parity.py. Le backend fait foi ; utils/phonePreview.ts doit rendre exactement ces valeurs. Les deux suites verifient ce fichier, donc une derive fait echouer un cote ou l'autre.",
+  "cases": [
+    {
+      "candidate": "06 12 34 56 78",
+      "region": "FR",
+      "redacted": true
+    },
+    {
+      "candidate": "+33 6 12 34 56 78",
+      "region": "FR",
+      "redacted": true
+    },
+    {
+      "candidate": "0033612345678",
+      "region": "FR",
+      "redacted": true
+    },
+    {
+      "candidate": "06.12.34.56.78",
+      "region": "FR",
+      "redacted": true
+    },
+    {
+      "candidate": "06-12-34-56-78",
+      "region": "FR",
+      "redacted": true
+    },
+    {
+      "candidate": "0612345678",
+      "region": "FR",
+      "redacted": true
+    },
+    {
+      "candidate": "+33612345678",
+      "region": "FR",
+      "redacted": true
+    },
+    {
+      "candidate": "212 736 5000",
+      "region": "FR",
+      "redacted": false
+    },
+    {
+      "candidate": "+1 212 736 5000",
+      "region": "FR",
+      "redacted": true
+    },
+    {
+      "candidate": "(212) 736-5000",
+      "region": "FR",
+      "redacted": false
+    },
+    {
+      "candidate": "+44 20 7946 0958",
+      "region": "FR",
+      "redacted": true
+    },
+    {
+      "candidate": "20 7946 0958",
+      "region": "FR",
+      "redacted": false
+    },
+    {
+      "candidate": "06 12 34 56 78 poste 42",
+      "region": "FR",
+      "redacted": true
+    },
+    {
+      "candidate": "06 12 34 56 78 ext. 7",
+      "region": "FR",
+      "redacted": true
+    },
+    {
+      "candidate": "+33 6 12 34 56 78 x12",
+      "region": "FR",
+      "redacted": true
+    },
+    {
+      "candidate": "12 34",
+      "region": "FR",
+      "redacted": false
+    },
+    {
+      "candidate": "1",
+      "region": "FR",
+      "redacted": false
+    },
+    {
+      "candidate": "123456",
+      "region": "FR",
+      "redacted": false
+    },
+    {
+      "candidate": "1234567890123456789012",
+      "region": "FR",
+      "redacted": false
+    },
+    {
+      "candidate": "abc",
+      "region": "FR",
+      "redacted": false
+    },
+    {
+      "candidate": "",
+      "region": "FR",
+      "redacted": false
+    },
+    {
+      "candidate": "   ",
+      "region": "FR",
+      "redacted": false
+    },
+    {
+      "candidate": "00 33 6 12 34 56 78",
+      "region": "FR",
+      "redacted": true
+    },
+    {
+      "candidate": "99 99 99 99 99",
+      "region": "FR",
+      "redacted": false
+    },
+    {
+      "candidate": "07 00 00 00 00",
+      "region": "FR",
+      "redacted": false
+    },
+    {
+      "candidate": "+33 1 23 45 67 89",
+      "region": "FR",
+      "redacted": true
+    },
+    {
+      "candidate": "2026-06-09",
+      "region": "FR",
+      "redacted": false
+    },
+    {
+      "candidate": "4111 1111 1111 1111",
+      "region": "FR",
+      "redacted": false
+    },
+    {
+      "candidate": "+41 44 668 18 00",
+      "region": "FR",
+      "redacted": true
+    },
+    {
+      "candidate": "044 668 18 00",
+      "region": "FR",
+      "redacted": true
+    },
+    {
+      "candidate": "06 12 34 56 78",
+      "region": "US",
+      "redacted": false
+    },
+    {
+      "candidate": "+33 6 12 34 56 78",
+      "region": "US",
+      "redacted": true
+    },
+    {
+      "candidate": "0033612345678",
+      "region": "US",
+      "redacted": true
+    },
+    {
+      "candidate": "06.12.34.56.78",
+      "region": "US",
+      "redacted": false
+    },
+    {
+      "candidate": "06-12-34-56-78",
+      "region": "US",
+      "redacted": false
+    },
+    {
+      "candidate": "0612345678",
+      "region": "US",
+      "redacted": false
+    },
+    {
+      "candidate": "+33612345678",
+      "region": "US",
+      "redacted": true
+    },
+    {
+      "candidate": "212 736 5000",
+      "region": "US",
+      "redacted": true
+    },
+    {
+      "candidate": "+1 212 736 5000",
+      "region": "US",
+      "redacted": true
+    },
+    {
+      "candidate": "(212) 736-5000",
+      "region": "US",
+      "redacted": true
+    },
+    {
+      "candidate": "+44 20 7946 0958",
+      "region": "US",
+      "redacted": true
+    },
+    {
+      "candidate": "20 7946 0958",
+      "region": "US",
+      "redacted": true
+    },
+    {
+      "candidate": "06 12 34 56 78 poste 42",
+      "region": "US",
+      "redacted": false
+    },
+    {
+      "candidate": "06 12 34 56 78 ext. 7",
+      "region": "US",
+      "redacted": false
+    },
+    {
+      "candidate": "+33 6 12 34 56 78 x12",
+      "region": "US",
+      "redacted": true
+    },
+    {
+      "candidate": "12 34",
+      "region": "US",
+      "redacted": false
+    },
+    {
+      "candidate": "1",
+      "region": "US",
+      "redacted": false
+    },
+    {
+      "candidate": "123456",
+      "region": "US",
+      "redacted": false
+    },
+    {
+      "candidate": "1234567890123456789012",
+      "region": "US",
+      "redacted": false
+    },
+    {
+      "candidate": "abc",
+      "region": "US",
+      "redacted": false
+    },
+    {
+      "candidate": "",
+      "region": "US",
+      "redacted": false
+    },
+    {
+      "candidate": "   ",
+      "region": "US",
+      "redacted": false
+    },
+    {
+      "candidate": "00 33 6 12 34 56 78",
+      "region": "US",
+      "redacted": true
+    },
+    {
+      "candidate": "99 99 99 99 99",
+      "region": "US",
+      "redacted": false
+    },
+    {
+      "candidate": "07 00 00 00 00",
+      "region": "US",
+      "redacted": false
+    },
+    {
+      "candidate": "+33 1 23 45 67 89",
+      "region": "US",
+      "redacted": true
+    },
+    {
+      "candidate": "2026-06-09",
+      "region": "US",
+      "redacted": false
+    },
+    {
+      "candidate": "4111 1111 1111 1111",
+      "region": "US",
+      "redacted": false
+    },
+    {
+      "candidate": "+41 44 668 18 00",
+      "region": "US",
+      "redacted": true
+    },
+    {
+      "candidate": "044 668 18 00",
+      "region": "US",
+      "redacted": false
+    }
+  ]
+}

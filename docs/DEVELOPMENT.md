@@ -113,8 +113,23 @@ declaring `re.Pattern` on a path that must stay on the `regex` engine.
 ```bash
 cd frontend
 npm run lint          # zero warnings tolerated, CI enforces it
+npm test              # vitest
 npm run build
 ```
+
+### The phone preview is checked against the backend, not trusted
+
+`utils/phonePreview.ts` mirrors the backend's `_phone_post_filter`, and a
+highlight reads as a promise: highlighting a number the backend will not remove
+produces a successful export with the data still in it, and the audit cannot
+catch that because it re-runs the same detector.
+
+Two languages cannot be tested in one process, so the contract is a committed
+corpus that **both suites verify**. `phoneParity.fixture.json` is generated from
+the backend; `backend/tests/test_phone_parity.py` checks it still matches
+`_phone_post_filter`, and `phonePreview.test.ts` checks the browser mirror agrees
+with it. A drift on either side fails one of the two. When the filter changes,
+regenerate the corpus from the backend rather than editing it by hand.
 
 ### PDF fixtures are a contract
 
