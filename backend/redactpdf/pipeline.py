@@ -22,6 +22,8 @@ class RedactionOptions:
     sanitize_metadata: bool = True
     remove_annotations: bool = True
     remove_attachments: bool = True
+    remove_outline: bool = True
+    remove_document_actions: bool = True
 
 
 @dataclass(frozen=True)
@@ -162,6 +164,8 @@ def apply_plan(pdf_bytes: bytes, plan: PlanResult, *, options: RedactionOptions)
             sanitize_metadata=False,
             remove_annotations=False,
             remove_attachments=False,
+            remove_outline=False,
+            remove_document_actions=False,
         )
 
     return redact_pdf_by_rectangles(
@@ -172,6 +176,8 @@ def apply_plan(pdf_bytes: bytes, plan: PlanResult, *, options: RedactionOptions)
         sanitize_metadata=options.sanitize_metadata,
         remove_annotations=options.remove_annotations,
         remove_attachments=options.remove_attachments,
+        remove_outline=options.remove_outline,
+        remove_document_actions=options.remove_document_actions,
     )
 
 

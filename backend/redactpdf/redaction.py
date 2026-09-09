@@ -105,6 +105,8 @@ def redact_pdf_by_rectangles(
     sanitize_metadata: bool = False,
     remove_annotations: bool = False,
     remove_attachments: bool = False,
+    remove_outline: bool = False,
+    remove_document_actions: bool = False,
 ) -> bytes:
     """
     Applique des redactions à partir d'une liste de rectangles.
@@ -119,6 +121,9 @@ def redact_pdf_by_rectangles(
     - sanitize_metadata=True   -> nettoyage métadonnées (Info dict + XMP si possible)
     - remove_annotations=True  -> suppression des annotations/liens/widgets
     - remove_attachments=True  -> suppression des fichiers embarqués
+    - remove_outline=True      -> suppression des signets
+    - remove_document_actions=True -> suppression du JavaScript, /OpenAction,
+      /AA et du paquet XFA
 
     Retourne le PDF redigé (bytes).
     """
@@ -166,6 +171,8 @@ def redact_pdf_by_rectangles(
             sanitize_metadata=sanitize_metadata,
             remove_annotations=remove_annotations,
             remove_attachments=remove_attachments,
+            remove_outline=remove_outline,
+            remove_document_actions=remove_document_actions,
         )
 
         out = BytesIO()

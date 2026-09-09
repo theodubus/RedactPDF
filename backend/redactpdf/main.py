@@ -117,6 +117,10 @@ class OptionsModel(StrictModel):
     sanitize_metadata: bool = True
     remove_annotations: bool = True
     remove_attachments: bool = True
+    # Porteurs hors flux de contenu : un signet « Dossier Dupont » survivait à une
+    # règle « Dupont » avec un export en 200. Mesuré, puis corrigé.
+    remove_outline: bool = True
+    remove_document_actions: bool = True
 
 
 class AuditModel(StrictModel):
@@ -354,6 +358,8 @@ async def redact_apply(
                 sanitize_metadata=data.options.sanitize_metadata,
                 remove_annotations=data.options.remove_annotations,
                 remove_attachments=data.options.remove_attachments,
+                remove_outline=data.options.remove_outline,
+                remove_document_actions=data.options.remove_document_actions,
             ),
         )
     except ValueError as e:

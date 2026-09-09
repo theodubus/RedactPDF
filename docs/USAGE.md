@@ -86,10 +86,12 @@ the ones that decide whether something gets missed.
   default region. A long digit string that fails the checksum stays. For phones
   the viewer runs that same validation before highlighting, so a highlighted
   number is one the backend will actually remove.
-- **The document is stripped as well as redacted.** Metadata (Info dictionary
-  and XMP), annotations, form fields and embedded attachments go by default, and
-  the file is written with `garbage=4` so removed objects are physically absent
-  rather than merely unreferenced.
+- **The document is stripped as well as redacted.** Everything that carries text
+  outside the page itself goes by default: metadata (Info dictionary and XMP),
+  links, annotations, form fields, embedded attachments, bookmark titles,
+  document JavaScript and the XFA packet. A bookmark reading "Dossier Dupont"
+  used to survive a rule for `Dupont`. The file is written with `garbage=4`, so
+  removed objects are physically absent rather than merely unreferenced.
 - **Every rectangle is computed from the original file**, before anything is
   removed. Deriving them from a partly redacted document would let an early rule
   hide the text a later one needed to match.

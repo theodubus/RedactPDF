@@ -2,6 +2,52 @@ from __future__ import annotations
 
 import pymupdf
 
+# Porteurs situés hors du flux de contenu des pages. Le caviardage nettoie ce qui
+# est dessiné ; ces objets-là transportent du texte que personne ne regarde et
+# qu'aucune règle géométrique n'atteint. Mesuré avant d'écrire ceci : une règle
+# « Dupont » nettoyait la page, rendait 200, et laissait le signet « Dossier
+# Dupont - confidentiel » intact dans le volet de navigation.
+#
+# On supprime le porteur entier plutôt que d'y retrouver la cible. C'est plus
+# brutal et plus sûr : on ne fuit pas par un objet qui n'existe plus, et cela
+# n'oblige pas l'assainissement à connaître les règles.
+_ACTION_KEYS = ("OpenAction", "AA")
+
+
+def _drop_javascript_and_xfa(doc: pymupdf.Document) -> None:
+    """Retire le JavaScript de document et le paquet XFA du catalogue."""
+    try:
+        catalog = doc.pdf_catalog()
+    except Exception:
+        return
+    if not catalog:
+        return
+
+    for key in _ACTION_KEYS:
+        try:
+            kind, _ = doc.xref_get_key(catalog, key)
+            if kind != "null":
+                doc.xref_set_key(catalog, key, "null")
+        except Exception:
+            pass
+
+    # /Names/JavaScript : arbre de noms des scripts de document.
+    try:
+        kind, _ = doc.xref_get_key(catalog, "Names/JavaScript")
+        if kind != "null":
+            doc.xref_set_key(catalog, "Names/JavaScript", "null")
+    except Exception:
+        pass
+
+    # /AcroForm/XFA : le formulaire XML garde sa propre copie des valeurs saisies,
+    # que la suppression des widgets ne touche pas.
+    try:
+        kind, _ = doc.xref_get_key(catalog, "AcroForm/XFA")
+        if kind != "null":
+            doc.xref_set_key(catalog, "AcroForm/XFA", "null")
+    except Exception:
+        pass
+
 
 def sanitize_document(
     doc: pymupdf.Document,
@@ -9,6 +55,8 @@ def sanitize_document(
     sanitize_metadata: bool = False,
     remove_annotations: bool = False,
     remove_attachments: bool = False,
+    remove_outline: bool = False,
+    remove_document_actions: bool = False,
 ) -> None:
     """
     Nettoyage 'anti-fuites hors visuel' sur un Document PyMuPDF déjà ouvert/modifié.
@@ -17,6 +65,10 @@ def sanitize_document(
     - sanitize_metadata: clear Info dict + XML metadata stream (XMP)
     - remove_annotations: supprime liens + annotations + widgets (form fields)
     - remove_attachments: supprime les embedded files
+    - remove_outline: supprime les signets, dont les titres portent régulièrement
+      un nom de dossier ou de personne
+    - remove_document_actions: supprime le JavaScript de document, /OpenAction,
+      /AA et le paquet XFA
 
     Ne renvoie pas de compteurs : ils n'étaient lus nulle part, et les tests de
     sanitation vérifient le PDF de sortie -- ce qui est plus fort que de croire
@@ -62,6 +114,15 @@ def sanitize_document(
 
             while widget:
                 widget = page.delete_widget(widget)
+
+    if remove_outline:
+        try:
+            doc.set_toc([])
+        except Exception:
+            pass
+
+    if remove_document_actions:
+        _drop_javascript_and_xfa(doc)
 
     if remove_attachments and hasattr(doc, "embfile_names") and hasattr(doc, "embfile_del"):
         try:

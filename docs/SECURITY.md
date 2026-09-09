@@ -27,7 +27,16 @@ RedactPDF is a local PDF redaction tool intended to produce a **new exported PDF
   and whether it ran, on success as well as on failure, because a pass validated
   by one reader is not a pass validated by two.
 - Backend supports three image-redaction modes (`none`, `remove`, `pixels`)
-  + vector-graphics removal + metadata/annotation/attachment sanitation.
+  + vector-graphics removal + sanitation of everything that carries text outside
+  the page content stream: metadata and XMP, links, annotations, form widgets,
+  embedded attachments, **bookmark titles, document JavaScript, `/OpenAction`,
+  `/AA` and the XFA packet**. Redaction cleans what is drawn; those objects carry
+  text nobody looks at and no geometric rule reaches. Measured before the last
+  four were added: a rule for `Dupont` cleaned the page, returned 200, and left
+  "Dossier Dupont - confidentiel" sitting in the navigation pane.
+- The carrier is dropped whole rather than searched for the target. That is
+  blunter and safer: you cannot leak through an object that no longer exists,
+  and it does not require sanitation to know the rules.
 - The `pixels` image mode rewrites the bitmap of the targeted region (and
   saves with `garbage=4`, removing the orphaned original stream), so it
   works on **flattened / scanned PDFs** where the whole page is one image.
