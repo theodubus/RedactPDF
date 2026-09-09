@@ -49,6 +49,54 @@ def _drop_javascript_and_xfa(doc: pymupdf.Document) -> None:
         pass
 
 
+def _drain(node: object, delete: object) -> None:
+    """Vide une chaîne d'annotations, sans se laisser arrêter par une poignée morte.
+
+    `page.delete_annot(a)` rend l'entrée suivante de la chaîne, et c'est là que ça
+    casse : sur un document réel (une convention de stage portant une annotation
+    commentée), la suivante est le *popup* de celle qu'on vient de supprimer.
+    Détaché de sa page avec son parent, il fait lever à PyMuPDF « Annot is not
+    bound to a page », l'exception remonte et la requête entière rend 500. Une
+    simple note collée suffit à déclencher ça, et le motif de boucle utilisé ici
+    est pourtant celui de la documentation.
+
+    On s'arrête donc à la première poignée cassée, et le filet ci-dessous finit le
+    travail par référence. Ne jamais transformer ça en `continue` : la chaîne
+    n'est plus fiable une fois qu'un maillon a lâché, et on tournerait en rond.
+    """
+    while node is not None:
+        try:
+            node = delete(node)  # type: ignore[operator]
+        except Exception:
+            return
+
+
+def _drop_annot_references(doc: pymupdf.Document, page: pymupdf.Page) -> None:
+    """Le filet : plus aucune annotation atteignable, quoi qu'ait fait la boucle.
+
+    Couper la référence plutôt que supprimer objet par objet, dans l'esprit du
+    module : on ne fuit pas par un objet que rien ne désigne, et `garbage=4` à
+    l'enregistrement le fait disparaître physiquement.
+
+    `/AcroForm/Fields` est coupé avec, car c'est le second chemin vers un widget :
+    sa valeur saisie survivrait au vidage de `/Annots` si le formulaire la
+    désignait encore. Retirer toutes les annotations d'un document, c'est retirer
+    tous ses champs, donc le formulaire n'a plus de contenu à décrire.
+    """
+    try:
+        if doc.xref_get_key(page.xref, "Annots")[0] != "null":
+            doc.xref_set_key(page.xref, "Annots", "null")
+    except Exception:
+        pass
+
+    try:
+        catalog = doc.pdf_catalog()
+        if catalog and doc.xref_get_key(catalog, "AcroForm/Fields")[0] != "null":
+            doc.xref_set_key(catalog, "AcroForm/Fields", "null")
+    except Exception:
+        pass
+
+
 def sanitize_document(
     doc: pymupdf.Document,
     *,
@@ -103,17 +151,18 @@ def sanitize_document(
             annot = getattr(page, "first_annot", None)
             if annot is None:
                 annot = getattr(page, "firstAnnot", None)  # compat anciens noms
-
-            while annot:
-                annot = page.delete_annot(annot)
+            _drain(annot, page.delete_annot)
 
             # 3) Widgets (form fields)
             widget = getattr(page, "first_widget", None)
             if widget is None:
                 widget = getattr(page, "firstWidget", None)  # compat anciens noms
+            _drain(widget, page.delete_widget)
 
-            while widget:
-                widget = page.delete_widget(widget)
+            # 4) Le filet, toujours, pas seulement en cas d'échec : c'est lui qui
+            # porte la garantie, la boucle n'étant qu'un chemin poli vers le même
+            # résultat (elle tient la comptabilité du formulaire quand elle marche).
+            _drop_annot_references(doc, page)
 
     if remove_outline:
         try:

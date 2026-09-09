@@ -57,6 +57,8 @@
   "result.error.title": "Failed: audit error",
   "result.inconclusive.title": "Export refused: an area could not be read",
   "result.inconclusive.help": "Nothing suggests a targeted value survived. The engine reports the opposite: an image or a font is unreadable to it, so it can state nothing about that area. In Block mode, only a rectangle fully covering the area lifts the refusal. Switch to Review to look at it and confirm yourself.",
+  "result.crashed.title": "The engine stopped on this document",
+  "result.crashed.help": "This is not an audit failure: no file was produced, so nothing leaked. The document has something the tool could not handle. Please report it, with the PDF if you can share it.",
   "result.error.http": "HTTP status",
   "result.error.details": "Report details",
   "result.error.noJson": "Unexpected error (non-JSON response).",

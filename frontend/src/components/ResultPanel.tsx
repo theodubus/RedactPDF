@@ -7,6 +7,11 @@ import { JsonBlock } from "./JsonBlock";
 // en a pas.
 const INCONCLUSIVE = 409;
 
+// Et un 500 n'est ni l'un ni l'autre : c'est le moteur qui s'est arrêté, sans
+// avoir rien conclu du tout. L'annoncer comme un « audit en erreur » envoie
+// chercher une fuite dans un fichier qui n'a même pas été produit.
+const CRASHED = 500;
+
 // Le backend renvoie des codes, pas des phrases : il ignore la langue de
 // l'utilisateur. La table ci-dessous est la seule chose à étendre quand un
 // nouveau diagnostic apparaît, et un code inconnu est ignoré plutôt que rendu
@@ -32,16 +37,20 @@ export function ResultPanel(props: {
 
   const diagnostics = readDiagnostics(errorInfo.report);
   const inconclusive = errorInfo.status === INCONCLUSIVE;
+  const crashed = errorInfo.status !== undefined && errorInfo.status >= CRASHED;
+
+  const title = inconclusive
+    ? "result.inconclusive.title"
+    : crashed
+      ? "result.crashed.title"
+      : "result.error.title";
 
   return (
     <div>
-      <div className="resultTitle bad">
-        {t(inconclusive ? "result.inconclusive.title" : "result.error.title")}
-      </div>
+      <div className="resultTitle bad">{t(title)}</div>
 
-      {inconclusive ? (
-        <div className="errorBox">{t("result.inconclusive.help")}</div>
-      ) : null}
+      {inconclusive ? <div className="errorBox">{t("result.inconclusive.help")}</div> : null}
+      {crashed ? <div className="errorBox">{t("result.crashed.help")}</div> : null}
 
       {errorInfo.status ? (
         <div className="kv">

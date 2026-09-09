@@ -57,6 +57,8 @@
   "result.error.title": "Échec : audit en erreur",
   "result.inconclusive.title": "Export refusé : une zone n'a pas pu être lue",
   "result.inconclusive.help": "Rien n'indique qu'une donnée visée ait survécu. Le moteur signale l'inverse : une image ou une police lui est illisible, il ne peut donc rien affirmer sur cette zone. En mode « Bloquer », seul un rectangle qui recouvre entièrement la zone lève le refus. Passez en « Vérifier » pour la regarder et confirmer vous-même.",
+  "result.crashed.title": "Le moteur s'est arrêté sur ce document",
+  "result.crashed.help": "Ce n'est pas un échec d'audit : aucun fichier n'a été produit, donc rien n'a fuité. Le document a une particularité que l'outil n'a pas su traiter. Signalez-le en joignant le PDF si vous le pouvez.",
   "result.error.http": "Code HTTP",
   "result.error.details": "Détails du report",
   "result.error.noJson": "Erreur inattendue (réponse non JSON).",

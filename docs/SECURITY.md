@@ -36,7 +36,14 @@ RedactPDF is a local PDF redaction tool intended to produce a **new exported PDF
   "Dossier Dupont - confidentiel" sitting in the navigation pane.
 - The carrier is dropped whole rather than searched for the target. That is
   blunter and safer: you cannot leak through an object that no longer exists,
-  and it does not require sanitation to know the rules.
+  and it does not require sanitation to know the rules. Annotations are removed
+  twice over: through the PyMuPDF API, which keeps the form's bookkeeping
+  straight, and then by cutting the page's `/Annots` reference and
+  `/AcroForm/Fields` outright, so nothing annotation-shaped stays reachable even
+  if the API walk gives up. It does give up in practice: a sticky note carries a
+  popup, deleting the note detaches the popup, and the documented deletion loop
+  then raises on it. That returned HTTP 500 on any commented PDF until it was
+  measured on a real one.
 - The `pixels` image mode rewrites the bitmap of the targeted region (and
   saves with `garbage=4`, removing the orphaned original stream), so it
   works on **flattened / scanned PDFs** where the whole page is one image.

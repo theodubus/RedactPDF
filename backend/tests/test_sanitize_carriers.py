@@ -121,3 +121,69 @@ def test_carriers_survive_when_the_caller_opts_out() -> None:
     toc = out.get_toc()
     out.close()
     assert toc and TARGET in toc[0][1]
+
+
+def _document_with_a_commented_annotation() -> bytes:
+    """Une note collée, c'est-à-dire une annotation qui porte un popup.
+
+    Rien d'exotique : n'importe quel PDF commenté dans un lecteur courant a cette
+    forme, et une convention de stage réelle l'avait.
+    """
+    doc = pymupdf.open()
+    page = doc.new_page()
+    page.insert_text((72, 100), "corps du document")
+    page.insert_link(
+        {
+            "kind": pymupdf.LINK_URI,
+            "from": pymupdf.Rect(72, 200, 200, 220),
+            "uri": f"https://exemple.test/{TARGET}",
+        }
+    )
+    annot = page.add_text_annot((300, 300), f"Note interne sur Jean {TARGET}")
+    annot.update()
+    out = doc.tobytes()
+    doc.close()
+    return out
+
+
+@pytest.mark.integration
+def test_a_commented_annotation_does_not_crash_the_export() -> None:
+    """Régression : ce document rendait HTTP 500.
+
+    `page.delete_annot(a)` rend l'entrée suivante de la chaîne. Après la
+    suppression d'une annotation qui porte un popup, la suivante *est* ce popup,
+    détaché de sa page avec son parent : PyMuPDF lève « Annot is not bound to a
+    page », l'exception remonte, et la requête entière échoue. Le motif de boucle
+    en cause est pourtant celui de la documentation.
+    """
+    resp = _redact(_document_with_a_commented_annotation())
+
+    assert resp.status_code == 200, resp.text[:300]
+    assert TARGET.encode() not in resp.content
+
+
+@pytest.mark.integration
+def test_a_filled_form_field_leaves_nothing_behind() -> None:
+    """Le filet coupe `/Annots`, donc il doit couper `/AcroForm/Fields` aussi.
+
+    Sans cela, la valeur saisie d'un widget resterait désignée par le formulaire,
+    donc présente dans les octets, alors que la page n'y renvoie plus. Un 500
+    devenu une fuite silencieuse serait un mauvais échange.
+    """
+    doc = pymupdf.open()
+    page = doc.new_page()
+    page.insert_text((72, 100), "corps du document")
+    widget = pymupdf.Widget()
+    widget.field_name = "nom"
+    widget.field_type = pymupdf.PDF_WIDGET_TYPE_TEXT
+    widget.rect = pymupdf.Rect(72, 300, 300, 320)
+    widget.field_value = f"Jean {TARGET}"
+    page.add_widget(widget)
+    pdf = doc.tobytes()
+    doc.close()
+
+    assert TARGET.encode() in pdf, "le document de test doit vraiment porter la cible"
+
+    resp = _redact(pdf)
+    assert resp.status_code == 200, resp.text[:300]
+    assert TARGET.encode() not in resp.content
