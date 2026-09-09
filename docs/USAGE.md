@@ -184,6 +184,38 @@ so there is nothing it can have failed to find, and the friction belongs where a
 promise was made. It does mean the setting sits there looking active while doing
 nothing on a rectangles-only export.
 
+### Suggestions inside images (optional)
+
+"Suggest areas found inside images" runs a text detector over the images the
+rules could not read, then applies **your own rules** to what it found. A rule
+for `Dupont` that matched nothing in a scan can then produce an area to remove.
+
+It is named for what it does. The areas it finds are removed like any other, but
+they carry **no guarantee**: the detector misreads, it misses things, and nothing
+in the output distinguishes the two. The audit cannot help here either, since it
+re-reads the text of the document and this detector reads pixels. The export
+report says so explicitly, under `ocr_proposals`, and counts them in their own
+header rather than adding them to the totals.
+
+Consequences per mode, which is where the honesty lives:
+
+| Mode | With suggestions on |
+|---|---|
+| Review | Areas still scroll past for you to confirm. Suggestions appear over the image, dashed, so you can see what is already handled and spend your attention on the rest. |
+| Block | Still refused. An area a rough detector has been over is not an area that was read. |
+| Ignore | Suggestions are applied and the file comes back with no review at all. |
+
+That last row is the risky one, and the app warns you before exporting rather
+than afterwards: you get black boxes over a scan, which looks handled, while only
+what a rough detector happened to find actually is. A document that looks handled
+is sometimes worse than one you know is not.
+
+The detector is never bundled. It uses a system Tesseract, and the option is
+greyed out with an explanation when none is installed (on Debian or Ubuntu:
+`apt install tesseract-ocr tesseract-ocr-fra`). Bundling it would add about 22 MB
+of native dependency to a binary whose whole promise is one file with nothing to
+install, for a feature that carries no guarantee.
+
 An image repeated across pages, a header banner for instance, is one screen and
 not one per page. Grouping needs both the same pixels (a hash of them, so only
 byte for byte identical images ever group) and the same coverage: two pages

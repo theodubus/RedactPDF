@@ -204,6 +204,34 @@ rendered from a copy of the document with its text layer removed and its images
 and line art left intact, never from the page as it stands, so page text can
 never appear in a thumbnail.
 
+### Suggestions inside images are outside the guarantee
+
+The optional detector (`options.ocr_proposals`, off by default) gives the images
+a text layer and runs **the same rules** on it, rather than a second matching
+implementation: `redact Dupont` has to mean the same thing on both sides. The
+areas it yields are redacted, and that is where the similarity ends.
+
+They are not covered by anything. The detector misreads, it misses, and the
+output does not say which happened. The audit is no help: it re-reads the text of
+the produced file, and text found in pixels was never there. So a `pass` report
+says nothing about those areas, which is why the report carries an explicit
+`ocr_proposals` block with `guaranteed: false`, and why the count travels in its
+own header instead of being added to the totals.
+
+Three properties hold in code, not just in intent:
+
+- A suggestion **never silences a review**. It is stored in its own bucket of the
+  plan, and `drop_covered` reads only the manual and full-page buckets. Putting
+  suggestions in either would let a rough detector remove the human check that
+  `review` mode exists to impose. A unit test builds a suggestion that covers a
+  region entirely and asserts the region is still reported; an earlier version of
+  that test passed even with the invariant broken, because a word box never
+  covers a whole image, so it was rewritten to attack the path directly.
+- `block` is not unlocked by suggestions, for the same reason.
+- The combination `ignore` plus suggestions warns before the export, not in the
+  report afterwards, since that is the only moment the user can still change
+  their mind.
+
 **Vector graphics are not covered.** The detector looks at raster images only. A
 chart drawn as lines and paths, a vector logo, and above all text converted to
 outlines are all invisible to the text rules and equally invisible to this check.

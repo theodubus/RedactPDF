@@ -123,6 +123,20 @@ npm test              # vitest
 npm run build
 ```
 
+### Tests that need Tesseract
+
+`tests/test_ocr_proposals.py` skips itself when no system Tesseract is installed,
+which is the case in CI and for most users, since the app never bundles one. To
+run them locally on Debian or Ubuntu:
+
+```bash
+apt install tesseract-ocr tesseract-ocr-fra
+```
+
+Skipping is the honest default here: the feature disables itself the same way in
+the app, so a machine without Tesseract exercises the disabled path, which is
+also worth having covered.
+
 ### The phone preview is checked against the backend, not trusted
 
 `utils/phonePreview.ts` mirrors the backend's `_phone_post_filter`, and a

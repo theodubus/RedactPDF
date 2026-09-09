@@ -16,6 +16,9 @@ export class RedactApiError extends Error {
 /** Réglages serveur dont l'aperçu a besoin pour dire la même chose que le backend. */
 export type ServerConfig = {
   defaultRegion: string;
+  /** Un tesseract système est-il installé ? Il n'est jamais embarqué. */
+  ocrAvailable: boolean;
+  ocrLanguages: string[];
 };
 
 /** Région par défaut du backend (`REDACT_DEFAULT_REGION`), FR sauf configuration. */
@@ -24,9 +27,19 @@ export const FALLBACK_REGION = "FR";
 export async function fetchConfig(): Promise<ServerConfig> {
   const resp = await fetch("/api/config");
   if (!resp.ok) throw new Error(`config: HTTP ${resp.status}`);
-  const data = (await resp.json()) as { default_region?: unknown };
+  const data = (await resp.json()) as {
+    default_region?: unknown;
+    ocr_available?: unknown;
+    ocr_languages?: unknown;
+  };
   const region = typeof data.default_region === "string" ? data.default_region : FALLBACK_REGION;
-  return { defaultRegion: region };
+  return {
+    defaultRegion: region,
+    ocrAvailable: data.ocr_available === true,
+    ocrLanguages: Array.isArray(data.ocr_languages)
+      ? data.ocr_languages.filter((l): l is string => typeof l === "string")
+      : [],
+  };
 }
 
 export type PresetKey = "email" | "phone" | "credit_card";
@@ -114,6 +127,7 @@ export async function redactApply(params: {
   presets: PresetKey[];
   imageMode?: ImageMode;
   imageRegions?: ImageRegionsMode;
+  ocrProposals?: boolean;
   applyGraphics?: boolean;
   sanitizeMetadata?: boolean;
   removeAnnotations?: boolean;
@@ -166,6 +180,7 @@ export async function redactApply(params: {
   const options: Record<string, unknown> = {};
   if (params.imageMode !== undefined) options.image_mode = params.imageMode;
   if (params.imageRegions !== undefined) options.image_regions = params.imageRegions;
+  if (params.ocrProposals !== undefined) options.ocr_proposals = params.ocrProposals;
   if (params.applyGraphics !== undefined) options.apply_graphics = params.applyGraphics;
   if (params.sanitizeMetadata !== undefined) options.sanitize_metadata = params.sanitizeMetadata;
   if (params.removeAnnotations !== undefined) options.remove_annotations = params.removeAnnotations;

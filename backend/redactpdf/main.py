@@ -12,6 +12,9 @@ from starlette.responses import Response
 
 from redactpdf.audit import AuditOptions
 from redactpdf.heartbeat import heartbeat
+from redactpdf.ocr import OcrProposal, propose_from_regions
+from redactpdf.ocr import available_languages as ocr_languages
+from redactpdf.ocr import is_available as ocr_is_available
 from redactpdf.opaque import OpaqueRegion, covered_in_image, region_previews
 from redactpdf.paths import frontend_dist
 from redactpdf.pipeline import (
@@ -25,9 +28,11 @@ from redactpdf.pipeline import (
     readable_view,
     unreadable_fonts,
     unresolved_opaque_regions,
+    with_ocr_proposals,
 )
 from redactpdf.presets import DEFAULT_REGION, available_presets
 from redactpdf.redaction import RedactionRect
+from redactpdf.search import SearchOptions
 
 app = FastAPI()
 router = APIRouter()
@@ -39,7 +44,7 @@ def health() -> dict[str, str]:
 
 
 @router.get("/config")
-def config() -> dict[str, str]:
+def config() -> dict[str, object]:
     """Réglages serveur dont l'UI a besoin pour que son aperçu dise la vérité.
 
     Le preset téléphone valide ses candidats avec libphonenumber contre une
@@ -48,7 +53,13 @@ def config() -> dict[str, str]:
     un surlignage lu comme une promesse, suivi d'un export réussi qui laisse la
     donnée en clair.
     """
-    return {"default_region": DEFAULT_REGION}
+    return {
+        "default_region": DEFAULT_REGION,
+        # L'interface doit pouvoir griser la case plutôt que d'offrir une option
+        # qui échouerait silencieusement : tesseract n'est pas embarqué.
+        "ocr_available": ocr_is_available(),
+        "ocr_languages": ocr_languages(),
+    }
 
 
 @router.post("/heartbeat")
@@ -133,6 +144,13 @@ class OptionsModel(StrictModel):
     #   block   non interactif : seule une règle géométrique déverrouille,
     #           l'acquittement ne compte pas. Pour les scripts, qui ne cliquent pas.
     image_regions: Literal["ignore", "review", "block"] = "review"
+
+    # Proposer des zones dans les images, par OCR. **Jamais par défaut**, et
+    # jamais dans la garantie : le nom dit « proposer », parce que c'est tout ce
+    # que ça fait. Les rectangles retenus sont bien caviardés, mais l'audit ne
+    # peut ni les confirmer ni les infirmer, et ils ne déverrouillent aucun mode.
+    ocr_proposals: bool = False
+    ocr_language: str | None = None
 
 
 class AuditModel(StrictModel):
@@ -416,7 +434,11 @@ async def redact_apply(
         # dont on ne peut pas répondre, et on le fait ici pour ne pas gaspiller le
         # travail de caviardage sur une requête qui sera refusée.
         mode = data.options.image_regions
-        if mode != "ignore":
+        has_textual_rules = bool(searches_req or regexes_req or presets_req)
+        wants_ocr = data.options.ocr_proposals and has_textual_rules
+        ocr_proposals: list[OcrProposal] = []
+
+        if mode != "ignore" or wants_ocr:
             # La question porte sur le document **tel qu'il sortira**, porteurs
             # retirés : une image qui ne vit que dans l'apparence d'une annotation
             # supprimée n'existera pas dans l'export, et la faire relire revient à
@@ -424,22 +446,50 @@ async def redact_apply(
             # une zone déjà noircie ne répondrait plus à la question.
             view = readable_view(pdf_bytes, redaction_options)
             unresolved = unresolved_opaque_regions(
-                view,
-                plan,
-                has_textual_rules=bool(searches_req or regexes_req or presets_req),
+                view, plan, has_textual_rules=has_textual_rules
             )
-            fonts = unreadable_fonts(
-                view,
-                plan,
-                has_textual_rules=bool(searches_req or regexes_req or presets_req),
-            )
+            fonts = unreadable_fonts(view, plan, has_textual_rules=has_textual_rules)
+
+            if wants_ocr and unresolved:
+                # Sur les zones que les règles n'ont pas pu lire, et sur elles
+                # seules : ailleurs le texte est déjà lu, mieux et pour de vrai.
+                # Tourne **avant** le 409 pour que la revue montre ce qui est déjà
+                # proposé, ce qui est tout l'intérêt annoncé de la combinaison.
+                ocr_proposals = propose_from_regions(
+                    view,
+                    unresolved,
+                    searches=[
+                        SearchOptions(
+                            query=s.query,
+                            case_sensitive=s.case_sensitive,
+                            whole_word=s.whole_word,
+                            ignore_accents=s.ignore_accents,
+                        )
+                        for s in (searches_req or [])
+                    ],
+                    regex_patterns=[
+                        (list(r.patterns), r.case_sensitive, r.multiline, r.ignore_accents)
+                        for r in (regexes_req or [])
+                    ],
+                    presets=list(presets_req.presets) if presets_req else (),
+                    language=data.options.ocr_language,
+                )
+                # Dans `all_rects` pour être retirées, dans `ocr` pour être
+                # nommées, et surtout nulle part ailleurs : une proposition ne
+                # doit jamais éteindre un signalement.
+                plan = with_ocr_proposals(plan, [p.as_rect() for p in ocr_proposals])
             if mode == "review":
                 unresolved = [
                     r for r in unresolved if not _is_acknowledged(r, data.acknowledged_regions)
                 ]
                 acked_pages = set(data.acknowledged_font_pages)
                 fonts = [f for f in fonts if f.page not in acked_pages]
-            if unresolved or fonts:
+
+            # `ignore` n'a pas cessé d'être `ignore` parce que l'OCR est allumé.
+            # Les zones ont été calculées, mais seulement pour savoir où faire
+            # tourner le détecteur : l'appelant a déclaré ne pas vouloir de
+            # contrôle sur les images, et l'OCR n'est pas un contrôle.
+            if mode != "ignore" and (unresolved or fonts):
                 # Ce que l'humain doit regarder voyage avec le refus : les pixels
                 # de l'image seule (pas la région de page, qui composerait par
                 # dessus la couche texte que les règles ont justement su lire), et
@@ -447,10 +497,18 @@ async def redact_apply(
                 covering = [
                     (r.page, (r.x0, r.y0, r.x1, r.y1)) for r in plan.manual + plan.full_page
                 ]
+                proposals_covering = [(p.page, p.bbox) for p in ocr_proposals]
                 regions_out: list[dict[str, object]] = []
                 for region in unresolved:
                     entry = region.as_dict()
-                    entry["covered"] = covered_in_image(region, covering)
+                    # Deux sources, distinguées à l'affichage : un rectangle posé
+                    # à la main est une décision, une proposition n'en est pas
+                    # une, et les confondre ferait lire une suggestion comme une
+                    # garantie.
+                    entry["covered"] = covered_in_image(region, covering) + [
+                        {**area, "source": "ocr"}
+                        for area in covered_in_image(region, proposals_covering)
+                    ]
                     regions_out.append(entry)
                 raise HTTPException(
                     status_code=409,
@@ -495,6 +553,22 @@ async def redact_apply(
     if composite.get("status") != "pass":
         return JSONResponse(status_code=400, content=composite)
 
+    if ocr_proposals:
+        # Le rapport doit porter la limite, pas seulement l'interface. L'audit
+        # relit le **texte** de la sortie ; ce qu'un OCR a cru voir dans une image
+        # n'y a jamais été, donc « pass » ne dit rien de ces zones-là. Sans cette
+        # mention, un rapport propre se lirait comme une garantie qui couvre tout.
+        composite["ocr_proposals"] = {
+            "count": len(ocr_proposals),
+            "guaranteed": False,
+            "note": (
+                "Des zones ont été caviardées sur proposition d'un détecteur de "
+                "texte dans les images. L'audit ne couvre pas ces zones : il relit "
+                "le texte du document, et ce détecteur lit des pixels."
+            ),
+            "rects": [p.as_dict() for p in ocr_proposals],
+        }
+
     headers: dict[str, Any] = {
         "Content-Disposition": 'attachment; filename="redacted.pdf"',
         "X-Redaction-Audit-Status": "pass",
@@ -505,6 +579,9 @@ async def redact_apply(
         "X-Redaction-Presets-Occurrences": str(len(plan.presets)),
         "X-Redaction-Full-Page-Occurrences": str(len(plan.full_page)),
         "X-Redaction-Total-Occurrences": str(len(plan.all_rects) + len(plan.full_page)),
+        # Compté à part de tout le reste : ces occurrences ne sont pas du même
+        # niveau de certitude, les additionner effacerait la distinction.
+        "X-Redaction-Ocr-Proposals": str(len(ocr_proposals)),
     }
     _add_report_headers(headers, composite)
     return Response(content=out_pdf, media_type="application/pdf", headers=headers)

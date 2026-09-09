@@ -43,6 +43,12 @@ export function ReviewCarousel(props: {
   const head = current.head;
   const overlays = head.kind === "opaque" ? head.covered : [];
   const preview = head.kind === "opaque" ? previews[head.digest] : undefined;
+  // Comptées à part, et dites à part : un rectangle posé à la main est une
+  // décision prise, une proposition n'en est pas une. Les additionner sous
+  // « déjà couvert » ferait lire la suggestion comme une garantie, ce que toute
+  // la mise en forme du dessous s'applique justement à éviter.
+  const manualCount = overlays.filter((a) => a.source === "manual").length;
+  const proposedCount = overlays.filter((a) => a.source === "ocr").length;
 
   const confirm = () => {
     const next = new Set(confirmed);
@@ -93,9 +99,14 @@ export function ReviewCarousel(props: {
               ? "review.item.opaque.nopreview"
               : `${LABEL_KEY[head.kind]}.hint`)}
           </p>
-          {overlays.length > 0 && (
+          {manualCount > 0 && (
             <p className="reviewCoverageHint">
-              {overlays.length} {t("review.covered")}
+              {manualCount} {t("review.covered")}
+            </p>
+          )}
+          {proposedCount > 0 && (
+            <p className="reviewCoverageHint reviewProposedHint">
+              {proposedCount} {t("review.proposed")}
             </p>
           )}
         </div>

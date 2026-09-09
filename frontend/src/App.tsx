@@ -12,6 +12,8 @@ import { RulesSection } from "./components/Rules/RulesSection";
 import { PresetsSection } from "./components/PresetsSection";
 import { ImageModeSection } from "./components/ImageModeSection";
 import { ImageRegionsSection } from "./components/ImageRegionsSection";
+import { OcrSection } from "./components/OcrSection";
+import { OcrWarningModal } from "./components/OcrWarningModal";
 import { ResultPanel } from "./components/ResultPanel";
 import { PdfViewer } from "./components/PdfViewer";
 
@@ -43,6 +45,11 @@ export default function App() {
   const [presets, setPresets] = useState<Record<PresetKey, boolean>>(EMPTY_PRESETS);
   const [imageMode, setImageMode] = useState<ImageMode>("pixels");
   const [imageRegions, setImageRegions] = useState<ImageRegionsMode>("review");
+  // Jamais activé par défaut : la fonction ne porte aucune garantie, et un défaut
+  // se lit comme une recommandation.
+  const [ocrProposals, setOcrProposals] = useState(false);
+  const [ocrAvailable, setOcrAvailable] = useState(false);
+  const [ocrWarning, setOcrWarning] = useState(false);
 
   // Revue avant export : uniquement ce que le moteur n'a pas su lire, connu après
   // un 409. Les rectangles dessinés n'y défilent pas, ils s'y affichent comme
@@ -65,7 +72,9 @@ export default function App() {
     let active = true;
     fetchConfig()
       .then((cfg) => {
-        if (active) setDefaultRegion(cfg.defaultRegion);
+        if (!active) return;
+        setDefaultRegion(cfg.defaultRegion);
+        setOcrAvailable(cfg.ocrAvailable);
       })
       .catch(() => {
         // Le repli sur FALLBACK_REGION est déjà en place.
@@ -266,6 +275,14 @@ export default function App() {
       return;
     }
 
+    // « Ignorer » plus les propositions : la seule combinaison qui rend un fichier
+    // d'apparence traitée sans que personne, humain ou audit, n'ait vérifié les
+    // images. On le dit tant que l'utilisateur peut encore changer d'avis.
+    if (ocrProposals && ocrAvailable && imageRegions === "ignore") {
+      setOcrWarning(true);
+      return;
+    }
+
     void runExport();
   };
 
@@ -286,6 +303,7 @@ export default function App() {
         presets: selectedPresets,
         imageMode,
         imageRegions,
+        ocrProposals: ocrProposals && ocrAvailable,
         applyGraphics: imageMode !== "none",
         sanitizeMetadata: true,
         removeAnnotations: true,
@@ -330,6 +348,17 @@ export default function App() {
   return (
     <div className="page pageLayout">
       <input ref={fileInputRef} type="file" accept="application/pdf" onChange={onPickFile} hidden />
+
+      {ocrWarning ? (
+        <OcrWarningModal
+          t={t}
+          onCancel={() => setOcrWarning(false)}
+          onConfirm={() => {
+            setOcrWarning(false);
+            void runExport();
+          }}
+        />
+      ) : null}
 
       {review ? (
         <ReviewCarousel
@@ -418,6 +447,13 @@ export default function App() {
             <ImageModeSection t={t} mode={imageMode} setMode={setImageMode} />
 
             <ImageRegionsSection t={t} mode={imageRegions} setMode={setImageRegions} />
+
+            <OcrSection
+              t={t}
+              available={ocrAvailable}
+              enabled={ocrProposals}
+              setEnabled={setOcrProposals}
+            />
           </div>
 
           <button className="button toolsSubmitButton" type="submit" disabled={submitting}>

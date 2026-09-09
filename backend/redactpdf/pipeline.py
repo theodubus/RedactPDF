@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import pymupdf
@@ -68,6 +68,34 @@ class PlanResult:
     presets: list[RedactionRect]
     full_page: list[RedactionRect]
     all_rects: list[RedactionRect]
+    # Ce que l'OCR a proposé. Un compartiment à part, et pas un ajout dans
+    # `manual`, parce que la différence est le contrat : ces rectangles sont
+    # caviardés comme les autres, mais ils ne sont couverts par aucune garantie
+    # et ils ne doivent jamais éteindre un signalement. `drop_covered` ne lit que
+    # `manual` et `full_page` ; ranger une proposition ailleurs qu'ici ferait
+    # sauter la relecture humaine que le mode `review` existe pour imposer.
+    ocr: list[RedactionRect] = field(default_factory=list)
+
+
+def with_ocr_proposals(plan: PlanResult, proposals: list[RedactionRect]) -> PlanResult:
+    """Ajoute les propositions au plan sans les faire passer pour des décisions.
+
+    Elles entrent dans `all_rects`, donc elles sont bien retirées du document, et
+    dans `ocr`, donc le rapport peut les nommer. Elles n'entrent nulle part
+    ailleurs : ni dans `manual`, ni dans `full_page`, les deux seules listes que
+    `drop_covered` consulte.
+    """
+    if not proposals:
+        return plan
+    return PlanResult(
+        manual=plan.manual,
+        search=plan.search,
+        regex=plan.regex,
+        presets=plan.presets,
+        full_page=plan.full_page,
+        all_rects=_dedupe_rects(plan.all_rects + proposals),
+        ocr=list(proposals),
+    )
 
 
 def _dedupe_rects(rects: list[RedactionRect]) -> list[RedactionRect]:

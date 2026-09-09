@@ -675,6 +675,12 @@ body,
   opacity: 0.8;
 }
 
+/* Le tireté ambre des propositions, pour que la légende désigne le bon tracé. */
+.reviewProposedHint::before {
+  background: rgba(184, 134, 11, 0.18);
+  border: 1px dashed #b8860b;
+}
+
 .reviewCoverageHint::before {
   content: "";
   display: inline-block;
@@ -730,4 +736,27 @@ body,
 .reviewActions button:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+}
+
+.checkRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.checkRowDisabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* L'avertissement ne défile pas : il est court, et il doit tenir d'un regard. */
+.ocrWarningPanel {
+  max-width: 560px;
+  display: block;
+}
+
+.ocrWarningPanel p {
+  margin: 10px 0;
+  line-height: 1.5;
 }

@@ -112,5 +112,15 @@
   "review.pages": "pages",
   "review.covered": "area(s) already covered by a rectangle, in green.",
   "review.zoom": "Enlarge",
-  "review.fit": "Fit to screen"
+  "review.fit": "Fit to screen",
+  "form.section.ocr": "Images: suggestions",
+  "form.ocr.label": "Suggest areas found inside images",
+  "form.ocr.help": "A detector looks for text inside images and suggests areas your rules match there. Those areas are removed, but they carry no guarantee: the detector misreads, and the audit cannot check it.",
+  "form.ocr.unavailable": "Unavailable: no text recognition engine is installed on this machine. It does not ship with the app. On Debian or Ubuntu: apt install tesseract-ocr tesseract-ocr-fra.",
+  "ocrWarning.title": "This combination can miss occurrences",
+  "ocrWarning.body": "You chose to ignore unreadable areas and to have areas suggested inside images. You will get a file with black boxes over the images, with nobody having looked at them and with the audit unable to say anything about them. A document that looks handled is sometimes worse than one you know is not.",
+  "ocrWarning.advice": "To have the images actually checked, switch back to « Review »: suggestions are shown there and you confirm them.",
+  "ocrWarning.back": "Back to settings",
+  "ocrWarning.proceed": "Export anyway",
+  "review.proposed": "area(s) suggested by the detector, dashed. Not verified: look at them like the rest."
 }
