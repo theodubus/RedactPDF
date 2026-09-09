@@ -104,6 +104,7 @@
   "review.cancel": "Cancel",
   "review.item.opaque": "Unreadable region",
   "review.item.opaque.hint": "The text rules could not read this region. If it holds something to remove, draw a rectangle over it.",
+  "review.item.opaque.nopreview": "This area could not be extracted as an image, so the whole page is shown instead. The text rules did not read it. If it holds something to remove, draw a rectangle over it.",
   "review.item.font": "Unreadable font",
   "review.item.font.hint": "On this page the text is encoded in a way the rules cannot read. What you see on screen is invisible to them.",
   "review.pages": "pages",

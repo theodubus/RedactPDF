@@ -1,9 +1,9 @@
 import { useMemo, useState } from "react";
 
 import { RegionThumbnail } from "./RegionThumbnail";
-import { allConfirmed, coverageFor, reviewSteps } from "./reviewItems";
+import { allConfirmed, reviewSteps } from "./reviewItems";
 import type { PdfDoc } from "./pdfTypes";
-import type { CoveredArea, ReviewItem } from "./reviewItems";
+import type { Preview, ReviewItem } from "./reviewItems";
 
 // Un bouton par écran, jamais une validation d'ensemble. La friction est le
 // point : une case « tout confirmer » se coche sans regarder, et c'est
@@ -23,11 +23,11 @@ export function ReviewCarousel(props: {
   t: (k: string) => string;
   doc: PdfDoc | null;
   items: ReviewItem[];
-  covered: CoveredArea[];
+  previews: Record<string, Preview>;
   onConfirmAll: () => void;
   onCancel: () => void;
 }) {
-  const { t, doc, items, covered, onConfirmAll, onCancel } = props;
+  const { t, doc, items, previews, onConfirmAll, onCancel } = props;
   const [confirmed, setConfirmed] = useState<ReadonlySet<string>>(new Set());
   const [index, setIndex] = useState(0);
   // Ajusté par défaut : la zone entière tient à l'écran, donc rien n'est caché.
@@ -38,13 +38,11 @@ export function ReviewCarousel(props: {
   const steps = useMemo(() => reviewSteps(items), [items]);
   const done = useMemo(() => allConfirmed(steps, confirmed), [steps, confirmed]);
   const current = steps[Math.min(index, steps.length - 1)];
-  const overlays = useMemo(
-    () => (current ? coverageFor(current.head, covered) : []),
-    [current, covered],
-  );
   if (!current) return null;
 
   const head = current.head;
+  const overlays = head.kind === "opaque" ? head.covered : [];
+  const preview = head.kind === "opaque" ? previews[head.digest] : undefined;
 
   const confirm = () => {
     const next = new Set(confirmed);
@@ -76,22 +74,25 @@ export function ReviewCarousel(props: {
           {confirmed.size} / {steps.length}
         </div>
 
-        <div className="reviewItem">
+        <div className={zoomed ? "reviewItem reviewItemZoomed" : "reviewItem"}>
           <div className="reviewItemLabel">
             {t(LABEL_KEY[head.kind])} &middot; {scope}
           </div>
           <RegionThumbnail
+            preview={preview}
+            covered={overlays}
             doc={doc}
             page={head.page}
-            bbox={head.kind === "font" ? undefined : head.bbox}
-            covered={overlays}
-            zoomed={zoomed}
             label={t(LABEL_KEY[head.kind])}
           />
           <button type="button" className="reviewZoom" onClick={() => setZoomed((z) => !z)}>
             {zoomed ? t("review.fit") : t("review.zoom")}
           </button>
-          <p className="reviewItemHint">{t(`${LABEL_KEY[head.kind]}.hint`)}</p>
+          <p className="reviewItemHint">
+            {t(head.kind === "opaque" && !preview
+              ? "review.item.opaque.nopreview"
+              : `${LABEL_KEY[head.kind]}.hint`)}
+          </p>
           {overlays.length > 0 && (
             <p className="reviewCoverageHint">
               {overlays.length} {t("review.covered")}

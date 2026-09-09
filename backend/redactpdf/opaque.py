@@ -49,6 +49,7 @@ porte un mot que rien ne peut lire.
 """
 from __future__ import annotations
 
+import base64
 from dataclasses import dataclass
 
 import pymupdf
@@ -86,6 +87,11 @@ class OpaqueRegion:
     page_share: float
     text_ratio: float
     digest: str
+    xref: int
+    # Matrice qui place le carré unité sur la page. Son inverse ramène un point de
+    # la page dans le repère de l'image, ce qui est le seul moyen correct de
+    # situer un rectangle sur une image tournée ou retournée.
+    transform: tuple[float, float, float, float, float, float]
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -107,7 +113,7 @@ def _regions_on_page(
 
     out: list[OpaqueRegion] = []
     # `hashes=True` : sans lui PyMuPDF ne calcule pas l'empreinte des pixels.
-    for info in page.get_image_info(hashes=True):
+    for info in page.get_image_info(hashes=True, xrefs=True):
         rect = pymupdf.Rect(info["bbox"])
         area = abs(rect)
         if area <= 0:
@@ -121,6 +127,7 @@ def _regions_on_page(
         # critère écartait un scan pleine page pour 18,6 % de recouvrement.
         covered = sum(abs(rect & t) for t in text_rects) / area
         digest = info.get("digest")
+        matrix = tuple(float(v) for v in info.get("transform", (1.0, 0, 0, 1.0, 0, 0)))
         out.append(
             OpaqueRegion(
                 page=page_number,
@@ -128,6 +135,8 @@ def _regions_on_page(
                 page_share=share,
                 text_ratio=covered,
                 digest=digest.hex() if isinstance(digest, bytes) else str(digest or ""),
+                xref=int(info.get("xref", 0)),
+                transform=(matrix + (0.0,) * 6)[:6],  # type: ignore[arg-type]
             )
         )
     return out
@@ -330,3 +339,137 @@ def page_rects_of(pdf_bytes: bytes) -> dict[int, tuple[float, float, float, floa
         }
     finally:
         doc.close()
+
+
+# ---------------------------------------------------------------------------
+# Ce qu'on montre à l'humain : l'image, et rien d'autre
+# ---------------------------------------------------------------------------
+#
+# Rendre la *région de page* au lieu de l'image compose la couche texte par
+# dessus, et cette couche est exactement ce que les règles ont su lire. Le
+# relecteur voit alors du texte net, en conclut « c'est lisible, tout va bien »,
+# et passe à côté du seul objet sur lequel on ne peut rien affirmer. On extrait
+# donc les pixels de l'image, seuls.
+
+# Assez pour lire un nom en corps 9 sur une page A4 scannée. Au-delà de quelques
+# images distinctes la résolution baisse : trente pages scannées, ce sont trente
+# images différentes, et l'application tourne en local, mais la mémoire du
+# navigateur n'est pas infinie.
+_PREVIEW_STEPS: tuple[tuple[int, int], ...] = ((4, 1600), (12, 1200), (40, 900))
+_PREVIEW_FLOOR_PX = 700
+
+
+def _preview_cap(count: int) -> int:
+    for limit, cap in _PREVIEW_STEPS:
+        if count <= limit:
+            return cap
+    return _PREVIEW_FLOOR_PX
+
+
+def _encode_image(doc: pymupdf.Document, xref: int, cap: int) -> dict[str, str] | None:
+    """Les pixels de l'image, réduits à `cap` sur le grand côté, en JPEG base64.
+
+    Passe par un `Pixmap` plutôt que par les octets bruts de `extract_image` : le
+    flux d'origine peut être en CMJN, porter un canal alpha ou un masque, et un
+    navigateur n'en fera pas toujours quelque chose. Le pixmap normalise tout.
+    """
+    try:
+        pix = pymupdf.Pixmap(doc, xref)
+        if pix.alpha:
+            pix = pymupdf.Pixmap(pix, 0)
+        if pix.colorspace is None or pix.colorspace.n not in (1, 3):
+            pix = pymupdf.Pixmap(pymupdf.csRGB, pix)
+        while max(pix.width, pix.height) > cap * 2:
+            pix.shrink(1)
+        return {
+            "mime": "image/jpeg",
+            "data": base64.b64encode(pix.tobytes("jpeg", jpg_quality=82)).decode("ascii"),
+        }
+    except Exception:
+        # Une image illisible par le moteur d'image ne doit pas faire échouer la
+        # revue : l'interface retombe sur le rendu de page, en le disant.
+        return None
+
+
+def region_previews(
+    pdf_bytes: bytes, regions: list[OpaqueRegion]
+) -> dict[str, dict[str, str]]:
+    """Une vignette par image distincte, indexée par empreinte.
+
+    Indexé par `digest` et non par zone : un bandeau répété sur trente pages,
+    ce sont trente zones et une seule image, donc un seul lot de pixels à
+    transporter.
+    """
+    if not regions:
+        return {}
+    wanted: dict[str, int] = {}
+    for region in regions:
+        if region.digest and region.digest not in wanted:
+            wanted[region.digest] = region.xref
+    if not wanted:
+        return {}
+
+    cap = _preview_cap(len(wanted))
+    doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")
+    try:
+        out: dict[str, dict[str, str]] = {}
+        for digest, xref in wanted.items():
+            encoded = _encode_image(doc, xref, cap)
+            if encoded is not None:
+                out[digest] = encoded
+        return out
+    finally:
+        doc.close()
+
+
+def _page_to_image(
+    transform: tuple[float, float, float, float, float, float], x: float, y: float
+) -> tuple[float, float] | None:
+    """Un point de la page ramené dans le carré unité de l'image.
+
+    L'inverse de la matrice de placement, pas une règle de trois : une image peut
+    être posée tournée ou retournée, et une règle de trois y placerait le
+    rectangle vert au mauvais endroit, ce qui ferait croire couverte une zone qui
+    ne l'est pas.
+    """
+    a, b, c, d, e, f = transform
+    det = a * d - b * c
+    if abs(det) < 1e-9:
+        return None
+    px, py = x - e, y - f
+    return ((d * px - c * py) / det, (-b * px + a * py) / det)
+
+
+def covered_in_image(
+    region: OpaqueRegion,
+    covering: list[tuple[int, tuple[float, float, float, float]]],
+) -> list[dict[str, object]]:
+    """Les zones déjà traitées qui recoupent la zone, en coordonnées de l'image.
+
+    Normalisé dans [0, 1] : l'interface n'a plus qu'à poser des pourcentages, et
+    l'affichage reste juste quelle que soit la taille de la vignette. Découpé aux
+    bords de l'image, parce qu'un rectangle qui déborde ne couvre rien de plus.
+    """
+    out: list[dict[str, object]] = []
+    for page, box in covering:
+        if page != region.page:
+            continue
+        corners = [
+            _page_to_image(region.transform, x, y)
+            for x, y in ((box[0], box[1]), (box[2], box[1]), (box[0], box[3]), (box[2], box[3]))
+        ]
+        if any(c is None for c in corners):
+            continue
+        xs = [c[0] for c in corners if c is not None]
+        ys = [c[1] for c in corners if c is not None]
+        x0, x1 = max(0.0, min(xs)), min(1.0, max(xs))
+        y0, y1 = max(0.0, min(ys)), min(1.0, max(ys))
+        if x1 <= x0 or y1 <= y0:
+            continue  # hors de l'image
+        out.append(
+            {
+                "bbox": [round(x0, 5), round(y0, 5), round(x1, 5), round(y1, 5)],
+                "source": "manual",
+            }
+        )
+    return out

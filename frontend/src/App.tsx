@@ -4,7 +4,7 @@ import { fetchConfig, FALLBACK_REGION, redactApply, RedactApiError } from "./api
 import { ReviewCarousel } from "./review/ReviewCarousel";
 import { useReviewDocument } from "./review/useReviewDocument";
 import { serverReviewItems, toAcknowledgements } from "./review/reviewItems";
-import type { CoveredArea, ReviewItem } from "./review/reviewItems";
+import type { Preview, ReviewItem } from "./review/reviewItems";
 import type { ImageMode, ImageRegionsMode, PresetKey, RuleInput } from "./api";
 
 import { HeaderBar } from "./components/HeaderBar";
@@ -47,7 +47,10 @@ export default function App() {
   // Revue avant export : uniquement ce que le moteur n'a pas su lire, connu après
   // un 409. Les rectangles dessinés n'y défilent pas, ils s'y affichent comme
   // déjà traité (voir `review/reviewItems.ts`).
-  const [review, setReview] = useState<{ items: ReviewItem[] } | null>(null);
+  const [review, setReview] = useState<{
+    items: ReviewItem[];
+    previews: Record<string, Preview>;
+  } | null>(null);
   const reviewDoc = useReviewDocument(review ? file : null);
   const [isDragOver, setIsDragOver] = useState(false);
 
@@ -126,20 +129,6 @@ export default function App() {
   const fullPageRectsForApi = useMemo(() => {
     return rules.flatMap((r) => (r.kind === "page" ? [r.rect] : []));
   }, [rules]);
-
-  // Ce qui est déjà traité, à montrer par-dessus une zone que le moteur n'a pas
-  // su lire : la décision porte alors sur ce qui reste, pas sur la zone entière.
-  // Les rectangles pleine page en font partie ; ils couvrent souvent la zone
-  // entièrement, auquel cas le serveur ne la signale plus du tout.
-  const coveredAreas = useMemo<CoveredArea[]>(
-    () =>
-      [...rectsForApi, ...fullPageRectsForApi].map((r) => ({
-        page: r.page,
-        bbox: [r.x0, r.y0, r.x1, r.y1] as [number, number, number, number],
-        source: "manual" as const,
-      })),
-    [rectsForApi, fullPageRectsForApi],
-  );
 
   const hasAnythingToDo = rules.length > 0 || selectedPresets.length > 0;
 
@@ -322,9 +311,9 @@ export default function App() {
         !items &&
         imageRegions === "review"
       ) {
-        const serverItems = serverReviewItems(err.report);
-        if (serverItems.length > 0) {
-          setReview({ items: serverItems });
+        const server = serverReviewItems(err.report);
+        if (server.items.length > 0) {
+          setReview({ items: server.items, previews: server.previews });
           return;
         }
       }
@@ -347,7 +336,7 @@ export default function App() {
           t={t}
           doc={reviewDoc}
           items={review.items}
-          covered={coveredAreas}
+          previews={review.previews}
           onCancel={() => setReview(null)}
           onConfirmAll={() => {
             const { items } = review;

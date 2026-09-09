@@ -12,7 +12,7 @@ from starlette.responses import Response
 
 from redactpdf.audit import AuditOptions
 from redactpdf.heartbeat import heartbeat
-from redactpdf.opaque import OpaqueRegion
+from redactpdf.opaque import OpaqueRegion, covered_in_image, region_previews
 from redactpdf.paths import frontend_dist
 from redactpdf.pipeline import (
     PresetsRequest,
@@ -421,13 +421,26 @@ async def redact_apply(
                 acked_pages = set(data.acknowledged_font_pages)
                 fonts = [f for f in fonts if f.page not in acked_pages]
             if unresolved or fonts:
+                # Ce que l'humain doit regarder voyage avec le refus : les pixels
+                # de l'image seule (pas la région de page, qui composerait par
+                # dessus la couche texte que les règles ont justement su lire), et
+                # ce qui y est déjà couvert, exprimé dans le repère de l'image.
+                covering = [
+                    (r.page, (r.x0, r.y0, r.x1, r.y1)) for r in plan.manual + plan.full_page
+                ]
+                regions_out: list[dict[str, object]] = []
+                for region in unresolved:
+                    entry = region.as_dict()
+                    entry["covered"] = covered_in_image(region, covering)
+                    regions_out.append(entry)
                 raise HTTPException(
                     status_code=409,
                     detail={
                         "status": "inconclusive",
                         "mode": mode,
-                        "opaque_regions": [r.as_dict() for r in unresolved],
+                        "opaque_regions": regions_out,
                         "unreliable_fonts": [f.as_dict() for f in fonts],
+                        "previews": region_previews(pdf_bytes, unresolved),
                     },
                 )
 

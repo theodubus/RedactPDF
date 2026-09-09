@@ -170,7 +170,17 @@ that is correct: it carries a word nothing can read.
 Because that makes flagging much more common, identical images are grouped. Each
 region carries the `digest` of its pixels, so a header banner repeated on thirty
 pages is one review screen and thirty acknowledgements. Grouping happens only on
-an identical digest, never on a guess.
+an identical digest **and** identical existing coverage, never on a guess.
+
+The 409 carries the pixels of each flagged image, base64 in `previews`, keyed by
+digest so repeated images travel once. It is the image alone, not the page region
+under it: text drawn over an image is precisely what the rules did read, and
+showing it would invite the reviewer to judge the wrong object. Each region also
+carries its already-covered areas in `covered`, expressed in the image's own
+coordinates, normalised to [0, 1] and computed with the inverse of the placement
+matrix so they stay correct on a rotated or flipped image. Preview resolution
+steps down as the number of distinct images grows, from 1600 px on the long side
+for a handful to 700 px past forty.
 
 Nothing is reported unless a **textual rule** was requested. Without one, the
 caller never expected the engine to read anything.

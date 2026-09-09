@@ -104,6 +104,7 @@
   "review.cancel": "Annuler",
   "review.item.opaque": "Zone illisible",
   "review.item.opaque.hint": "Les règles de texte n'ont pas pu lire cette zone. Si elle contient une donnée à retirer, dessinez un rectangle dessus.",
+  "review.item.opaque.nopreview": "Cette zone n'a pas pu être extraite en image ; la page entière est affichée à la place. Les règles de texte ne l'ont pas lue. Si elle contient une donnée à retirer, dessinez un rectangle dessus.",
   "review.item.font": "Police illisible",
   "review.item.font.hint": "Sur cette page, le texte est encodé d'une façon que les règles ne savent pas lire. Ce que vous voyez à l'écran leur échappe.",
   "review.pages": "pages",

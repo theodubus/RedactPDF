@@ -1,11 +1,55 @@
 import { useEffect, useRef, useState } from "react";
 
+import { previewUrl } from "./reviewItems";
 import type { PdfDoc } from "./pdfTypes";
-import type { CoveredArea } from "./reviewItems";
+import type { CoveredArea, Preview } from "./reviewItems";
 
 // L'outil ne sait pas lire l'image, alors il la montre à quelqu'un qui sait.
-// C'est tout l'objet de ce composant : rendre la zone telle qu'elle est, à une
-// taille où un nom ou un numéro se lisent, et laisser la décision à l'humain.
+//
+// Ce qu'on montre, c'est **l'image**, pas la région de page. Une version
+// précédente rendait la région avec pdf.js, ce qui composait par dessus la couche
+// texte, et cette couche est exactement ce que les règles ont su lire. Le
+// relecteur voyait du texte net, en concluait « lisible, rien de caché », et
+// jugeait autre chose que l'objet en question. Les pixels viennent donc du
+// serveur, qui sait précisément quelle image il a signalée.
+//
+// Le rendu pdf.js reste, pour un seul cas : une police illisible, où il n'y a pas
+// d'image du tout et où la zone concernée est la page entière.
+
+export function RegionThumbnail(props: {
+  preview?: Preview;
+  covered?: CoveredArea[];
+  doc: PdfDoc | null;
+  page: number;
+  label: string;
+}) {
+  const { preview, covered, doc, page, label } = props;
+
+  if (preview) {
+    return (
+      <div className="thumbFrame">
+        <img className="reviewThumb" src={previewUrl(preview)} alt={label} />
+        {(covered ?? []).map((area, i) => (
+          <span
+            key={i}
+            className={area.source === "ocr" ? "coverBox coverBoxOcr" : "coverBox"}
+            style={{
+              // Coordonnées déjà normalisées dans le repère de l'image par le
+              // serveur : des pourcentages suffisent, et l'affichage reste juste
+              // quelle que soit la taille rendue, agrandissement compris.
+              left: `${area.bbox[0] * 100}%`,
+              top: `${area.bbox[1] * 100}%`,
+              width: `${(area.bbox[2] - area.bbox[0]) * 100}%`,
+              height: `${(area.bbox[3] - area.bbox[1]) * 100}%`,
+            }}
+          />
+        ))}
+      </div>
+    );
+  }
+
+  return <PageThumbnail doc={doc} page={page} label={label} />;
+}
 
 // La vignette doit être lisible, pas décorative : si on n'y déchiffre pas un nom,
 // l'étape ne sert à rien. On rend donc à une échelle nettement supérieure à la
@@ -14,26 +58,9 @@ const TARGET_WIDTH_PX = 700;
 const RENDER_OVERSAMPLE = 2;
 const MAX_SCALE = 8;
 
-// Ce qui est déjà traité se dessine par-dessus, pour que la décision porte sur ce
-// qui reste. Un rectangle posé à la main est une décision prise : trait plein.
-// Une proposition automatique (OCR, quand il existera) n'en est pas une : trait
-// pointillé, et une teinte différente. La distinction est le point, pas la
-// décoration : confondre les deux ferait lire une suggestion comme une garantie.
-const COVER_STYLE: Record<CoveredArea["source"], { stroke: string; fill: string; dash: number[] }> = {
-  manual: { stroke: "#1c7c4a", fill: "rgba(28, 124, 74, 0.22)", dash: [] },
-  ocr: { stroke: "#b8860b", fill: "rgba(184, 134, 11, 0.16)", dash: [6, 4] },
-};
-
-export function RegionThumbnail(props: {
-  doc: PdfDoc | null;
-  page: number;
-  bbox?: [number, number, number, number];
-  covered?: CoveredArea[];
-  /** Vrai : rendu à taille lisible, le conteneur défile. Faux : ajusté au panneau. */
-  zoomed?: boolean;
-  label: string;
-}) {
-  const { doc, page, bbox, covered, zoomed, label } = props;
+/** La page entière, pour une police illisible : on ne sait pas où est le texte. */
+function PageThumbnail(props: { doc: PdfDoc | null; page: number; label: string }) {
+  const { doc, page, label } = props;
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [failed, setFailed] = useState(false);
 
@@ -43,67 +70,19 @@ export function RegionThumbnail(props: {
 
     (async () => {
       const pdfPage = await doc.getPage(page + 1);
-
-      // Sans boîte (cas d'une police illisible), on montre la page entière : on
-      // ne sait pas *où* est le texte concerné, justement parce qu'on ne sait pas
-      // le lire.
       const full = pdfPage.getViewport({ scale: 1 });
-      const region = bbox ?? [0, 0, full.width, full.height];
-      const width = Math.max(1, region[2] - region[0]);
-      const height = Math.max(1, region[3] - region[1]);
-
       const scale = Math.min(
         MAX_SCALE,
-        Math.max(1, (TARGET_WIDTH_PX / width) * RENDER_OVERSAMPLE),
+        Math.max(1, (TARGET_WIDTH_PX / full.width) * RENDER_OVERSAMPLE),
       );
       const viewport = pdfPage.getViewport({ scale });
 
-      const offscreen = document.createElement("canvas");
-      offscreen.width = Math.ceil(viewport.width);
-      offscreen.height = Math.ceil(viewport.height);
-      const offCtx = offscreen.getContext("2d");
-      if (!offCtx) return;
-
-      await pdfPage.render({ canvasContext: offCtx, viewport }).promise;
-      if (!active) return;
-
       const canvas = canvasRef.current;
       const ctx = canvas?.getContext("2d");
-      if (!canvas || !ctx) return;
-
-      canvas.width = Math.ceil(width * scale);
-      canvas.height = Math.ceil(height * scale);
-      // Le CSS s'occupe de la taille affichée (100 % du panneau) ; le canvas est
-      // sur-échantillonné pour rester net.
-      canvas.style.removeProperty("width");
-      ctx.drawImage(
-        offscreen,
-        region[0] * scale,
-        region[1] * scale,
-        canvas.width,
-        canvas.height,
-        0,
-        0,
-        canvas.width,
-        canvas.height,
-      );
-
-      // Les boîtes arrivent en coordonnées PDF, comme `region` : même repère, il
-      // suffit de retrancher l'origine de la zone et d'appliquer l'échelle.
-      ctx.lineWidth = Math.max(1, scale);
-      for (const area of covered ?? []) {
-        const style = COVER_STYLE[area.source];
-        const x = (area.bbox[0] - region[0]) * scale;
-        const y = (area.bbox[1] - region[1]) * scale;
-        const w = (area.bbox[2] - area.bbox[0]) * scale;
-        const h = (area.bbox[3] - area.bbox[1]) * scale;
-        ctx.setLineDash(style.dash.map((d) => d * scale));
-        ctx.fillStyle = style.fill;
-        ctx.strokeStyle = style.stroke;
-        ctx.fillRect(x, y, w, h);
-        ctx.strokeRect(x, y, w, h);
-      }
-      ctx.setLineDash([]);
+      if (!canvas || !ctx || !active) return;
+      canvas.width = Math.ceil(viewport.width);
+      canvas.height = Math.ceil(viewport.height);
+      await pdfPage.render({ canvasContext: ctx, viewport }).promise;
     })().catch(() => {
       if (active) setFailed(true);
     });
@@ -111,14 +90,12 @@ export function RegionThumbnail(props: {
     return () => {
       active = false;
     };
-  }, [doc, page, bbox, covered]);
+  }, [doc, page]);
 
   if (failed) return <div className="thumbFailed">{label}</div>;
   return (
-    <canvas
-      ref={canvasRef}
-      className={zoomed ? "reviewThumb reviewThumbZoomed" : "reviewThumb"}
-      aria-label={label}
-    />
+    <div className="thumbFrame">
+      <canvas ref={canvasRef} className="reviewThumb" aria-label={label} />
+    </div>
   );
 }

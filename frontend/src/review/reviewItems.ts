@@ -23,21 +23,34 @@ export type ReviewItem =
       digest: string;
       pageShare: number;
       textRatio: number;
+      /** Ce qui est déjà traité, dans le repère de l'image, normalisé dans [0, 1]. */
+      covered: CoveredArea[];
     }
   | { kind: "font"; id: string; page: number; name: string };
 
 /**
  * Une zone déjà traitée, à dessiner par-dessus la vignette.
  *
+ * Les coordonnées sont **celles de l'image**, normalisées dans [0, 1], et
+ * calculées par le serveur avec l'inverse de la matrice de placement. Une règle
+ * de trois côté client se tromperait de quart sur une image posée tournée, et
+ * afficherait « déjà couvert » sur une zone que rien ne couvre.
+ *
  * `source` distingue ce que l'utilisateur a posé lui-même de ce qu'un détecteur
  * a proposé. L'OCR viendra ici quand il existera, et il doit rester distinguable
  * à l'oeil : une proposition automatique ne se lit pas comme une décision.
  */
 export type CoveredArea = {
-  page: number;
   bbox: [number, number, number, number];
   source: "manual" | "ocr";
 };
+
+/** Les pixels de l'image seule, tels que le serveur les a extraits. */
+export type Preview = { mime: string; data: string };
+
+export function previewUrl(preview: Preview): string {
+  return `data:${preview.mime};base64,${preview.data}`;
+}
 
 export type Acknowledgements = {
   acknowledged_regions: { page: number; bbox: number[] }[];
@@ -47,16 +60,32 @@ export type Acknowledgements = {
 const bboxId = (kind: string, page: number, b: readonly number[]) =>
   `${kind}:${page}:${b.map((v) => v.toFixed(2)).join(",")}`;
 
-type ServerDetail = {
-  opaque_regions?: {
-    page: number;
-    bbox: number[];
-    digest?: string;
-    page_share?: number;
-    text_ratio?: number;
-  }[];
-  unreliable_fonts?: { page: number; name: string }[];
+type ServerRegion = {
+  page: number;
+  bbox: number[];
+  digest?: string;
+  page_share?: number;
+  text_ratio?: number;
+  covered?: { bbox?: number[]; source?: string }[];
 };
+
+type ServerDetail = {
+  opaque_regions?: ServerRegion[];
+  unreliable_fonts?: { page: number; name: string }[];
+  previews?: Record<string, { mime?: string; data?: string }>;
+};
+
+function readCovered(raw: ServerRegion): CoveredArea[] {
+  const out: CoveredArea[] = [];
+  for (const area of raw.covered ?? []) {
+    if (!Array.isArray(area.bbox) || area.bbox.length !== 4) continue;
+    out.push({
+      bbox: area.bbox as [number, number, number, number],
+      source: area.source === "ocr" ? "ocr" : "manual",
+    });
+  }
+  return out;
+}
 
 /**
  * Ce que le serveur a refusé de lire, extrait du corps d'un 409.
@@ -67,8 +96,10 @@ type ServerDetail = {
  * jamais, et le test unitaire ne l'a pas vu parce qu'il recevait la forme que
  * j'avais imaginée. C'est un passage par le navigateur qui l'a montré.
  */
-export function serverReviewItems(body: unknown): ReviewItem[] {
-  if (typeof body !== "object" || body === null) return [];
+export type ServerReview = { items: ReviewItem[]; previews: Record<string, Preview> };
+
+export function serverReviewItems(body: unknown): ServerReview {
+  if (typeof body !== "object" || body === null) return { items: [], previews: {} };
   const wrapped = (body as { detail?: unknown }).detail;
   const detail = typeof wrapped === "object" && wrapped !== null ? wrapped : body;
   const d = detail as ServerDetail;
@@ -85,6 +116,7 @@ export function serverReviewItems(body: unknown): ReviewItem[] {
       digest: typeof region.digest === "string" ? region.digest : "",
       pageShare: typeof region.page_share === "number" ? region.page_share : 0,
       textRatio: typeof region.text_ratio === "number" ? region.text_ratio : 0,
+      covered: readCovered(region),
     });
   }
 
@@ -99,7 +131,14 @@ export function serverReviewItems(body: unknown): ReviewItem[] {
     items.push({ kind: "font", id: `font:${font.page}`, page: font.page, name: font.name });
   }
 
-  return items;
+  const previews: Record<string, Preview> = {};
+  for (const [digest, preview] of Object.entries(d.previews ?? {})) {
+    if (typeof preview?.mime === "string" && typeof preview?.data === "string") {
+      previews[digest] = { mime: preview.mime, data: preview.data };
+    }
+  }
+
+  return { items, previews };
 }
 
 /** Un écran de revue : une vignette à regarder, et tout ce qu'elle acquitte. */
@@ -130,7 +169,13 @@ export function reviewSteps(items: ReviewItem[]): ReviewStep[] {
   const byDigest = new Map<string, ReviewStep>();
 
   for (const item of items) {
-    const key = item.kind === "opaque" && item.digest ? `d:${item.digest}` : null;
+    // Regroupé sur l'empreinte **et** sur la couverture : deux pages qui portent
+    // la même image mais dont une seule a reçu un rectangle ne sont pas la même
+    // revue, et n'en montrer qu'une cacherait la différence.
+    const key =
+      item.kind === "opaque" && item.digest
+        ? `d:${item.digest}|${item.covered.map((c) => c.bbox.join(",")).join(";")}`
+        : null;
     const existing = key === null ? undefined : byDigest.get(key);
     if (existing) {
       existing.members.push(item);
@@ -147,18 +192,6 @@ export function reviewSteps(items: ReviewItem[]): ReviewStep[] {
 
 export function allConfirmed(steps: ReviewStep[], confirmed: ReadonlySet<string>): boolean {
   return steps.every((step) => confirmed.has(step.head.id));
-}
-
-/** Ce qui est déjà traité à l'intérieur d'une zone, pour l'afficher par-dessus. */
-export function coverageFor(
-  item: ReviewItem,
-  covered: CoveredArea[],
-): CoveredArea[] {
-  if (item.kind !== "opaque") return covered.filter((c) => c.page === item.page);
-  const [x0, y0, x1, y1] = item.bbox;
-  return covered.filter(
-    (c) => c.page === item.page && c.bbox[0] < x1 && c.bbox[2] > x0 && c.bbox[1] < y1 && c.bbox[3] > y0,
-  );
 }
 
 /**

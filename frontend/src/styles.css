@@ -600,12 +600,21 @@ body,
   margin-bottom: 8px;
 }
 
+/* Le cadre porte les surimpressions : elles sont positionnées en pourcentage de
+   l'image, donc elles suivent l'agrandissement sans un seul calcul. */
+.thumbFrame {
+  position: relative;
+  display: table;      /* se dimensionne sur l'image, et se centre */
+  margin: 0 auto;
+  max-width: 100%;
+  line-height: 0;
+}
+
 /* `width`/`height` en auto sous une double contrainte : le navigateur garde le
-   rapport intrinsèque du canvas. Une zone pleine page tient donc à l'écran d'un
+   rapport intrinsèque de l'image. Une zone pleine page tient donc à l'écran d'un
    coup, et une bande étroite reste rendue à la largeur du panneau. */
 .reviewThumb {
   display: block;
-  margin: 0 auto;
   width: auto;
   height: auto;
   max-width: 100%;
@@ -618,16 +627,30 @@ body,
 /* Agrandi : plus de contrainte de hauteur, `.reviewItem` défile. On y perd la vue
    d'ensemble, on y gagne de pouvoir lire un nom. Les deux sont nécessaires, d'où
    la bascule plutôt qu'un compromis qui ne servirait ni l'un ni l'autre. */
-.reviewThumbZoomed {
+.reviewItemZoomed .reviewThumb {
   max-height: none;
   width: 100%;
   max-width: none;
 }
 
-.reviewZoom {
-  margin-top: 8px;
-  font-size: 0.82rem;
-  padding: 3px 10px;
+.reviewItemZoomed .thumbFrame {
+  width: 100%;
+}
+
+/* Ce qui est déjà traité. Trait plein pour une décision prise à la main, tireté
+   et d'une autre teinte pour une proposition automatique (OCR, plus tard) :
+   confondre les deux ferait lire une suggestion comme une garantie. */
+.coverBox {
+  position: absolute;
+  box-sizing: border-box;
+  background: rgba(28, 124, 74, 0.28);
+  border: 2px solid #1c7c4a;
+  pointer-events: none;
+}
+
+.coverBoxOcr {
+  background: rgba(184, 134, 11, 0.18);
+  border: 2px dashed #b8860b;
 }
 
 .thumbFailed {

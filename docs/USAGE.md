@@ -145,8 +145,14 @@ gibberish where you see a name. Those pages come back in the same 409 under
 cannot tell you where the affected text is when it cannot read it.
 
 In the app this arrives as a review step rather than an error. Each flagged area
-is shown one at a time, **rendered from the page** so you can read what the tool
-could not, with its own "I have checked this" button. It opens fitted to the
+is shown one at a time with its own "I have checked this" button.
+
+What you are shown is **the image itself**, not the page underneath it. That
+distinction is the whole point: text drawn on top of an image is exactly what the
+rules did read, so rendering the page region would mix the handled with the
+unhandled and invite you to conclude "this is legible, nothing is hidden" about
+the one object nothing can vouch for. The pixels come from the server, which
+knows which image it flagged. It opens fitted to the
 panel so you see the whole area at once, and "Enlarge" renders it at a size where
 small print is legible. Export stays disabled until every screen has been
 confirmed individually: a single "confirm all" gets clicked without looking,
@@ -158,8 +164,10 @@ already says what you want gone, the preview already shows it in place, and
 asking you to confirm that you meant to draw what you drew adds no information.
 Friction spent there is friction unavailable where it counts. They appear instead
 as **coverage**: while you look at an unreadable area, anything already handled
-inside it is drawn over the thumbnail in green, so your decision is about what
-remains rather than about the whole area.
+inside it is drawn over the image in green, so your decision is about what
+remains rather than about the whole area. Those boxes are positioned by the
+server, using the inverse of the image's placement matrix, so they land correctly
+even on an image placed rotated or flipped.
 
 The mode selector sits under "Unreadable areas" in the sidebar, and
 `options.image_regions` is the API equivalent: not checking at all, this review
@@ -169,9 +177,11 @@ Choosing "Ignore" is a real choice with a real cost: a value written inside an
 image will survive the export with no message at all.
 
 An image repeated across pages, a header banner for instance, is one screen and
-not one per page. Grouping is done on a hash of the pixels, so it only ever
-groups images that are byte for byte identical, and confirming the screen
-acknowledges every page it appears on.
+not one per page. Grouping needs both the same pixels (a hash of them, so only
+byte for byte identical images ever group) and the same coverage: two pages
+carrying the same banner where only one has a rectangle over it are two different
+reviews, and showing one would hide the difference. Confirming a screen
+acknowledges every page it covers.
 
 The full list of limits, including the guarantee a preset carries, which is
 weaker than the one a typed rule carries, is in

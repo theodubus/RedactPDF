@@ -7,6 +7,7 @@ l'accroche du projet déclare impossible, atteint sans le moindre message.
 """
 from __future__ import annotations
 
+import base64
 import io
 import json
 
@@ -18,7 +19,7 @@ from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas
 
 from redactpdf.main import app
-from redactpdf.opaque import find_opaque_regions
+from redactpdf.opaque import covered_in_image, find_opaque_regions
 
 client = TestClient(app)
 
@@ -262,3 +263,122 @@ def test_the_same_image_on_several_pages_shares_one_digest() -> None:
     assert [r.page for r in regions] == [0, 1, 2]
     assert len({r.digest for r in regions}) == 1
     assert regions[0].digest != ""
+
+
+@pytest.mark.integration
+def test_the_409_carries_the_image_pixels_not_the_page_region() -> None:
+    """La vignette est l'image seule, pas la région de page.
+
+    Rendre la région composerait par dessus la couche texte, et cette couche est
+    exactement ce que les règles ont su lire. Le relecteur y verrait du texte net,
+    en conclurait « lisible, rien de caché », et passerait à côté du seul objet
+    sur lequel on ne peut rien affirmer.
+
+    Le contrôle porte sur les dimensions : la vignette a le rapport d'aspect de
+    l'image (900 x 200, soit 4,5), pas celui de la page A4 (0,707).
+    """
+    resp = _post(_scan(), {"searches": [{"query": "Dupont"}]})
+    assert resp.status_code == 409, resp.text
+    detail = resp.json()["detail"]
+
+    digest = detail["opaque_regions"][0]["digest"]
+    preview = detail["previews"][digest]
+    assert preview["mime"] == "image/jpeg"
+
+    image = Image.open(io.BytesIO(base64.b64decode(preview["data"])))
+    assert abs(image.width / image.height - 900 / 200) < 0.05
+    assert abs(image.width / image.height - A4[0] / A4[1]) > 1.0
+
+
+@pytest.mark.integration
+def test_one_preview_per_distinct_image_not_per_region() -> None:
+    """Un bandeau répété, ce sont N zones et un seul lot de pixels à transporter."""
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf, pagesize=A4)
+    _, height = A4
+    banner = ImageReader(_png("EN-TETE"))
+    for _ in range(3):
+        c.drawImage(banner, 40, height - 160, width=500, height=110)
+        c.showPage()
+    c.save()
+
+    resp = _post(buf.getvalue(), {"searches": [{"query": "Dupont"}]})
+    detail = resp.json()["detail"]
+    assert len(detail["opaque_regions"]) == 3
+    assert len(detail["previews"]) == 1
+
+
+@pytest.mark.integration
+def test_a_rectangle_lands_where_it_belongs_inside_the_image() -> None:
+    """Le rectangle déjà posé est situé dans le repère de l'image, normalisé.
+
+    Le scan occupe (40, h-260) a (540, h-150) en points ; un rectangle sur son
+    quart haut gauche doit ressortir en [0, 0, 0.5, 0.5] a la tolerance pres. Une
+    regle de trois donnerait le meme resultat ici, mais pas sur une image posee
+    tournee : c'est l'inverse de la matrice de placement qui est utilise.
+    """
+    pdf = _scan()
+    first = _post(pdf, {"searches": [{"query": "Dupont"}]})
+    x0, y0, x1, y1 = first.json()["detail"]["opaque_regions"][0]["bbox"]
+
+    resp = _post(
+        pdf,
+        {
+            "searches": [{"query": "Dupont"}],
+            "rects": [
+                {
+                    "page": 0,
+                    "x0": x0,
+                    "y0": y0,
+                    "x1": x0 + (x1 - x0) / 2,
+                    "y1": y0 + (y1 - y0) / 2,
+                }
+            ],
+        },
+    )
+    assert resp.status_code == 409, resp.text
+    covered = resp.json()["detail"]["opaque_regions"][0]["covered"]
+
+    assert len(covered) == 1
+    assert covered[0]["source"] == "manual"
+    box = covered[0]["bbox"]
+    assert box[0] == pytest.approx(0.0, abs=0.02)
+    assert box[1] == pytest.approx(0.0, abs=0.02)
+    assert box[2] == pytest.approx(0.5, abs=0.02)
+    assert box[3] == pytest.approx(0.5, abs=0.02)
+
+
+@pytest.mark.unit
+def test_a_rotated_image_needs_the_inverse_matrix_not_a_rule_of_three() -> None:
+    """Une image posée tournée : la règle de trois placerait le rectangle ailleurs.
+
+    L'image est posée après une rotation d'un quart de tour. Le quart *bas gauche*
+    de la page correspond alors au quart *haut gauche* de l'image. Une règle de
+    trois sur la boîte englobante rendrait le quart bas gauche, c'est-à-dire un
+    rectangle vert affiché sur une partie de l'image que rien ne couvre : le
+    relecteur croirait traitée une zone qui ne l'est pas.
+    """
+    im = Image.new("RGB", (400, 200), "white")
+    ImageDraw.Draw(im).rectangle([0, 0, 100, 50], fill="red")
+    src = io.BytesIO()
+    im.save(src, "PNG")
+    src.seek(0)
+
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf, pagesize=A4)
+    c.saveState()
+    c.translate(300, 400)
+    c.rotate(90)
+    c.drawImage(ImageReader(src), 0, 0, width=300, height=150)
+    c.restoreState()
+    c.showPage()
+    c.save()
+
+    region = find_opaque_regions(buf.getvalue())[0]
+    x0, y0, x1, y1 = region.bbox
+    bottom_left = (x0, (y0 + y1) / 2, (x0 + x1) / 2, y1)
+
+    covered = covered_in_image(region, [(0, bottom_left)])
+
+    assert len(covered) == 1
+    assert covered[0]["bbox"] == pytest.approx([0.0, 0.0, 0.5, 0.5], abs=0.02)
