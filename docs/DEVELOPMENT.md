@@ -289,16 +289,26 @@ Two things did come out of it. The tag / version check ran **before**
 `setup-python`, so it was executing on whatever Python the runner happened to
 ship; `tomllib` needs 3.11, so it was passing by luck. It now runs after.
 
-And the workflows reference floating major tags (`@v7`). That is GitHub's own
-default and it is readable, but a tag can be re-pointed, and `release.yml` holds
-the right to publish to PyPI over OIDC with no secret to revoke: it is the
-highest-consequence supply-chain path in the repository. Pinning by full commit
-SHA is the fix, and it is only tenable alongside an update mechanism, since
-hand-frozen actions stop receiving their own security fixes. `dependabot.yml`
-now provides that mechanism. **The pinning itself is still to do** and needs a
-machine with GitHub API access to resolve the SHAs; do `release.yml` only, since
-a compromised action in a CI workflow costs a red build rather than a published
-package.
+**`release.yml` pins every action by full commit SHA.** A tag such as `@v7` is a
+movable label: whoever controls the action's repository can re-point it at any
+commit, and the workflow would then run whatever it points at, with that job's
+permissions. Those permissions include publishing to PyPI over OIDC with no
+secret to revoke, which makes this the highest-consequence supply-chain path in
+the repository. A 40-character SHA cannot be moved.
+
+The version each SHA was resolved from stays in a trailing comment
+(`# v7`), which is what lets Dependabot recognise and bump it. Pinning without an
+update mechanism would be a downgrade, since hand-frozen actions stop receiving
+their own security fixes; `dependabot.yml` is what makes it tenable, and its
+pull requests are meant to be merged rather than accumulated.
+
+One caveat worth knowing: `pypa/gh-action-pypi-publish` was pinned from the
+`release/v1` **branch** rather than a version tag, and Dependabot tracks branch
+references less reliably than tags. Check that one by hand from time to time.
+
+The CI workflows are deliberately **not** pinned. There a compromised action
+costs a red build, not a published package, and floating tags keep them current
+with no maintenance.
 
 After publishing, install from PyPI itself and drive the result, rather than
 trusting the artifact that was uploaded:
