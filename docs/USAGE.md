@@ -151,6 +151,13 @@ a letterhead reaches the extractor as ten separate letters, and searching the
 name used to find nothing at all. It is now glued back before matching, without
 gluing genuinely short words together.
 
+**Text that is in the file but on no screen** is redacted like any other: an
+invisible OCR layer, white on white, hidden under an opaque shape, pushed past
+the page edge, or left in a crop margin. A rule for it finds it, even though your
+reader shows nothing. Content that no reader draws at all is removed outright.
+The list of forms, and what each one used to do, is in
+[SECURITY.md](SECURITY.md#content-that-is-in-the-file-but-on-no-screen).
+
 **Password-protected documents** are asked for their password rather than
 refused with a library error. It is used only to decrypt the file in memory while
 redacting, and is never stored or sent anywhere. A PDF carrying only an owner

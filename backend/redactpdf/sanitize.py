@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 import pymupdf
 
 # Porteurs situés hors du flux de contenu des pages. Le caviardage nettoie ce qui
@@ -47,6 +49,66 @@ def _drop_javascript_and_xfa(doc: pymupdf.Document) -> None:
             doc.xref_set_key(catalog, "AcroForm/XFA", "null")
     except Exception:
         pass
+
+
+_DO_OPERATOR = re.compile(rb"/([^\s/\[\]<>(){}]+)\s+Do\b")
+
+
+def _drop_unused_xobjects(doc: pymupdf.Document, page: pymupdf.Page) -> None:
+    """Coupe les Form XObjects que rien ne dessine.
+
+    Un Form XObject déclaré dans `/Resources/XObject` mais jamais invoqué par un
+    opérateur `Do` porte du contenu qui **est dans le fichier et qu'aucun lecteur
+    n'affiche**. Mesuré le 10 septembre 2026 : un nom placé là donne zéro
+    rectangle, zéro occurrence à l'audit (ni PyMuPDF ni pypdf ne l'extraient) et
+    un export en 200, le nom toujours présent dans les octets.
+
+    Contrairement au texte hors cadrage, il n'y a rien à révéler : ce contenu
+    n'est dessiné nulle part, donc aucun élargissement ne le rendrait lisible et
+    l'utilisateur ne pourrait de toute façon pas le viser. On coupe le porteur,
+    dans l'esprit du module, et `garbage=4` le fait disparaître physiquement.
+
+    Le relevé des noms invoqués balaie le flux de la page **et** ceux de tous les
+    Form XObjects, y compris ceux qu'on s'apprête à couper. C'est volontairement
+    conservateur : si un objet injoignable en invoque un autre, le second est
+    conservé. On préfère garder de trop que retirer du visible.
+    """
+    try:
+        kind, value = doc.xref_get_key(page.xref, "Resources/XObject")
+        if kind != "dict":
+            return
+        names = re.findall(r"/([^\s/\[\]<>(){}]+)\s+\d+\s+0\s+R", str(value))
+        if not names:
+            return
+    except Exception:
+        return
+
+    invoked: set[bytes] = set()
+    try:
+        invoked.update(_DO_OPERATOR.findall(page.read_contents()))
+    except Exception:
+        return
+    for name in names:
+        try:
+            _, ref = doc.xref_get_key(page.xref, f"Resources/XObject/{name}")
+            xref = int(str(ref).split()[0])
+            if doc.xref_get_key(xref, "Subtype")[1] != "/Form":
+                continue
+            invoked.update(_DO_OPERATOR.findall(doc.xref_stream(xref)))
+        except Exception:
+            continue
+
+    for name in names:
+        if name.encode() in invoked:
+            continue
+        try:
+            _, ref = doc.xref_get_key(page.xref, f"Resources/XObject/{name}")
+            xref = int(str(ref).split()[0])
+            if doc.xref_get_key(xref, "Subtype")[1] != "/Form":
+                continue
+            doc.xref_set_key(page.xref, f"Resources/XObject/{name}", "null")
+        except Exception:
+            pass
 
 
 def _drain(node: object, delete: object) -> None:
@@ -225,6 +287,13 @@ def sanitize_document(
 
         # Une fois, pour le document : le formulaire est au catalogue, pas aux pages.
         _drop_acroform(doc)
+
+    # Sans drapeau, volontairement : couper un Form XObject que rien n'invoque ne
+    # peut pas changer l'apparence du document, puisque aucun lecteur ne le
+    # dessine. Il n'y a donc rien dont un utilisateur voudrait se désinscrire, et
+    # une option de plus ne ferait qu'offrir un moyen de garder une fuite.
+    for page in doc:
+        _drop_unused_xobjects(doc, page)
 
     if remove_outline:
         try:

@@ -525,6 +525,45 @@ report carries an `encryption` block and the response an
 `X-Redaction-Encryption-Removed` header. A file that used to ask for a password
 no longer does, and the person exporting it should know that before they send it.
 
+### Content that is in the file but on no screen
+
+A PDF can carry text that no reader shows. Six forms were built on 10 September
+2026 and measured end to end; three were already handled and three were holes.
+
+| Form | Extracted? | Before the fix |
+|---|---|---|
+| Invisible text render mode (`3 Tr`, an OCR layer) | yes | redacted |
+| White text on white | yes | redacted |
+| Covered by an opaque fill drawn after it | yes | redacted |
+| **Outside the crop box** | no | **survived, HTTP 200** |
+| **Outside the media box** | no | **survived, HTTP 200** |
+| **Form XObject no `Do` ever invokes** | no | **survived, HTTP 200** |
+
+The first three were never at risk: extraction reports them, so a rule sees them
+whatever the screen shows. The last three are the "I could not have seen it, and
+I am reporting success" family: neither PyMuPDF nor `pypdf` extracts them, so the
+two-engine audit confirms nothing rather than catching anything.
+
+The first two are a click away from being read. `pdfcrop` sets a crop box, an
+overfull box in LaTeX pushes text past the page edge, and the recipient of the
+redacted file widens the box in any editor and reads what was supposedly removed.
+That is the hidden-layer failure with a different mechanism, so it gets the same
+treatment: reveal before reading rather than refuse, since nobody can draw a
+rectangle over text their reader does not display.
+
+One difference matters and cost a first attempt. Turning a layer on moves
+nothing, so the plan could keep working on the original bytes. Removing a crop
+box **shifts every coordinate**: measured, a crop offset by 142 points moves
+already-visible content by exactly 142 points. So the plan and the redaction both
+run on the widened view, and the original geometry is restored on the way out.
+The exported file has the page size it came in with, and a test pins that.
+
+The third form has nothing to reveal: no widening makes it visible and no user
+could target it. The carrier is cut instead, the way an annotation is, and the
+sweep for invoked names is deliberately generous so a form invoked only by
+another unreachable form is kept. Over-keeping is recoverable; removing something
+visible is not.
+
 ### Unknown payload keys are rejected
 
 The API refuses any key it does not recognise, with HTTP 422 naming the

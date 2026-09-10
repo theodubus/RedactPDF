@@ -397,6 +397,162 @@ def signatures_in(pdf_bytes: bytes) -> list[str]:
         doc.close()
 
 
+BOXES = ("CropBox", "TrimBox", "ArtBox", "BleedBox")
+
+# Taille de la sonde qui sert à mesurer l'emprise réelle du contenu. Elle ne
+# subsiste jamais : la MediaBox rendue vaut l'union du support et du contenu.
+_PROBE_PAD = 5000.0
+
+
+@dataclass(frozen=True)
+class PageBoxes:
+    """Les boîtes d'une page, telles qu'elles étaient avant normalisation."""
+
+    xref: int
+    entries: tuple[tuple[str, str], ...]
+
+
+def _content_bbox(page: pymupdf.Page) -> pymupdf.Rect | None:
+    """L'emprise réelle du contenu de la page, boîtes ignorées.
+
+    `page.rect` est bornée par la CropBox, donc elle ne dit rien de ce qui est
+    dessiné en dehors. On additionne les boîtes des blocs de texte et des images,
+    qui portent des coordonnées absolues.
+    """
+    box = pymupdf.Rect()
+    try:
+        for block in page.get_text("blocks"):
+            box |= pymupdf.Rect(block[:4])
+        for info in page.get_image_info():
+            box |= pymupdf.Rect(info["bbox"])
+    except Exception:
+        return None
+    return None if box.is_empty else box
+
+
+def unclipped_view(pdf_bytes: bytes) -> tuple[bytes, list[PageBoxes]]:
+    """Le document sans fenêtre de rognage, et de quoi la remettre.
+
+    Une page PDF porte une MediaBox (le support) et souvent une CropBox (ce que
+    le lecteur affiche). Ce qui tombe **hors** de la CropBox est dans le fichier,
+    invisible à l'écran, et absent de `get_text()` : mesuré le 10 septembre 2026,
+    un nom posé au-delà du rognage donnait zéro rectangle, zéro occurrence à
+    l'audit, un export en 200, et se relisait mot pour mot en élargissant la
+    boîte d'un clic dans n'importe quel éditeur.
+
+    Exactement la forme du calque masqué, avec un mécanisme différent. Comme lui,
+    on révèle avant de lire plutôt que de refuser : l'utilisateur ne peut pas
+    dessiner un rectangle sur un texte que son lecteur ne montre pas.
+
+    **La différence avec `all_layers_visible` est que ceci déplace les
+    coordonnées.** Mesuré : retirer une CropBox décalée de 142 points fait
+    bouger de 142 points la position de tout le contenu déjà visible. Le plan et
+    l'application doivent donc travailler sur *cette* vue, pas sur les octets
+    d'origine, et les boîtes sont remises à la fin par `restore_boxes`.
+
+    La MediaBox est élargie à l'emprise réelle du contenu quand celui-ci déborde,
+    et pas d'un rembourrage fixe : le seuil `MIN_PAGE_SHARE` se mesure en part de
+    page, donc agrandir la page au-delà du nécessaire diluerait les zones opaques
+    et ferait taire un signalement.
+
+    Rend les octets d'origine quand il n'y a rien à normaliser, ce qui est le cas
+    courant.
+    """
+    doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")
+    try:
+        saved: list[PageBoxes] = []
+        touched = False
+        for page in doc:
+            entries: list[tuple[str, str]] = []
+            for key in BOXES:
+                try:
+                    kind, value = doc.xref_get_key(page.xref, key)
+                except Exception:
+                    continue
+                entries.append((key, "null" if kind == "null" else str(value)))
+                if kind != "null":
+                    doc.xref_set_key(page.xref, key, "null")
+                    touched = True
+            saved.append(PageBoxes(xref=page.xref, entries=tuple(entries)))
+
+        # Mesurer l'emprise réelle demande de la lire, et la lire demande une page
+        # assez grande pour la contenir : l'œuf et la poule. On sonde donc sur une
+        # page volontairement démesurée, on mesure, puis on redescend à l'union
+        # réelle. Le rembourrage de la sonde ne subsiste jamais dans la vue rendue.
+        media_before = [page.mediabox for page in doc]
+        for page in doc:
+            box = page.mediabox
+            doc.xref_set_key(
+                page.xref,
+                "MediaBox",
+                f"[{box.x0 - _PROBE_PAD} {box.y0 - _PROBE_PAD} "
+                f"{box.x1 + _PROBE_PAD} {box.y1 + _PROBE_PAD}]",
+            )
+        probe = bytes(doc.tobytes())
+        doc.close()
+        doc = pymupdf.open(stream=probe, filetype="pdf")
+
+        for index, page in enumerate(doc):
+            media = media_before[index] if index < len(media_before) else page.mediabox
+            content = _content_bbox(page)
+            union = pymupdf.Rect(media)
+            if content is not None:
+                # PyMuPDF rend des coordonnées **descendantes**, origine en haut à
+                # gauche de la page ; le PDF les compte de bas en haut. Confondre
+                # les deux fait élargir du mauvais côté, ce qu'une première
+                # version a fait : la boîte grandissait vers le bas alors que le
+                # texte débordait vers le haut, et le cas restait invisible.
+                left = media.x0 - _PROBE_PAD
+                top = media.y1 + _PROBE_PAD
+                union |= pymupdf.Rect(
+                    content.x0 + left,
+                    top - content.y1,
+                    content.x1 + left,
+                    top - content.y0,
+                )
+            if abs(union) > abs(media) + 1.0:
+                touched = True
+            else:
+                union = pymupdf.Rect(media)
+            doc.xref_set_key(
+                page.xref, "MediaBox", f"[{union.x0} {union.y0} {union.x1} {union.y1}]"
+            )
+
+        if not touched:
+            return pdf_bytes, []
+        return bytes(doc.tobytes()), saved
+    except Exception:
+        # Un document dont on ne sait pas manipuler les boîtes reste traité tel
+        # quel : mieux vaut le contrôle habituel que pas de contrôle du tout.
+        return pdf_bytes, []
+    finally:
+        doc.close()
+
+
+def restore_boxes(pdf_bytes: bytes, saved: list[PageBoxes]) -> bytes:
+    """Remet les boîtes d'origine sur le document caviardé.
+
+    Sans ça, l'export sortirait avec une page plus grande que celle qu'on lui a
+    donnée : on a élargi pour *lire*, pas pour changer le document.
+    """
+    if not saved:
+        return pdf_bytes
+    doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")
+    try:
+        for index, page in enumerate(doc):
+            if index >= len(saved):
+                break
+            for key, value in saved[index].entries:
+                try:
+                    doc.xref_set_key(page.xref, key, value)
+                except Exception:
+                    pass
+        return bytes(doc.tobytes())
+    except Exception:
+        return pdf_bytes
+    finally:
+        doc.close()
+
 def all_layers_visible(pdf_bytes: bytes) -> bytes:
     """Le document avec tous ses calques allumés, sans autre changement.
 

@@ -37,7 +37,9 @@ from redactpdf.pipeline import (
     ocr_targets,
     plan_redactions,
     readable_view,
+    restore_boxes,
     signatures_in,
+    unclipped_view,
     unreadable_fonts,
     unresolved_opaque_regions,
     with_ocr_proposals,
@@ -479,6 +481,13 @@ async def redact_apply(
     # n'existe plus, et c'est justement ce qu'il faut annoncer.
     signatures = signatures_in(pdf_bytes)
 
+    # Ce qui tombe hors de la fenêtre de rognage est dans le fichier, invisible à
+    # l'écran, et absent de `get_text()`. On l'expose avant de lire, comme on
+    # rallume les calques. Contrairement aux calques, ceci **déplace les
+    # coordonnées** : tout l'aval doit donc travailler sur cette vue, et les
+    # boîtes d'origine sont remises sur la sortie tout à la fin.
+    pdf_bytes, saved_boxes = unclipped_view(pdf_bytes)
+
     # Une seule construction : la vue sur laquelle on juge « qu'est-ce qui n'a pas
     # pu être lu » et le document produit doivent parler du même assainissement.
     redaction_options = RedactionOptions(
@@ -648,7 +657,9 @@ async def redact_apply(
                     },
                 )
 
-        out_pdf = apply_plan(pdf_bytes, plan, options=redaction_options)
+        out_pdf = restore_boxes(
+            apply_plan(pdf_bytes, plan, options=redaction_options), saved_boxes
+        )
     except HTTPException:
         # Le refus pour zone non résolue est une réponse construite, pas une panne :
         # sans cette clause, le filet à 500 ci-dessous l'avalait.
