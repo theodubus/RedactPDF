@@ -302,9 +302,10 @@ update mechanism would be a downgrade, since hand-frozen actions stop receiving
 their own security fixes; `dependabot.yml` is what makes it tenable, and its
 pull requests are meant to be merged rather than accumulated.
 
-One caveat worth knowing: `pypa/gh-action-pypi-publish` was pinned from the
-`release/v1` **branch** rather than a version tag, and Dependabot tracks branch
-references less reliably than tags. Check that one by hand from time to time.
+Every pin, `pypa/gh-action-pypi-publish` included, names a version tag. That one
+was first pinned from the `release/v1` **branch**, which Dependabot tracks less
+reliably than a tag; resolving `v1.14.2` gave the same commit, so only the
+comment changed and the caveat is gone.
 
 The CI workflows are deliberately **not** pinned. There a compromised action
 costs a red build, not a published package, and floating tags keep them current

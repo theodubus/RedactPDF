@@ -9,9 +9,17 @@ binary for Windows or Linux, or `pipx install redactpdf` on any machine that has
 Python. Nothing else to install, text recognition for images included.
 
 <p align="center">
-  <video src="https://github.com/user-attachments/assets/8b4716d7-e6f8-445f-8d00-09b00af840f0" controls width="820">
-    <a href="https://github.com/user-attachments/assets/8b4716d7-e6f8-445f-8d00-09b00af840f0">▶ Watch the demo</a>
+  <video src="https://github.com/user-attachments/assets/6b3baa14-75d3-45cb-883f-b8b7e1ef72cb" controls width="820">
+    <a href="https://github.com/user-attachments/assets/6b3baa14-75d3-45cb-883f-b8b7e1ef72cb">▶ Watch the demo</a>
   </video>
+</p>
+
+<p align="center">
+  <sub>
+    Content is deleted from the file, not covered with a black box. Check it
+    yourself with a different PDF library:
+    <a href="docs/USAGE.md#check-the-output-yourself">Check the output yourself</a>.
+  </sub>
 </p>
 
 ---

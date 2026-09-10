@@ -6,8 +6,9 @@
 # stocké, c'est le chemin de compromission le plus coûteux du dépôt.
 #
 # `release.yml` est donc épinglé par SHA complet depuis le 10 septembre 2026, avec
-# la version d'origine en commentaire de fin de ligne : c'est elle que Dependabot
-# lit pour proposer une montée. Épingler sans mécanisme de mise à jour serait une
+# la version en commentaire de fin de ligne : c'est elle que Dependabot lit pour
+# proposer une montée. Toutes nomment un **tag**, jamais une branche, que
+# Dependabot suit moins bien. Épingler sans mécanisme de mise à jour serait une
 # régression, des actions figées à la main cessant de recevoir leurs propres
 # correctifs. Ce fichier est ce mécanisme, et ses pull requests sont faites pour
 # être fusionnées, pas accumulées.
