@@ -45,8 +45,8 @@ report that a target survived; it can never report that it was unable to look. A
 name printed inside a scan is invisible to the rules and equally invisible to the
 check, so the export used to succeed with the name plainly on screen. RedactPDF
 now says so instead: an area it could not read stops the export and is shown to
-you, rendered from the page, to confirm one by one. You can turn that off, but
-only by naming the choice.
+you, one by one, to confirm. You can turn that off, but only by naming the
+choice.
 
 That check has caught real failures, and it has blind spots of its own. Both are
 written down in [docs/SECURITY.md](docs/SECURITY.md) rather than left implied;
@@ -103,15 +103,9 @@ Sequoia clearing it takes a trip through System Settings and an admin password.
 Gatekeeper never applies. It also makes the install independent of the build
 machine's glibc, which is what constrains the Linux binary above.
 
-**Why `pipx` rather than `pip`.** RedactPDF is an application, not a library you
-import, and its dependencies are pinned to exact versions because redaction
-behaviour is version-sensitive. `pipx` gives it a private virtual environment and
-puts the `redactpdf` command on your PATH, so those pins cannot collide with
-anything else you have installed. `pip install redactpdf` into a system Python is
-also refused outright on most current Linux distributions, which mark it
-externally managed (PEP 668). `uv tool install redactpdf` does the same job as
-`pipx`. Plain `pip install redactpdf` is fine inside a virtual environment you
-manage yourself.
+`uv tool install redactpdf` does the same job. Plain `pip install` works inside a
+virtual environment you manage yourself, but into a system Python most current
+Linux distributions refuse it outright (PEP 668).
 
 ### From source
 

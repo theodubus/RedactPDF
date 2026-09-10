@@ -140,6 +140,14 @@ model does not raise, it just reads badly, which is why they are marked `binary`
 in `.gitattributes` like the PDF fixtures. To add a language: drop the
 `.traineddata` in, append its hash, and mention it in `PROVENANCE.md`.
 
+Two arbitrations behind the current pair, both measured rather than assumed. The
+variant is `tessdata_fast`: `tessdata_best` was tried and read not one extra
+word, for four times the time and four times the size. And the whole engine was
+nearly not shipped at all, on a measurement of 22 MB that turned out to be the
+Ubuntu **system package**, which contains an engine PyMuPDF already carries. The
+real cost was 5 MB of models. Re-measure the package, not the dependency, before
+reopening either.
+
 ### The phone preview is checked against the backend, not trusted
 
 `utils/phonePreview.ts` mirrors the backend's `_phone_post_filter`, and a

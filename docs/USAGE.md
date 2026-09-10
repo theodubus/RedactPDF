@@ -267,21 +267,15 @@ than afterwards: you get black boxes over a scan, which looks handled, while onl
 what a rough detector happened to find actually is. A document that looks handled
 is sometimes worse than one you know is not.
 
-Nothing to install. The engine already travels inside PyMuPDF, so only the
-language models were missing, and **French and English ship with the app**, in
-the binary and in the wheel alike. That is 5 MB, not the 22 MB a system package
-weighs, because the 22 MB includes an engine we already have.
+Nothing to install: **French and English ship with the app**, in the binary and
+in the wheel alike. Both are used together by default, and that matters more than
+it looks: measured on a French transcript, the French model **alone** read
+"BULLE CUT" where the pair reads "BULLETIN CUMULATIF". A language already
+installed on the machine is used as a fallback.
 
-Only those two languages **for now**. It is a choice about who uses the tool
-today, not a technical limit: adding one is dropping a `.traineddata` file into
-`backend/redactpdf/_tessdata` and recording its hash. A language installed on the
-machine is used as a fallback, so a Tesseract you already have keeps working.
-
-The pair matters more than it looks. Measured on a French transcript, the French
-model **alone** read "BULLE CUT" where French plus English reads "BULLETIN
-CUMULATIF", which is why both ship and why both are used by default. The
-higher-accuracy `tessdata_best` models were tested too: not one extra word, four
-times slower, four times larger. Not shipped.
+Only those two **for now**, which is a choice about who uses the tool today
+rather than a technical limit. Adding one is
+[a small contribution](DEVELOPMENT.md#the-bundled-language-models).
 
 An image repeated across pages, a header banner for instance, is one screen and
 not one per page. Grouping needs both the same pixels (a hash of them, so only
