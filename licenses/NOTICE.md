@@ -1,19 +1,18 @@
-# Composants tiers redistribués
+# Third-party components redistributed with RedactPDF
 
-RedactPDF est sous AGPL-3.0 (voir `LICENSE.md` à la racine). Les éléments
-ci-dessous sont redistribués avec l'application sous leur propre licence.
+RedactPDF is licensed under AGPL-3.0 (see `LICENSE.md` at the repository root).
+The components below travel with the application under their own licence.
 
-## Données de langue Tesseract
+## Tesseract language data
 
-`backend/redactpdf/_tessdata/*.traineddata`, variante `tessdata_fast` du projet
-Tesseract OCR.
+`backend/redactpdf/_tessdata/fra.traineddata` and `eng.traineddata`, from the
+`tessdata_fast` variant of the Tesseract OCR project.
 
-- Licence : Apache License 2.0, texte complet dans `Apache-2.0.txt`
+- Licence: Apache License 2.0, full text in `Apache-2.0.txt` beside this file
 - Copyright 1988-1995 Hewlett-Packard Company
 - Copyright 2006-2022 Google Inc.
-- Source : <https://github.com/tesseract-ocr/tessdata_fast>
+- Source: <https://github.com/tesseract-ocr/tessdata_fast>
 
-L'Apache-2.0 est compatible avec l'AGPL-3.0 dans ce sens : du code sous
-Apache-2.0 peut être inclus dans une œuvre sous GPLv3 ou AGPLv3, l'inverse
-n'étant pas vrai. Détail de provenance et empreintes dans
-`backend/redactpdf/_tessdata/PROVENANCE.md`.
+Origin, retrieval date and checksums are recorded in
+`backend/redactpdf/_tessdata/PROVENANCE.md`, and the checksums themselves in
+`SHA256SUMS` next to the files.

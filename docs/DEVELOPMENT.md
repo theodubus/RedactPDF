@@ -123,6 +123,28 @@ npm test              # vitest
 npm run build
 ```
 
+### `npm ci` reports vulnerabilities, and what that means here
+
+A fresh `npm ci` prints a count of advisories. It is worth knowing what they are
+before treating them as a finding on a redaction tool.
+
+```bash
+npm audit --omit=dev   # what actually ships
+npm audit              # plus the build and test toolchain
+```
+
+The first is the one that matters, and it reports **0**. The runtime dependency
+list is four packages (`react`, `react-dom`, `pdfjs-dist`, `libphonenumber-js`);
+everything else is `vite`, `eslint`, `typescript`, `vitest` and their trees,
+which build and test the UI and are not part of `frontend/dist`. An advisory in
+`postcss` or `@vitest/mocker` is an advisory against your laptop while it
+builds, not against anyone running the app.
+
+That is an explanation, not an excuse: the lockfile is kept clean anyway, since
+a contributor who sees "5 high" on a security tool has no reason to take our
+word for the rest. Bump with `npm audit fix` (lockfile only, no API change) and
+re-run lint, tests and build before committing the lockfile.
+
 ### The bundled language models
 
 `backend/redactpdf/_tessdata/*.traineddata` are versioned binary assets, not
@@ -140,13 +162,20 @@ model does not raise, it just reads badly, which is why they are marked `binary`
 in `.gitattributes` like the PDF fixtures. To add a language: drop the
 `.traineddata` in, append its hash, and mention it in `PROVENANCE.md`.
 
-Two arbitrations behind the current pair, both measured rather than assumed. The
-variant is `tessdata_fast`: `tessdata_best` was tried and read not one extra
-word, for four times the time and four times the size. And the whole engine was
-nearly not shipped at all, on a measurement of 22 MB that turned out to be the
-Ubuntu **system package**, which contains an engine PyMuPDF already carries. The
-real cost was 5 MB of models. Re-measure the package, not the dependency, before
-reopening either.
+Three arbitrations behind the current pair, all measured rather than assumed.
+
+The variant is `tessdata_fast`: `tessdata_best` was tried and read not one extra
+word, for four times the time and four times the size.
+
+`fra` and `eng` ship together and are used together, because the pair beat the
+single model even on French text: French alone read "BULLE CUT" where the pair
+read "BULLETIN CUMULATIF". Only two languages is a judgement about who uses the
+tool today, not a technical limit.
+
+And the whole engine was nearly not shipped at all, on a measurement of 22 MB
+that turned out to be the Ubuntu **system package**, which contains an engine
+PyMuPDF already carries. The real cost was 5 MB of models. Re-measure the
+package, not the dependency, before reopening any of the three.
 
 ### The phone preview is checked against the backend, not trusted
 
