@@ -28,10 +28,12 @@ from redactpdf.pipeline import (
     RedactionOptions,
     RegexRequest,
     SearchRequest,
+    UnreadableDocument,
     apply_plan,
     audit_plan,
     decrypted_view,
     encryption_of,
+    ensure_readable,
     ocr_targets,
     plan_redactions,
     readable_view,
@@ -373,7 +375,11 @@ async def redact_apply(
 
     pdf_bytes = await file.read()
     if not pdf_bytes:
-        raise HTTPException(status_code=400, detail="Empty PDF upload")
+        # Même vocabulaire que le fichier illisible plus bas : un appelant ne
+        # devrait pas avoir à distinguer une chaîne libre d'un objet selon le cas.
+        raise HTTPException(
+            status_code=400, detail={"status": "unreadable", "reason": "empty"}
+        )
 
     manual_rects = [
         RedactionRect(page=r.page, x0=r.x0, y0=r.y0, x1=r.x1, y1=r.y1) for r in data.rects
@@ -446,6 +452,17 @@ async def redact_apply(
                 "limit": MAX_RECTS_PER_REQUEST,
             },
         )
+
+    # Le fichier s'ouvre-t-il, avant tout le reste. `pymupdf.FileDataError` est un
+    # `RuntimeError` et ne retombait donc pas sur le chemin 400 : un fichier qui
+    # n'est pas un PDF rendait un 500, c'est-à-dire « le moteur s'est cassé »
+    # plutôt que « ce fichier n'en est pas un ».
+    try:
+        ensure_readable(pdf_bytes)
+    except UnreadableDocument as e:
+        raise HTTPException(
+            status_code=400, detail={"status": "unreadable", "reason": e.code}
+        ) from e
 
     # Avant `decrypted_view`, obligatoirement : celui-ci rend des octets en clair,
     # et lire le chiffrement après lui rend toujours « aucun ». Le test de

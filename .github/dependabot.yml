@@ -1,0 +1,21 @@
+# Mises à jour des actions GitHub.
+#
+# Les workflows référencent des tags majeurs flottants (`@v7`). C'est le défaut
+# recommandé par GitHub et c'est lisible, mais un tag peut être redéplacé : sur
+# `release.yml`, qui détient le droit de publier sur PyPI par OIDC sans secret
+# stocké, c'est le chemin de compromission le plus coûteux du dépôt.
+#
+# Épingler par SHA est la parade, et elle n'est tenable qu'avec un mécanisme de
+# mise à jour : figées à la main, les actions cessent aussi de recevoir leurs
+# propres correctifs. Ce fichier est ce mécanisme. L'épinglage lui-même reste à
+# faire, et demande de résoudre les SHA depuis une machine ayant accès à l'API
+# GitHub (voir docs/DEVELOPMENT.md).
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: ci

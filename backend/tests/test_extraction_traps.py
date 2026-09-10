@@ -216,3 +216,27 @@ def test_a_plain_document_carries_no_encryption_mention() -> None:
     assert resp.headers["X-Redaction-Encryption-Removed"] == "0"
     report = json.loads(base64.b64decode(resp.headers["X-Redaction-Audit-Report-B64"]))
     assert "encryption" not in report
+
+
+@pytest.mark.integration
+def test_a_file_that_is_not_a_pdf_is_refused_not_a_crash() -> None:
+    """Trouvé en passant 81 documents réels dans l'API, pas par les fixtures.
+
+    `corrupted.pdf` du corpus de test de Stirling, 28 octets de texte brut, faisait
+    lever `pymupdf.FileDataError`. Celui-ci est un `RuntimeError` et ne retombait
+    donc pas sur le chemin 400 : la requête rendait **HTTP 500 « Internal Server
+    Error »**, c'est-à-dire « le moteur s'est cassé » là où la vérité est « ce
+    fichier n'est pas un PDF ».
+    """
+    resp = _post(b"This is not a valid PDF.\n\n", {"searches": [{"query": "Bourdillon"}]})
+
+    assert resp.status_code == 400, resp.text[:200]
+    assert resp.json()["detail"] == {"status": "unreadable", "reason": "not_a_pdf"}
+
+
+@pytest.mark.integration
+def test_an_empty_upload_is_refused_the_same_way() -> None:
+    resp = _post(b"", {"searches": [{"query": "Bourdillon"}]})
+
+    assert resp.status_code == 400, resp.text[:200]
+    assert resp.json()["detail"]["status"] == "unreadable"

@@ -20,6 +20,20 @@ const DIAGNOSTIC_KEYS: Record<string, string> = {
   line_break_split: "result.diagnostic.lineBreakSplit",
 };
 
+// Le fichier n'était pas un PDF exploitable. Ce n'est ni un audit en échec ni
+// une panne : c'est une entrée que rien ne pouvait traiter, et le dire évite
+// d'envoyer l'utilisateur chercher une fuite dans un fichier jamais produit.
+function unreadableReason(report: unknown): string | null {
+  if (typeof report !== "object" || report === null) return null;
+  const wrapped = (report as { detail?: unknown }).detail;
+  const detail = (typeof wrapped === "object" && wrapped !== null ? wrapped : report) as {
+    status?: unknown;
+    reason?: unknown;
+  };
+  if (detail.status !== "unreadable") return null;
+  return detail.reason === "empty" ? "empty" : "notAPdf";
+}
+
 function readDiagnostics(report: unknown): string[] {
   if (typeof report !== "object" || report === null) return [];
   const value = (report as { diagnostics?: unknown }).diagnostics;
@@ -38,17 +52,23 @@ export function ResultPanel(props: {
   const diagnostics = readDiagnostics(errorInfo.report);
   const inconclusive = errorInfo.status === INCONCLUSIVE;
   const crashed = errorInfo.status !== undefined && errorInfo.status >= CRASHED;
+  const unreadable = unreadableReason(errorInfo.report);
 
-  const title = inconclusive
-    ? "result.inconclusive.title"
-    : crashed
-      ? "result.crashed.title"
-      : "result.error.title";
+  const title = unreadable
+    ? "result.unreadable.title"
+    : inconclusive
+      ? "result.inconclusive.title"
+      : crashed
+        ? "result.crashed.title"
+        : "result.error.title";
 
   return (
     <div>
       <div className="resultTitle bad">{t(title)}</div>
 
+      {unreadable ? (
+        <div className="errorBox">{t(`result.unreadable.${unreadable}`)}</div>
+      ) : null}
       {inconclusive ? <div className="errorBox">{t("result.inconclusive.help")}</div> : null}
       {crashed ? <div className="errorBox">{t("result.crashed.help")}</div> : null}
 

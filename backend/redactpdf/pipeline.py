@@ -281,6 +281,37 @@ def presets_internal_audit(
     }
 
 
+class UnreadableDocument(ValueError):
+    """Le fichier n'est pas un PDF exploitable, et on le dit plutôt que de planter.
+
+    `pymupdf.FileDataError` est un `RuntimeError`, donc il ne retombait pas sur le
+    chemin 400 : la requête rendait **HTTP 500 « Internal Server Error »**.
+    Trouvé le 10 septembre 2026 en passant 81 documents réels dans l'API, sur le
+    `corrupted.pdf` du corpus de test de Stirling (28 octets de texte brut). Un
+    500 dit à l'utilisateur que le moteur s'est cassé, là où la vérité est que le
+    fichier n'en est pas un.
+
+    Le contrôle est fait **une fois**, à l'entrée. Une `FileDataError` plus loin
+    dans le traitement resterait une vraie surprise, et doit continuer de remonter
+    en 500 : elle signifierait que le document s'ouvrait puis a cessé.
+    """
+
+    def __init__(self, code: str = "not_a_pdf") -> None:
+        super().__init__(code)
+        self.code = code
+
+
+def ensure_readable(pdf_bytes: bytes) -> None:
+    """Le document s'ouvre-t-il du tout. Lève `UnreadableDocument` sinon."""
+    if not pdf_bytes:
+        raise UnreadableDocument("empty")
+    try:
+        doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")
+    except Exception as e:
+        raise UnreadableDocument("not_a_pdf") from e
+    doc.close()
+
+
 class PasswordRequired(ValueError):
     """Le document est chiffré et le mot de passe manque ou ne convient pas.
 

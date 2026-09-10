@@ -134,5 +134,8 @@
   "notice.signature": "Le document d'origine portait une signature numérique. Caviarder réécrit le PDF : la signature ne s'applique plus au résultat et a été retirée. Un document caviardé ne peut pas rester signé ; s'il doit l'être, il faut le signer à nouveau après le caviardage.",
   "notice.encryption": "Le document d'origine était chiffré. Le fichier exporté ne l'est pas et s'ouvre sans mot de passe. Protégez-le comme un fichier en clair.",
   "notice.coverageAcknowledged": "Une ou plusieurs zones n'ont pas pu être lues par les règles et ont été validées à la main. L'audit relit le texte du document : il ne dit rien du contenu de ces zones.",
-  "notice.coverageSkipped": "Le contrôle des zones illisibles a été désactivé pour cet export. Rien n'a vérifié ce que les images ou les polices non lisibles pouvaient contenir."
+  "notice.coverageSkipped": "Le contrôle des zones illisibles a été désactivé pour cet export. Rien n'a vérifié ce que les images ou les polices non lisibles pouvaient contenir.",
+  "result.unreadable.title": "Ce fichier n'est pas un PDF exploitable",
+  "result.unreadable.notAPdf": "Le fichier n'a pas pu être ouvert. Il n'est peut-être pas un PDF, ou il est endommagé. Rien n'a été traité, donc rien n'a fuité.",
+  "result.unreadable.empty": "Le fichier envoyé est vide."
 }

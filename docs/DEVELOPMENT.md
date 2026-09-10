@@ -236,6 +236,40 @@ stored secret).
 Checksums and attestations are the only trust story available without a paid
 code-signing certificate. Do not drop either.
 
+**What was audited, on 10 September 2026, and what came out of it.** The
+published artifacts are the tested ones: `build` and `wheel` upload what their
+own smoke tests just drove, and `release` attaches those, with no rebuild in
+between. `frontend/dist` cannot go stale in CI: both `build_app.py` and
+`build_package.py` run `npm run build` on a fresh checkout, and
+`stage_package_data` wipes `_frontend` before copying. The wheel is installed
+into an empty venv and its console script is smoke-tested. `id-token: write`
+appears only where it is used (the two attestations and the PyPI OIDC publish),
+the `pypi` environment is declared, and there is no stored PyPI token.
+`_tessdata` is in the PyInstaller spec, and no legacy `app` or
+`redactpdf-backend` path survives anywhere.
+
+Two things did come out of it. The tag / version check ran **before**
+`setup-python`, so it was executing on whatever Python the runner happened to
+ship; `tomllib` needs 3.11, so it was passing by luck. It now runs after.
+
+And the workflows reference floating major tags (`@v7`). That is GitHub's own
+default and it is readable, but a tag can be re-pointed, and `release.yml` holds
+the right to publish to PyPI over OIDC with no secret to revoke: it is the
+highest-consequence supply-chain path in the repository. Pinning by full commit
+SHA is the fix, and it is only tenable alongside an update mechanism, since
+hand-frozen actions stop receiving their own security fixes. `dependabot.yml`
+now provides that mechanism. **The pinning itself is still to do** and needs a
+machine with GitHub API access to resolve the SHAs; do `release.yml` only, since
+a compromised action in a CI workflow costs a red build rather than a published
+package.
+
+After publishing, install from PyPI itself and drive the result, rather than
+trusting the artifact that was uploaded:
+
+```bash
+pipx install redactpdf && redactpdf
+```
+
 ---
 
 ## CI
