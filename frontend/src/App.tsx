@@ -5,7 +5,7 @@ import { ReviewCarousel } from "./review/ReviewCarousel";
 import { useReviewDocument } from "./review/useReviewDocument";
 import { serverReviewItems, toAcknowledgements } from "./review/reviewItems";
 import type { Preview, ReviewItem } from "./review/reviewItems";
-import type { ImageMode, ImageRegionsMode, PresetKey, RuleInput } from "./api";
+import type { ExportNotice, ImageMode, ImageRegionsMode, PresetKey, RuleInput } from "./api";
 
 import { HeaderBar } from "./components/HeaderBar";
 import { RulesSection } from "./components/Rules/RulesSection";
@@ -15,6 +15,7 @@ import { ImageRegionsSection } from "./components/ImageRegionsSection";
 import { OcrSection } from "./components/OcrSection";
 import { OcrWarningModal } from "./components/OcrWarningModal";
 import { PasswordModal } from "./components/PasswordModal";
+import { ExportNotices } from "./components/ExportNotices";
 import { ResultPanel } from "./components/ResultPanel";
 import { PdfViewer } from "./components/PdfViewer";
 
@@ -96,11 +97,17 @@ export default function App() {
     rawMessage?: string;
   } | null>(null);
 
+  // Ce que l'export a changé sans qu'on l'ait demandé : signature détruite,
+  // chiffrement retiré, vérification incomplète. Le backend le sait depuis
+  // toujours, l'interface ne le montrait pas.
+  const [notices, setNotices] = useState<ExportNotice[]>([]);
+
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const nextRectangleNumberRef = useRef(1);
 
   const clearNotices = () => {
     setErrorInfo(null);
+    setNotices([]);
   };
 
   const selectedPresets = useMemo(() => {
@@ -319,6 +326,7 @@ export default function App() {
       });
 
       downloadBlob(r.pdfBlob, "redacted.pdf");
+      setNotices(r.notices);
     } catch (err) {
       // 409 : rien n'a fui, mais une partie de la page échappait aux règles. En
       // mode `review` ce n'est pas une erreur à afficher, c'est une revue à faire
@@ -487,6 +495,8 @@ export default function App() {
           </button>
         </aside>
       </form>
+
+      <ExportNotices t={t} notices={notices} onDismiss={() => setNotices([])} />
 
       {errorInfo ? (
         <div className="auditModalOverlay" onMouseDown={() => setErrorInfo(null)}>

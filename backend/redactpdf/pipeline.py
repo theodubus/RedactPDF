@@ -320,6 +320,36 @@ def decrypted_view(pdf_bytes: bytes, password: str | None) -> bytes:
         doc.close()
 
 
+def encryption_of(pdf_bytes: bytes) -> str | None:
+    """Le chiffrement du document **d'entrée**, lu avant `decrypted_view`.
+
+    La sortie n'est jamais chiffrée : caviarder réécrit le fichier, et il n'y a
+    pas de mot de passe légitime à réutiliser (celui de l'entrée appartient à
+    l'expéditeur d'origine, pas au destinataire du document caviardé). Mesuré le
+    10 septembre 2026 : entrée AES-256 avec mot de passe utilisateur, sortie
+    `needs_pass=0`, `is_encrypted=False`. Les restrictions d'un mot de passe
+    **propriétaire** tombent avec (permissions -3388 en entrée, -4 en sortie),
+    et c'est sans conséquence réelle : ces restrictions sont consultatives, tout
+    lecteur peut les ignorer.
+
+    Choix assumé, donc, mais transformation importante de confidentialité : un
+    fichier qui demandait un mot de passe n'en demande plus. On le dit dans le
+    rapport plutôt que de le laisser découvrir.
+
+    `needs_pass` d'abord : tant qu'on n'a pas authentifié, `metadata` n'est pas
+    lisible.
+    """
+    doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")
+    try:
+        if doc.needs_pass:
+            return "password"
+        metadata = doc.metadata or {}
+        value = metadata.get("encryption")
+        return str(value) if value else None
+    finally:
+        doc.close()
+
+
 def signatures_in(pdf_bytes: bytes) -> list[str]:
     """Les champs de signature du document d'entrée, pour pouvoir le dire.
 

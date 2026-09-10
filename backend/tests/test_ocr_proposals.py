@@ -293,12 +293,22 @@ def test_a_missing_language_does_not_take_the_others_down_with_it() -> None:
 
 
 @pytest.mark.integration
-def test_an_image_below_the_review_threshold_is_still_read() -> None:
-    """Le seuil décide de ce qu'on montre, pas de ce qu'on lit.
+def test_a_small_image_carrying_a_name_is_not_exported_silently() -> None:
+    """La régression du 10 septembre 2026, et le troisième seuil de surface à tomber.
 
-    Un logo ne mérite pas un écran de relecture, mais il peut porter un nom
-    d'employeur, et le lire coûte un dixième de seconde. Mesuré sur une fiche de
-    paie réelle : logo de 202 x 122 px, 0,11 s, « REPUBLIQUE FRANCAISE » lu.
+    Ce test affirmait auparavant l'inverse : « le seuil décide de ce qu'on montre,
+    pas de ce qu'on lit », donc une petite image donnait un 200 accompagné d'une
+    proposition OCR. Le piège construit pour le vérifier a montré que la
+    distinction ne tenait pas. Tampon de 60 x 39 points sur une A4, soit 0,467 %,
+    portant BOURDILLON en 250 x 163 pixels :
+
+        avant   HTTP 200, audit pass, 0 occurrence, 0 proposition, aucune revue,
+                et l'OCR relit « BOURDILLON » dans l'image de sortie
+        apres   HTTP 409, la zone est signalée
+
+    L'OCR étant désactivé par défaut, la version d'avant fuyait sur le chemin par
+    défaut. Ce que le moteur peut lire et ce qu'il doit signaler ont désormais le
+    même seuil.
     """
     source = pymupdf.open()
     page = source.new_page()
@@ -308,26 +318,33 @@ def test_an_image_below_the_review_threshold_is_still_read() -> None:
 
     doc = pymupdf.open()
     dest = doc.new_page()
-    # Un dixième de la largeur : bien en dessous de MIN_PAGE_SHARE, donc jamais
-    # signalé à la relecture.
+    # 60 x 30 points sur une A4 : 0,36 % de la page, sous l'ancien seuil de 0,5 %.
     dest.insert_image(pymupdf.Rect(20, 20, 80, 50), pixmap=pix)
     pdf = doc.tobytes()
     doc.close()
 
     from redactpdf.opaque import find_opaque_regions
 
-    assert find_opaque_regions(pdf) == [], "cette image doit rester sous le seuil de revue"
+    regions = find_opaque_regions(pdf)
+    assert len(regions) == 1
+    assert regions[0].page_share < 0.005, "sous l'ancien seuil, et signalée quand même"
 
-    resp = _post(
+    # Défauts : pas d'OCR. Le chemin qui fuyait.
+    plain = _post(pdf, {"searches": [{"query": TARGET}]})
+    assert plain.status_code == 409, plain.text[:200]
+    assert plain.json()["detail"]["status"] == "inconclusive"
+
+    # Avec l'OCR, la zone est toujours signalée (une proposition n'éteint jamais
+    # une revue) mais la proposition est bien là pour la traiter.
+    with_ocr = _post(
         pdf,
         {
             "searches": [{"query": TARGET}],
-            "options": {"image_regions": "review", "ocr_proposals": True},
+            "options": {"image_regions": "ignore", "ocr_proposals": True},
         },
     )
-
-    assert resp.status_code == 200, resp.text[:200]
-    assert int(resp.headers["X-Redaction-Ocr-Proposals"]) >= 1
+    assert with_ocr.status_code == 200, with_ocr.text[:200]
+    assert int(with_ocr.headers["X-Redaction-Ocr-Proposals"]) >= 1
 
 
 def _pattern_document() -> bytes:

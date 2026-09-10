@@ -31,6 +31,7 @@ from redactpdf.pipeline import (
     apply_plan,
     audit_plan,
     decrypted_view,
+    encryption_of,
     ocr_targets,
     plan_redactions,
     readable_view,
@@ -446,14 +447,19 @@ async def redact_apply(
             },
         )
 
+    # Avant `decrypted_view`, obligatoirement : celui-ci rend des octets en clair,
+    # et lire le chiffrement après lui rend toujours « aucun ». Le test de
+    # non-régression a attrapé exactement cette inversion.
+    encryption = encryption_of(pdf_bytes)
+
     try:
         pdf_bytes = decrypted_view(pdf_bytes, data.password)
     except PasswordRequired as e:
         detail = {"status": "encrypted", "reason": e.code}
         raise HTTPException(status_code=400, detail=detail) from e
 
-    # Lu sur l'entrée, avant tout : après l'assainissement le champ n'existe plus,
-    # et c'est justement ce qu'il faut annoncer.
+    # Lu sur l'entrée déchiffrée, avant l'assainissement : après lui le champ
+    # n'existe plus, et c'est justement ce qu'il faut annoncer.
     signatures = signatures_in(pdf_bytes)
 
     # Une seule construction : la vue sur laquelle on juge « qu'est-ce qui n'a pas
@@ -467,6 +473,28 @@ async def redact_apply(
         remove_outline=data.options.remove_outline,
         remove_document_actions=data.options.remove_document_actions,
     )
+
+    # Ce que la vérification machine a réellement couvert. Trois issues rendaient
+    # jusqu'ici un rapport **byte pour byte identique** (mesuré le 10 sept. 2026) :
+    # une page de texte entièrement vérifiée, un scan dont l'humain a acquitté la
+    # zone, et un scan sur lequel l'appelant a explicitement renoncé au contrôle
+    # (`image_regions: "ignore"`). Toutes trois disaient `status: "pass"` et rien
+    # d'autre. Ce sont trois preuves différentes, et `pass` est l'actif principal
+    # du projet : le confondre avec « un humain a regardé » ou « personne n'a
+    # regardé » le vide de son sens.
+    #
+    # `status` ne change pas (l'audit a bien relu le texte de la sortie et n'y a
+    # rien trouvé), c'est un bloc `coverage` distinct qui porte ce que cette
+    # relecture ne couvrait pas, avec son propre en-tête.
+    mode_used = data.options.image_regions
+    promised_reading = bool(
+        data.searches or data.regexes or data.search or data.regex or data.presets
+    )
+    checked = False
+    unread_regions = 0
+    unread_font_pages = 0
+    acked_regions = 0
+    acked_font_pages = 0
 
     try:
         plan = plan_redactions(
@@ -483,7 +511,7 @@ async def redact_apply(
         # avec la donnée lisible à l'oeil. On refuse plutôt que de rendre un fichier
         # dont on ne peut pas répondre, et on le fait ici pour ne pas gaspiller le
         # travail de caviardage sur une requête qui sera refusée.
-        mode = data.options.image_regions
+        mode = mode_used
         has_textual_rules = bool(searches_req or regexes_req or presets_req)
         wants_ocr = data.options.ocr_proposals and has_textual_rules
         ocr_proposals: list[OcrProposal] = []
@@ -501,10 +529,11 @@ async def redact_apply(
             fonts = unreadable_fonts(view, plan, has_textual_rules=has_textual_rules)
 
             if wants_ocr:
-                # Sur **toutes** les images, pas seulement celles que la revue
-                # signale : le seuil de revue décide de ce qu'on montre, pas de ce
-                # qu'on lit, et un logo sous le seuil coûte un dixième de seconde
-                # à lire. Non filtré par les acquittements non plus : avoir
+                # Sur **toutes** les images. Le seuil de lecture et le seuil de
+                # signalement n'en font plus qu'un depuis le 10 septembre 2026 :
+                # les séparer laissait un tampon à 0,467 % de la page sortir en
+                # 200 avec un nom lisible dedans. Non filtré par les
+                # acquittements non plus : avoir
                 # regardé une image ne rend pas sa lecture inutile, et les deux
                 # requêtes d'un aller-retour de revue doivent proposer pareil.
                 #
@@ -550,12 +579,21 @@ async def redact_apply(
                     language=data.options.ocr_language,
                 )
                 plan = with_ocr_proposals(plan, [p.as_rect() for p in ocr_proposals])
+            # Ce que le contrôle a trouvé d'illisible, **avant** tout acquittement :
+            # c'est ce chiffre qui dit ce que la vérification machine n'a pas
+            # couvert, et il ne doit pas être effacé par le geste qui débloque.
+            checked = True
+            unread_regions = len(unresolved)
+            unread_font_pages = len({f.page for f in fonts})
+
             if mode == "review":
                 unresolved = [
                     r for r in unresolved if not _is_acknowledged(r, data.acknowledged_regions)
                 ]
                 acked_pages = set(data.acknowledged_font_pages)
                 fonts = [f for f in fonts if f.page not in acked_pages]
+                acked_regions = unread_regions - len(unresolved)
+                acked_font_pages = unread_font_pages - len({f.page for f in fonts})
 
             # `ignore` n'a pas cessé d'être `ignore` parce que l'OCR est allumé.
             # Les zones ont été calculées, mais seulement pour savoir où faire
@@ -641,6 +679,43 @@ async def redact_apply(
             "rects": [p.as_dict() for p in ocr_proposals],
         }
 
+    # `complete` n'est vrai que si la machine a pu lire tout ce qu'on lui a
+    # demandé de lire. Sans règle textuelle, rien n'a été promis, donc rien n'a
+    # manqué : le contrôle ne tourne pas et la couverture est complète de plein
+    # droit.
+    if not promised_reading:
+        # Aucune règle textuelle : le moteur n'a jamais promis de *lire* quoi que
+        # ce soit, donc il n'a rien manqué. Un rectangle est exécuté, pas lu.
+        coverage_level = "complete"
+    elif not checked:
+        # Le contrôle n'a pas tourné du tout (`ignore` sans OCR). On ne sait donc
+        # pas s'il y avait quelque chose d'illisible : c'est `skipped`, jamais
+        # `complete`. Une première version rendait `complete` ici, ce qui était
+        # exactement le contraire de la vérité et le pire des trois cas.
+        coverage_level = "skipped"
+    elif unread_regions + unread_font_pages == 0:
+        coverage_level = "complete"
+    elif mode_used == "ignore":
+        coverage_level = "skipped"
+    else:
+        coverage_level = "acknowledged"
+
+    coverage: dict[str, object] = {
+        "level": coverage_level,
+        "checked": checked,
+        "unread_regions": unread_regions,
+        "unread_font_pages": unread_font_pages,
+        "acknowledged_regions": acked_regions,
+        "acknowledged_font_pages": acked_font_pages,
+    }
+    if coverage_level != "complete":
+        coverage["note"] = (
+            "L'audit relit le texte du document produit. Les zones comptées ici "
+            "n'ont pas pu être lues par les règles : un « pass » ne dit rien de "
+            "leur contenu."
+        )
+    composite["coverage"] = coverage
+
     if signatures:
         # Le fichier de sortie n'est plus celui qui a été signé, par construction :
         # la signature couvre des octets qu'on vient de réécrire. Rien à corriger
@@ -653,6 +728,22 @@ async def redact_apply(
                 "Le document d'origine portait une signature. Caviarder réécrit "
                 "le fichier, donc la signature ne s'applique plus au résultat et "
                 "a été retirée. Un document caviardé ne peut pas rester signé."
+            ),
+        }
+
+    if encryption:
+        # La sortie n'est jamais chiffrée. Ce n'est pas un oubli : il n'existe pas
+        # de mot de passe légitime à remettre dessus, celui de l'entrée étant
+        # celui de l'expéditeur d'origine. Mais un fichier qui demandait un mot de
+        # passe n'en demande plus, et ça se dit.
+        composite["encryption"] = {
+            "input": encryption,
+            "output": None,
+            "note": (
+                "Le document d'origine était chiffré. Le document caviardé ne "
+                "l'est pas : caviarder réécrit le fichier, et aucun mot de passe "
+                "n'est reporté sur le résultat. Protégez-le comme un fichier en "
+                "clair."
             ),
         }
 
@@ -670,6 +761,11 @@ async def redact_apply(
         # niveau de certitude, les additionner effacerait la distinction.
         "X-Redaction-Ocr-Proposals": str(len(ocr_proposals)),
         "X-Redaction-Signatures-Removed": str(len(signatures)),
+        # Distinct de l'état d'audit, et volontairement : l'audit dit « rien de
+        # visé n'a survécu au texte que j'ai su lire », celui-ci dit de quoi ce
+        # « su lire » était fait. `complete`, `acknowledged` ou `skipped`.
+        "X-Redaction-Coverage": coverage_level,
+        "X-Redaction-Encryption-Removed": "1" if encryption else "0",
     }
     _add_report_headers(headers, composite)
     return Response(content=out_pdf, media_type="application/pdf", headers=headers)

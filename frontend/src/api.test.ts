@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { encryptedReason, redactApply } from "./api";
+import { encryptedReason, exportNotices, redactApply } from "./api";
 
 // Le payload construit ici est la seule chose que le backend verra. Une option
 // remplie d'une valeur par défaut de ce côté-ci écrase le défaut du serveur, et
@@ -101,5 +101,53 @@ describe("encryptedReason", () => {
     expect(encryptedReason({ detail: "Not Found" })).toBeNull();
     expect(encryptedReason(null)).toBeNull();
     expect(encryptedReason("erreur")).toBeNull();
+  });
+});
+
+// Les en-têtes ci-dessous sont ceux d'une réponse réelle, relevés sur un PDF
+// AES-256 portant un champ de signature :
+//
+//   x-redaction-signatures-removed: 1
+//   x-redaction-encryption-removed: 1
+//   x-redaction-coverage: complete
+//
+// Même discipline que pour `encryptedReason` : on teste contre la mesure, pas
+// contre la forme imaginée.
+describe("exportNotices", () => {
+  const h = (o: Record<string, string>) => new Headers(o);
+
+  it("ne dit rien sur un export ordinaire", () => {
+    expect(
+      exportNotices(
+        h({
+          "X-Redaction-Signatures-Removed": "0",
+          "X-Redaction-Encryption-Removed": "0",
+          "X-Redaction-Coverage": "complete",
+        }),
+      ),
+    ).toEqual([]);
+  });
+
+  it("signale une signature détruite et un chiffrement retiré", () => {
+    expect(
+      exportNotices(
+        h({
+          "X-Redaction-Signatures-Removed": "1",
+          "X-Redaction-Encryption-Removed": "1",
+          "X-Redaction-Coverage": "complete",
+        }),
+      ),
+    ).toEqual(["signature", "encryption"]);
+  });
+
+  it("distingue une revue humaine d'un renoncement explicite", () => {
+    expect(exportNotices(h({ "X-Redaction-Coverage": "acknowledged" }))).toEqual([
+      "coverageAcknowledged",
+    ]);
+    expect(exportNotices(h({ "X-Redaction-Coverage": "skipped" }))).toEqual(["coverageSkipped"]);
+  });
+
+  it("ne bronche pas sur des en-têtes absents", () => {
+    expect(exportNotices(h({}))).toEqual([]);
   });
 });

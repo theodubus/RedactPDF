@@ -128,5 +128,11 @@
   "password.wrong": "That password does not work. Check it and try again.",
   "password.placeholder": "Open password",
   "password.cancel": "Cancel",
-  "password.submit": "Unlock"
+  "password.submit": "Unlock",
+  "notice.title": "About the exported file",
+  "notice.dismiss": "Dismiss",
+  "notice.signature": "The original document carried a digital signature. Redacting rewrites the PDF, so the signature no longer applies to the result and has been removed. A redacted document cannot stay signed; if it needs to be, sign it again after redaction.",
+  "notice.encryption": "The original document was encrypted. The exported file is not, and opens with no password. Protect it as you would any unencrypted file.",
+  "notice.coverageAcknowledged": "One or more areas could not be read by the rules and were confirmed by hand. The audit re-reads the document's text: it says nothing about what those areas contain.",
+  "notice.coverageSkipped": "The check for unreadable areas was turned off for this export. Nothing verified what the images or unreadable fonts might contain."
 }

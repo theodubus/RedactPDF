@@ -31,11 +31,19 @@ l'infirmer. Le rapport le dit.
 
 Empaquetage
 -----------
-Tesseract est une dépendance native de l'ordre de 22 Mo, mesurée le 9 septembre
-2026 (16 Mo de données de langue, 3,1 Mo de bibliothèque, 2,6 Mo de leptonica).
-Le binaire figé vend « un fichier, rien à installer » : l'embarquer contredirait
-cette promesse pour une fonction qui ne porte aucune garantie. On détecte donc un
-tesseract système et on se désactive proprement s'il est absent.
+**Rien à installer.** Le moteur voyage déjà dans le `_mupdf.so` de PyMuPDF, ce
+qui a été vérifié en masquant entièrement `/usr/bin/tesseract` et
+`/usr/share/tesseract-ocr` puis en regardant l'OCR fonctionner depuis une wheel
+installée à neuf. Seuls manquaient les modèles de langue : `fra` et `eng`
+tiennent dans `redactpdf/_tessdata`, 5 Mo, trouvés par `paths.bundled_tessdata()`.
+Un tesseract système sert de repli, jamais de préférence, puisque les chiffres de
+qualité cités ici ne valent que pour la variante `tessdata_fast` embarquée.
+
+Une version antérieure de ce module concluait ici l'inverse, « dépendance native
+de l'ordre de 22 Mo, ne jamais l'embarquer ». **Cette mesure était fausse** : elle
+portait sur le paquet système Ubuntu, qui contient un moteur déjà présent chez
+nous. Le coût réel était de 5 Mo, et l'arbitrage a été renversé le 9 septembre
+2026.
 """
 from __future__ import annotations
 
@@ -45,7 +53,7 @@ from dataclasses import dataclass
 
 import pymupdf
 
-from redactpdf.opaque import OpaqueRegion
+from redactpdf.opaque import MIN_PAGE_SHARE, OpaqueRegion
 from redactpdf.paths import bundled_tessdata
 from redactpdf.presets import find_redaction_rectangles_for_presets
 from redactpdf.redaction import RedactionRect
@@ -63,17 +71,20 @@ from redactpdf.search import SearchOptions, find_redaction_rectangles
 DEFAULT_LANGUAGE = "fra+eng"
 FALLBACK_LANGUAGE = "eng"
 
-# Le détecteur passe sur **toutes** les images, pas seulement sur celles que la
-# revue signale. `MIN_PAGE_SHARE` répond à « faut-il déranger l'utilisateur avec
-# cette image » ; ici la question est « peut-on lire quelque chose dedans », et
-# elle n'a pas le même seuil. Mesuré : le logo d'une fiche de paie, 202 x 122
-# pixels, coûte 0,11 s et rend « Liberté Egalité Fraternité REPUBLIQUE
-# FRANCAISE ». Le coût suit le nombre de pixels, et ces images sont petites par
-# définition, donc élargir ne coûte presque rien.
+# Le détecteur passe sur **toutes** les images. Ce fut longtemps un seuil
+# distinct de celui de la revue, sur l'idée que « peut-on lire quelque chose
+# dedans » et « faut-il le signaler » n'appelaient pas la même réponse. Mesuré le
+# 10 septembre 2026, cette distinction était intenable : elle laissait un tampon
+# à 0,467 % de la page, portant un nom que l'OCR lit mot pour mot, sortir en
+# HTTP 200 avec un audit `pass` et aucune revue. Ce qui vaut la peine d'être lu
+# vaut la peine d'être dit, donc les deux seuils n'en font plus qu'un et
+# `MIN_PAGE_SHARE` est la seule valeur. Voir son commentaire dans `opaque.py`.
 #
 # Un plancher subsiste quand même : une image d'un pixel ne porte rien, et lancer
-# un OCR dessus n'est pas gratuit, seulement bon marché.
-OCR_MIN_PAGE_SHARE = 0.0002
+# un OCR dessus n'est pas gratuit, seulement bon marché. Mesuré : le logo d'une
+# fiche de paie, 202 x 122 pixels, coûte 0,11 s et rend « Liberté Egalité
+# Fraternité REPUBLIQUE FRANCAISE ».
+OCR_MIN_PAGE_SHARE = MIN_PAGE_SHARE
 
 
 @dataclass(frozen=True)

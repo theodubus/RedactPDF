@@ -150,14 +150,31 @@ the caller asked for.
 ### Opaque regions: what the rules could not read
 
 An image is a region the text rules cannot see. The detector is geometric and has
-exactly one criterion: the image covers at least **0.5 %** of the page. Text
+exactly one criterion: the image covers at least **0.02 %** of the page. Text
 drawn over it does not exempt it.
 
-The size threshold is deliberately low. A false flag costs one thumbnail to look
-at; a missing flag costs a leak, which is the same asymmetry that governs every
-other default here. Measured: a 40x40 pt logo covers 0.3 % of A4 and is ignored;
-the scanned identity block in `docs/demo-invoice.pdf` covers 7.7 % and is
-reported, correctly, since it holds a name and an ID number.
+That threshold has held three values, and the first two were wrong the same way.
+It sat at 0.5 % on the theory that a smaller image cannot carry much. Measured on
+10 September 2026, that was false: a 60x39 pt stamp on A4, **0.467 %**, carrying
+the name BOURDILLON as 250x163 pixels, produced HTTP 200 with `audit: pass`, zero
+occurrences, no review at all, and the name still legible in the exported image
+(OCR reads it back word for word). That is precisely the failure this check
+exists to close, one size down: "I could not have seen it, and I am reporting
+success".
+
+An area ratio ignores shape. This is the third threshold of that family to fall
+for that reason, after the 95 % coverage rule and the 5 % `text_ratio`, and it
+falls the same way: an area criterion cannot decide whether something was read.
+
+The remaining floor is the OCR's own, and the two constants are now one. What is
+worth reading is worth reporting. Measured cost across 17 real documents
+(payslips, an internship agreement, the Stirling test corpus): **6 extra regions
+in total**, on 3 documents; not one document carried an image below 0.02 %. The
+worst case was built rather than guessed: 40 **distinct** icons at 0.065 % each
+give 40 review screens, while 40 identical ones give a single screen, since
+grouping is by pixel digest. Over-flagging stays the right way round: it costs a
+thumbnail to scroll past, or a deliberate `ignore`, where under-flagging costs a
+silent leak.
 
 An earlier version had a second criterion, and it was wrong. It skipped any image
 where more than 5 % of the area sat under a text block, on the theory that an
@@ -455,6 +472,58 @@ is exactly where a character survives.
 with no interface. The 409 is distinct from the 400 that means targeted content
 survived: a script can tell "unresolved region" from "leak" without parsing the
 body.
+
+### What `pass` means, and what it does not
+
+`X-Redaction-Audit-Status: pass` is the project's main asset, so it has to keep a
+strict meaning. Until 10 September 2026 it did not: three conceptually different
+outcomes produced a **byte for byte identical** report.
+
+| Outcome | What was actually proven |
+|---|---|
+| A text document, fully read | The machine read everything it was asked to read, and nothing targeted survived |
+| A scan whose region a human acknowledged | A person looked at an area the machine could not read, and accepted it |
+| A scan exported with `image_regions: ignore` | Nobody checked at all |
+
+All three said `status: "pass"`, with the same keys and the same header. An API
+caller could not tell the first from the third.
+
+`status` did not change, because the audit really did re-read the output text and
+really did find nothing: that is true in all three cases. What was missing is a
+second axis saying what that re-reading covered. The success report now carries a
+`coverage` block and the response an `X-Redaction-Coverage` header, with three
+values:
+
+- `complete`: either the machine read everything it was asked to, or no textual
+  rule was requested at all, in which case nothing was promised. A rectangle is
+  executed, not read.
+- `acknowledged`: something was unreadable and a person confirmed it. A valid
+  outcome, and not the same proof as a machine verification.
+- `skipped`: the caller turned the check off, or it never ran. Note this is the
+  case a first implementation reported as `complete`, which was the exact
+  opposite of the truth and the worst of the three.
+
+The rule generalises: a human acknowledgement and an explicit opt-out are both
+legitimate ways to finish, and neither may ever be dressed up as a completed
+machine verification. Any future `acknowledged` escape hatch follows the same
+rule, and in particular there must never be a global `force=true` that turns
+uncertainty into success without saying so.
+
+### An encrypted document does not come back encrypted
+
+Measured on 10 September 2026: an AES-256 input protected by a user password
+exports as `needs_pass=0`, `is_encrypted=False`, openable by anyone. The
+restrictions carried by an **owner** password are dropped too (permissions -3388
+in, -4 out), which has no real consequence since those restrictions are advisory
+and any reader may ignore them.
+
+This is deliberate. Redacting rewrites the file, and there is no legitimate
+password to put back: the input password belongs to the original sender, not to
+whoever receives the redacted copy. Preserving owner restrictions would be
+security theatre. So the behaviour stays, and what was missing was saying so: the
+report carries an `encryption` block and the response an
+`X-Redaction-Encryption-Removed` header. A file that used to ask for a password
+no longer does, and the person exporting it should know that before they send it.
 
 ### Unknown payload keys are rejected
 

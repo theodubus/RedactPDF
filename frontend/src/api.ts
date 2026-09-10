@@ -54,6 +54,44 @@ export function encryptedReason(body: unknown): "password_required" | "password_
   return detail.reason === "password_incorrect" ? "password_incorrect" : "password_required";
 }
 
+/**
+ * Ce qu'il faut dire à l'utilisateur après un export **réussi**.
+ *
+ * Trois choses que le backend savait et que l'interface ne montrait pas, donc
+ * réservées de fait aux appelants de l'API :
+ *
+ *   signature   le document était signé, il ne l'est plus. Découvert autrement
+ *               chez le destinataire, une fois le contrat envoyé.
+ *   encryption  le document demandait un mot de passe, le résultat non.
+ *   coverage    « pass » ne veut pas dire la même chose selon que la machine a
+ *               tout lu, qu'un humain a acquitté une zone illisible, ou que
+ *               l'appelant a renoncé au contrôle.
+ *
+ * Fonction pure sur les en-têtes, sans DOM, pour la même raison que
+ * `reviewItems.ts` : c'est ce qui la rend testable contre les octets réels du
+ * serveur. Plusieurs pannes silencieuses sont venues d'un frontend testé contre
+ * une forme imaginée plutôt que mesurée.
+ */
+export type ExportNotice =
+  | "signature"
+  | "encryption"
+  | "coverageAcknowledged"
+  | "coverageSkipped";
+
+export function exportNotices(headers: Headers): ExportNotice[] {
+  const out: ExportNotice[] = [];
+  const count = (name: string) => Number(headers.get(name) ?? "0") || 0;
+
+  if (count("X-Redaction-Signatures-Removed") > 0) out.push("signature");
+  if (count("X-Redaction-Encryption-Removed") > 0) out.push("encryption");
+
+  const coverage = headers.get("X-Redaction-Coverage");
+  if (coverage === "acknowledged") out.push("coverageAcknowledged");
+  else if (coverage === "skipped") out.push("coverageSkipped");
+
+  return out;
+}
+
 export type PresetKey = "email" | "phone" | "credit_card";
 
 export type ImageMode = "none" | "remove" | "pixels";
@@ -95,6 +133,8 @@ export type RuleInput =
 
 export type RedactSuccess = {
   pdfBlob: Blob;
+  /** Ce que l'export a changé sans qu'on l'ait demandé. Voir `exportNotices`. */
+  notices: ExportNotice[];
   headers: {
     auditStatus?: string;
     auditMatches?: string;
@@ -104,14 +144,7 @@ export type RedactSuccess = {
     occurrencesPresets?: string;
     occurrencesTotal?: string;
 
-    /**
-     * Nombre de champs de signature que portait le document d'entrée.
-     *
-     * Caviarder réécrit les octets du fichier, donc la signature ne s'applique
-     * plus au résultat : aucune implémentation ne peut préserver les deux. Le
-     * backend le compte pour qu'on puisse le dire ; l'interface ne l'affiche pas
-     * encore, faute de surface de notification sur un export réussi.
-     */
+    /** Nombre de champs de signature que portait le document d'entrée. Voir `ExportNotice`. */
     signaturesRemoved?: string;
   };
 };
@@ -237,6 +270,7 @@ export async function redactApply(params: {
 
   return {
     pdfBlob: blob,
+    notices: exportNotices(resp.headers),
     headers: {
       auditStatus: getHeader(resp.headers, "X-Redaction-Audit-Status"),
       auditMatches: getHeader(resp.headers, "X-Redaction-Audit-Matches"),

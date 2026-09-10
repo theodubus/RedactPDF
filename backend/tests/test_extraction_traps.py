@@ -6,6 +6,7 @@ docs/SECURITY.md.
 """
 from __future__ import annotations
 
+import base64
 import json
 
 import pymupdf
@@ -161,3 +162,57 @@ def test_an_owner_password_alone_does_not_block_anything() -> None:
 
     assert resp.status_code == 200, resp.text[:200]
     assert b"Bourdillon" not in resp.content
+
+
+@pytest.mark.integration
+def test_the_output_of_an_encrypted_document_is_not_encrypted() -> None:
+    """Transformation importante de confidentialité, assumée et désormais dite.
+
+    Mesuré le 10 septembre 2026 : entrée AES-256 protégée par mot de passe
+    utilisateur, sortie `needs_pass=0`, `is_encrypted=False`, ouvrable par
+    n'importe qui. Les restrictions d'un mot de passe **propriétaire** tombent
+    aussi (permissions -3388 en entrée, -4 en sortie), ce qui est sans
+    conséquence réelle puisqu'elles sont consultatives.
+
+    Ce n'est pas un défaut à corriger : caviarder réécrit le fichier, et il
+    n'existe pas de mot de passe légitime à reporter dessus, celui de l'entrée
+    étant celui de l'expéditeur d'origine. Ce qui manquait, c'est de le dire.
+    """
+    resp = _post(
+        _encrypted("secret"),
+        {"searches": [{"query": "Bourdillon"}], "password": "secret"},
+    )
+
+    assert resp.status_code == 200, resp.text[:200]
+    assert resp.headers["X-Redaction-Encryption-Removed"] == "1"
+
+    report = json.loads(base64.b64decode(resp.headers["X-Redaction-Audit-Report-B64"]))
+    assert report["encryption"]["output"] is None
+    # « password » plutôt que le nom de l'algorithme : tant qu'on n'a pas
+    # authentifié, `metadata` n'est pas lisible, et c'est de toute façon le fait
+    # qui compte (le fichier ne s'ouvrait pas sans mot de passe, il s'ouvre
+    # maintenant). Un document chiffré sans mot de passe utilisateur rend bien,
+    # lui, la chaîne de l'algorithme.
+    assert report["encryption"]["input"] == "password"
+
+    out = pymupdf.open(stream=resp.content, filetype="pdf")
+    try:
+        assert out.needs_pass == 0
+        assert out.is_encrypted is False
+    finally:
+        out.close()
+
+
+@pytest.mark.integration
+def test_a_plain_document_carries_no_encryption_mention() -> None:
+    doc = pymupdf.open()
+    doc.new_page().insert_text((72, 100), "Bourdillon", fontname="helv", fontsize=12)
+    raw = doc.tobytes()
+    doc.close()
+
+    resp = _post(raw, {"searches": [{"query": "Bourdillon"}]})
+
+    assert resp.status_code == 200, resp.text[:200]
+    assert resp.headers["X-Redaction-Encryption-Removed"] == "0"
+    report = json.loads(base64.b64decode(resp.headers["X-Redaction-Audit-Report-B64"]))
+    assert "encryption" not in report

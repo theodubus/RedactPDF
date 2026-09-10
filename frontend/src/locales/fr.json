@@ -128,5 +128,11 @@
   "password.wrong": "Ce mot de passe ne convient pas. Vérifiez-le et réessayez.",
   "password.placeholder": "Mot de passe d'ouverture",
   "password.cancel": "Annuler",
-  "password.submit": "Déverrouiller"
+  "password.submit": "Déverrouiller",
+  "notice.title": "À savoir sur le fichier exporté",
+  "notice.dismiss": "Fermer",
+  "notice.signature": "Le document d'origine portait une signature numérique. Caviarder réécrit le PDF : la signature ne s'applique plus au résultat et a été retirée. Un document caviardé ne peut pas rester signé ; s'il doit l'être, il faut le signer à nouveau après le caviardage.",
+  "notice.encryption": "Le document d'origine était chiffré. Le fichier exporté ne l'est pas et s'ouvre sans mot de passe. Protégez-le comme un fichier en clair.",
+  "notice.coverageAcknowledged": "Une ou plusieurs zones n'ont pas pu être lues par les règles et ont été validées à la main. L'audit relit le texte du document : il ne dit rien du contenu de ces zones.",
+  "notice.coverageSkipped": "Le contrôle des zones illisibles a été désactivé pour cet export. Rien n'a vérifié ce que les images ou les polices non lisibles pouvaient contenir."
 }

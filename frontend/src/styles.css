@@ -765,3 +765,39 @@ body,
   margin: 10px 0;
   line-height: 1.5;
 }
+
+/* Ce que l'export a changé sans qu'on l'ait demandé. Non bloquant : le fichier
+   est déjà téléchargé et il n'y a plus rien à décider, seulement à savoir. */
+.exportNotices {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border: 1px solid var(--warn-border, #d8b26a);
+  border-left-width: 3px;
+  border-radius: 6px;
+  background: var(--warn-bg, #fdf7e8);
+  font-size: 13px;
+  line-height: 1.45;
+}
+.exportNoticesHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.exportNotices ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+.exportNotices li + li {
+  margin-top: 6px;
+}
+.exportNoticesClose {
+  border: 0;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+  font-size: 12px;
+  text-decoration: underline;
+  color: inherit;
+  opacity: 0.75;
+}

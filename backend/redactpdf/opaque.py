@@ -54,11 +54,37 @@ from dataclasses import dataclass
 
 import pymupdf
 
-# Une image sous ce seuil ne peut pas porter grand-chose. Mesuré : un logo occupe
-# 0,3 % d'une A4, le bloc d'identité scanné de docs/demo-invoice.pdf en occupe
-# 7,7 %. Le seuil est bas parce qu'un signalement de trop coûte une vignette à
-# faire défiler, alors qu'un signalement manquant coûte une fuite.
-MIN_PAGE_SHARE = 0.005
+# Plancher sous lequel une image n'est pas examinée. **Troisième valeur de ce
+# seuil, et les deux premières étaient fausses de la même façon.**
+#
+# Il a valu 0,5 % de la page, sur l'idée qu'« une image sous ce seuil ne peut pas
+# porter grand-chose ». Mesuré le 10 septembre 2026, c'était faux : un tampon de
+# 60 x 39 points sur une A4, soit 0,467 %, portant le nom BOURDILLON en 250 x 163
+# pixels, donne HTTP 200, audit `pass`, zéro occurrence, aucune revue, et le nom
+# se relit parfaitement dans l'image de sortie (l'OCR le rend mot pour mot).
+# C'est exactement la famille d'échec que le contrôle existe pour fermer :
+# « je n'aurais pas pu le voir, mais je conclus succès ».
+#
+# Une part de surface ignore la forme. C'est le troisième seuil de cette famille
+# à tomber pour cette raison, après la couverture à 95 % et le `text_ratio` à
+# 5 %, et il tombe de la même manière : on ne garde pas un critère de surface
+# pour décider si quelque chose a été lu.
+#
+# Le plancher restant vaut celui de l'OCR, et les deux constantes ne font plus
+# qu'une : la question « peut-on lire quelque chose dedans » et la question
+# « faut-il le signaler » ont désormais la même réponse. Le projet avait déjà
+# tranché que 0,02 % vaut la peine d'être lu ; il n'y a pas de raison que ce qui
+# vaut la peine d'être lu ne vaille pas la peine d'être dit.
+#
+# Coût mesuré sur 17 documents réels (bulletins, convention de stage, corpus de
+# test Stirling) : **6 zones de plus au total**, sur 3 documents. Le pire cas
+# existe et a été construit, 40 icônes *distinctes* à 0,065 % donnent 40 écrans ;
+# 40 icônes identiques n'en donnent qu'un, puisque le regroupement se fait par
+# empreinte de pixels. Aucun document du corpus réel n'a la moindre image sous
+# 0,02 %. Le sur-signalement reste le bon sens de l'erreur : il coûte une
+# vignette à faire défiler ou un mode `ignore` assumé, là où le sous-signalement
+# coûte une fuite silencieuse.
+MIN_PAGE_SHARE = 0.0002
 
 # Marge tolérée sur chaque bord quand on juge qu'un rectangle couvre une zone.
 # Deux points : de quoi absorber un tracé à la main imprécis, pas de quoi laisser

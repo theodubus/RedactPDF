@@ -116,14 +116,28 @@ def test_a_scan_no_longer_exports_silently() -> None:
 
 
 @pytest.mark.integration
-def test_only_the_scanned_block_is_reported_on_a_hybrid_page() -> None:
-    """Le tableau scanné est signalé, le logo non : le seuil de taille les sépare."""
+def test_a_hybrid_page_reports_every_image_including_the_logo() -> None:
+    """Le tableau scanné **et** le logo, désormais.
+
+    Ce test affirmait l'inverse jusqu'au 10 septembre 2026 : « le logo n'est pas
+    signalé, le seuil de taille les sépare ». Le seuil valait 0,5 % de la page, et
+    la mesure qui l'a fait tomber est un tampon de 60 x 39 points, soit 0,467 %,
+    portant un nom que l'OCR relit mot pour mot, exporté en HTTP 200 avec un audit
+    `pass` et aucune revue. Une part de surface ne dit pas si quelque chose a été
+    lu ; c'est le troisième seuil de cette famille à tomber pour cette raison.
+
+    Le coût est ici, visible : un logo décoratif devient un écran de revue. C'est
+    le bon sens de l'erreur, et le regroupement par empreinte de pixels fait qu'un
+    logo répété sur trente pages n'en coûte qu'un.
+    """
     resp = _post(_hybrid(), {"searches": [{"query": "Dupont"}]})
 
     assert resp.status_code == 409, resp.text
     regions = resp.json()["detail"]["opaque_regions"]
-    assert len(regions) == 1
-    assert regions[0]["page_share"] > 0.05
+    shares = sorted(r["page_share"] for r in regions)
+    assert len(regions) == 2
+    assert shares[1] > 0.05, "le tableau scanné"
+    assert 0.0002 <= shares[0] < 0.005, "le logo, sous l'ancien seuil de 0,5 %"
 
 
 @pytest.mark.integration
