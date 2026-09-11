@@ -35,7 +35,12 @@ RedactPDF is a local PDF redaction tool intended to produce a **new exported PDF
   `/AF` (associated files), `/PageLabels`, the display name of an optional
   content group, the text keys of a tagged structure element (`/Alt`,
   `/ActualText`, `/T`, `/E`), the property lists a `BDC` operator names,
-  `/Collection`, and XMP hung on a page rather than on the catalogue. Redaction cleans what is drawn; those objects carry text nobody
+  `/Collection`, XMP hung on a page rather than on the catalogue, `/SpiderInfo`
+  (the URLs an Acrobat web capture keeps), the `/Names` subtrees no renderer
+  reads (`/URLS`, `/Templates`, `/IDS`, `/AlternatePresentations`,
+  `/Renditions`, `/Pages`), and named destinations at both places the format
+  allows them. An embedded full-text search index falls with `/PieceInfo`, which
+  is where Acrobat stores it. Redaction cleans what is drawn; those objects carry text nobody
   looks at and no geometric rule reaches. Measured before the last
   four were added: a rule for `Dupont` cleaned the page, returned 200, and left
   "Dossier Dupont - confidentiel" sitting in the navigation pane.

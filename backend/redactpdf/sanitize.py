@@ -192,7 +192,12 @@ def _drop_acroform(doc: pymupdf.Document) -> None:
 # l'OCR relit « BOURDILLON » mot pour mot dans la vignette de sortie d'un export
 # réussi dont la page, elle, était propre.
 _PAGE_CARRIERS = ("Thumb", "PieceInfo")
-_CATALOG_CARRIERS = ("PieceInfo", "Threads", "Collection")
+_CATALOG_CARRIERS = ("PieceInfo", "Threads", "Collection", "SpiderInfo")
+# Sous-arbres de /Names que rien ne dessine. `EmbeddedFiles` et `JavaScript`
+# n'y sont pas : ils ont deja leur drapeau, et les couper ici retirerait a
+# un appelant ce qu'il a explicitement choisi de garder.
+_NAMES_SUBTREES = ("URLS", "Templates", "IDS", "AlternatePresentations",
+                   "Renditions", "Pages")
 _STRUCT_TEXT_KEYS = ("Alt", "ActualText", "T", "E")
 _PROPERTY_LIST_KEEP = ("/OCG", "/OCMD")
 _INDIRECT = re.compile(r"/([^\s/\[\]<>(){}]+)\s+(\d+)\s+\d+\s+R")
@@ -284,6 +289,57 @@ def _strip_property_lists(doc: pymupdf.Document) -> None:
                 doc.update_object(xref, "<<>>")
             except Exception:
                 pass
+
+
+def _drop_name_trees(doc: pymupdf.Document) -> None:
+    """
+    `/Names` est un annuaire de chaînes choisies par le producteur, et plusieurs
+    de ses sous-arbres ne sont lus par aucun moteur de rendu : mesuré le
+    11 sept. 2026, un `/Names/URLS` et un `/Names/Templates` portant la cible
+    ressortaient d'un export en 200.
+
+    `/EmbeddedFiles` et `/JavaScript` restent à leurs drapeaux respectifs : les
+    couper ici retirerait à un appelant ce qu'il a explicitement choisi de
+    garder, et un test vérifie précisément ce droit de retrait.
+    """
+    catalog = doc.pdf_catalog()
+    try:
+        kind, value = doc.xref_get_key(catalog, "Names")
+    except Exception:
+        return
+    if kind == "xref":
+        names = int(value.split()[0])
+    elif kind == "dict":
+        names = catalog
+        _drop_keys(doc, catalog, tuple(f"Names/{k}" for k in _NAMES_SUBTREES))
+        return
+    else:
+        return
+    _drop_keys(doc, names, _NAMES_SUBTREES)
+
+
+def _drop_destinations(doc: pymupdf.Document) -> None:
+    """
+    Le nom d'une destination est une chaîne libre (« Dossier BOURDILLON »), aux
+    deux emplacements que le format autorise : `/Dests` au catalogue, forme
+    d'origine, et `/Names/Dests`, forme moderne.
+
+    Rattaché à `remove_annotations` et non laissé sans drapeau, parce qu'une
+    destination nommée n'existe que pour être visée par un lien. Quand les
+    annotations partent, elle ne coûte rien ; quand l'appelant les garde, la
+    couper casserait des liens qu'il a choisi de conserver. C'est le seul
+    drapeau dont la réponse soit la même que celle de ce porteur.
+    """
+    catalog = doc.pdf_catalog()
+    _drop_keys(doc, catalog, ("Dests",))
+    try:
+        kind, value = doc.xref_get_key(catalog, "Names")
+    except Exception:
+        return
+    if kind == "xref":
+        _drop_keys(doc, int(value.split()[0]), ("Dests",))
+    elif kind == "dict":
+        _drop_keys(doc, catalog, ("Names/Dests",))
 
 
 def _drop_object_metadata(doc: pymupdf.Document) -> None:
@@ -434,6 +490,7 @@ def sanitize_document(
 
         # Une fois, pour le document : le formulaire est au catalogue, pas aux pages.
         _drop_acroform(doc)
+        _drop_destinations(doc)
 
     # Sans drapeau, volontairement : couper un Form XObject que rien n'invoque ne
     # peut pas changer l'apparence du document, puisque aucun lecteur ne le
@@ -445,6 +502,7 @@ def sanitize_document(
     _drop_keys(doc, doc.pdf_catalog(), _CATALOG_CARRIERS)
     _strip_structure_text(doc)
     _strip_property_lists(doc)
+    _drop_name_trees(doc)
 
     if remove_outline:
         try:

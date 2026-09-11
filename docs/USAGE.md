@@ -97,7 +97,10 @@ the ones that decide whether something gets missed.
   private application data (`/PieceInfo`), article threads, associated files
   (`/AF`), page label prefixes, the display name of a layer, the alternate and
   actual text of a tagged structure element, marked-content property lists,
-  portfolio collections, and XMP hung on a page rather than the document. See
+  portfolio collections, XMP hung on a page rather than the document, the URLs
+  kept by an Acrobat web capture, and the name directories no renderer reads.
+  Named destinations go with the links that point at them, so they follow the
+  annotation option rather than leaving a link pointing nowhere. See
   [SECURITY.md](SECURITY.md#current-guarantees-high-level) for what each one carried.
 - **Every rectangle is computed from the original file**, before anything is
   removed. Deriving them from a partly redacted document would let an early rule

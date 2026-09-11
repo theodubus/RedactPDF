@@ -500,3 +500,89 @@ def test_a_signature_appearance_does_not_survive_the_export() -> None:
     response = _redact(pdf)
     assert response.status_code == 200
     assert not _anywhere_in(response.content, TARGET)
+
+
+# ---------------------------------------------------------------------------
+# Troisième lot : ce que pikepdf (liant qpdf) traite dans son propre module
+# d'assainissement. Sa liste recoupe la nôtre entrée par entrée sur `/Thumb`,
+# `/PieceInfo`, `/AF`, `/Collection` et `/RichMedia`, ce qui valide la méthode
+# autant que le résultat. Trois entrées manquaient de notre côté.
+# ---------------------------------------------------------------------------
+
+
+def _document_with_name_carriers() -> bytes:
+    """La cible dans les annuaires de noms et dans la capture web."""
+    doc = pymupdf.open()
+    page = doc.new_page(width=300, height=200)
+    page.insert_text((40, 100), "rien a voir", fontname="helv", fontsize=14)
+    catalog = doc.pdf_catalog()
+
+    spider = doc.get_new_xref()
+    doc.update_object(spider, f"<</V 1.0/C[<</Type/SPS/S(http://intranet/{TARGET})>>]>>")
+    doc.xref_set_key(catalog, "SpiderInfo", f"{spider} 0 R")
+
+    urls = doc.get_new_xref()
+    doc.update_object(urls, f"<</Names[(u1)(http://x/{TARGET})]>>")
+    templates = doc.get_new_xref()
+    doc.update_object(templates, f"<</Names[(Modele {TARGET})3 0 R]>>")
+    dests = doc.get_new_xref()
+    doc.update_object(dests, f"<</Names[(Dossier {TARGET})[3 0 R /Fit]]>>")
+    doc.xref_set_key(
+        catalog,
+        "Names",
+        f"<</URLS {urls} 0 R/Templates {templates} 0 R/Dests {dests} 0 R>>",
+    )
+
+    legacy = doc.get_new_xref()
+    doc.update_object(legacy, f"<</Dossier{TARGET}[3 0 R /Fit]>>")
+    doc.xref_set_key(catalog, "Dests", f"{legacy} 0 R")
+
+    out: bytes = doc.tobytes()
+    doc.close()
+    return out
+
+
+@pytest.mark.integration
+def test_the_name_carriers_fixture_really_carries_the_target() -> None:
+    """Sans ce contrôle, le test suivant passerait sur un document vide."""
+    assert _anywhere_in(_document_with_name_carriers(), TARGET)
+
+
+@pytest.mark.integration
+def test_name_trees_and_web_capture_do_not_survive_the_export() -> None:
+    """`/Names` est un annuaire de chaînes libres qu'aucun moteur ne dessine.
+
+    `/Dests` existe aux deux emplacements que le format autorise, l'ancien au
+    catalogue et le moderne sous `/Names`, et les deux fuyaient. `/SpiderInfo`
+    garde les URL des pages aspirées par une capture web Acrobat.
+    """
+    response = _redact(_document_with_name_carriers())
+    assert response.status_code == 200
+    assert not _anywhere_in(response.content, TARGET)
+
+
+@pytest.mark.integration
+def test_an_embedded_search_index_does_not_survive_the_export() -> None:
+    """Acrobat range un index plein texte dans `/PieceInfo/SearchIndex`.
+
+    pikepdf le traite à part et nomme exactement le risque : « avoids a stale
+    index leaking content you intended to edit or redact ». Chez nous il tombe
+    avec `/PieceInfo`, coupé en entier. Le test existe pour que découper
+    `/PieceInfo` plus finement un jour ne rouvre pas ce trou-là sans le voir.
+    """
+    doc = pymupdf.open()
+    page = doc.new_page(width=300, height=200)
+    page.insert_text((40, 100), "rien a voir", fontname="helv", fontsize=14)
+    index = doc.get_new_xref()
+    doc.update_object(index, "<</Type/SearchIndexData>>")
+    doc.update_stream(index, f"index: {TARGET}".encode(), new=True, compress=True)
+    holder = doc.get_new_xref()
+    doc.update_object(holder, f"<</Private {index} 0 R>>")
+    doc.xref_set_key(doc.pdf_catalog(), "PieceInfo", f"<</SearchIndex {holder} 0 R>>")
+    pdf: bytes = doc.tobytes()
+    doc.close()
+
+    assert _anywhere_in(pdf, TARGET)
+    response = _redact(pdf)
+    assert response.status_code == 200
+    assert not _anywhere_in(response.content, TARGET)
