@@ -842,9 +842,22 @@ the local binary, the main way this tool is used, has no deployer at all.
 
 ## Reporting Security Issues
 
-Please open a security issue with:
+**Report it privately**, through GitHub's private vulnerability reporting:
+[Security tab → Report a vulnerability](https://github.com/theodubus/RedactPDF/security/advisories/new).
+It is enabled on this repository. The report is visible to the maintainer only,
+which is what you want for a redaction bug, since a working reproduction of one
+is a recipe for reading somebody's redacted document.
+
+Do not open a public issue for it. The tracker is public, so an issue is a
+disclosure, and telling you to file one would be asking you to publish the
+problem before it is fixed.
+
+Please include:
 
 - minimal reproduction document (if shareable),
 - exact steps,
 - expected vs actual behavior,
 - platform/runtime info.
+
+A bug that is not a security issue (a crash, a wrong rectangle, a build
+problem) belongs in a normal public issue.
