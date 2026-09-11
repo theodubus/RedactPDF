@@ -180,6 +180,70 @@ def _drop_acroform(doc: pymupdf.Document) -> None:
         pass
 
 
+# Porteurs que l'extraction ne lit pas et qu'aucun lecteur ne dessine sur la
+# page. Trouvés le 11 sept. 2026 en soustrayant l'énumération des clés de
+# catalogue et de page (§7.7.2 et §7.7.3.3) de ce que ce module traitait : les
+# six rendaient HTTP 200, `audit: pass` et surtout `coverage: complete`, donc le
+# pire des trois verdicts possibles.
+#
+# `/Thumb` est le cas d'école : une vignette de page est le rendu de la page
+# AVANT caviardage, elle n'a aucun placement dans le flux de contenu, donc
+# `opaque.py` ne peut pas la voir -- il examine les images dessinées. Mesuré :
+# l'OCR relit « BOURDILLON » mot pour mot dans la vignette de sortie d'un export
+# réussi dont la page, elle, était propre.
+_PAGE_CARRIERS = ("Thumb", "PieceInfo")
+_CATALOG_CARRIERS = ("PieceInfo", "Threads")
+
+
+def _drop_keys(doc: pymupdf.Document, xref: int, keys: tuple[str, ...]) -> None:
+    for key in keys:
+        try:
+            doc.xref_set_key(xref, key, "null")
+        except Exception:
+            pass
+
+
+def _drop_associated_files(doc: pymupdf.Document) -> None:
+    """
+    `/AF` est une pièce jointe par une autre porte : même objet `/Filespec`, même
+    flux `/EmbeddedFile`, mais accroché au catalogue ou à une page au lieu de
+    `/Names/EmbeddedFiles`. `embfile_del` ne le voit donc pas, et le fichier
+    ressort intact. Rattaché à `remove_attachments` parce que c'est la même
+    intention utilisateur, pas un troisième réglage à comprendre.
+    """
+    _drop_keys(doc, doc.pdf_catalog(), ("AF",))
+    for page in doc:
+        _drop_keys(doc, page.xref, ("AF",))
+
+
+def _drop_page_labels(doc: pymupdf.Document) -> None:
+    """`/PageLabels` porte un préfixe de numérotation, texte libre choisi par le
+    producteur (« Dossier BOURDILLON - »). Rattaché à `sanitize_metadata` : c'est
+    du texte descriptif sur le document, comme le dictionnaire Info."""
+    _drop_keys(doc, doc.pdf_catalog(), ("PageLabels",))
+
+
+def _neutralise_ocg_names(doc: pymupdf.Document) -> None:
+    """
+    Seul porteur du lot qu'on ne coupe pas en entier, et la raison compte : un
+    groupe de contenu optionnel *dessine*, le supprimer changerait le document,
+    et `pipeline.all_layers_visible` les allume justement pour que les règles
+    lisent ce qu'ils portent. Ce qui fuit n'est pas le conteneur mais son
+    étiquette, `/Name`, affichée dans le panneau des calques et lue par personne
+    d'autre. On la remplace donc sans la chercher : la règle du module — ne
+    jamais avoir à connaître la cible — est intacte.
+    """
+    try:
+        ocgs = doc.get_ocgs()
+    except Exception:
+        return
+    for xref in ocgs:
+        try:
+            doc.xref_set_key(xref, "Name", "(layer)")
+        except Exception:
+            pass
+
+
 def signature_fields(doc: pymupdf.Document) -> list[str]:
     """Noms des champs de signature du document, lus **avant** caviardage.
 
@@ -233,7 +297,9 @@ def sanitize_document(
 
     - sanitize_metadata: clear Info dict + XML metadata stream (XMP)
     - remove_annotations: supprime liens + annotations + widgets (form fields)
-    - remove_attachments: supprime les embedded files
+    - remove_attachments: supprime les embedded files, `/Names/EmbeddedFiles`
+      comme `/AF` (associated files), qui est la même pièce jointe par une
+      autre porte
     - remove_outline: supprime les signets, dont les titres portent régulièrement
       un nom de dossier ou de personne
     - remove_document_actions: supprime le JavaScript de document, /OpenAction,
@@ -255,6 +321,9 @@ def sanitize_document(
             except Exception:
                 # si pas de XML metadata, certaines versions peuvent lever – ce n'est pas bloquant
                 pass
+
+        _drop_page_labels(doc)
+        _neutralise_ocg_names(doc)
 
     if remove_annotations:
         for pno in range(doc.page_count):
@@ -294,6 +363,8 @@ def sanitize_document(
     # une option de plus ne ferait qu'offrir un moyen de garder une fuite.
     for page in doc:
         _drop_unused_xobjects(doc, page)
+        _drop_keys(doc, page.xref, _PAGE_CARRIERS)
+    _drop_keys(doc, doc.pdf_catalog(), _CATALOG_CARRIERS)
 
     if remove_outline:
         try:
@@ -311,3 +382,7 @@ def sanitize_document(
             names = []
         for name in names:
             doc.embfile_del(name)
+
+    if remove_attachments:
+        # Hors du `hasattr` ci-dessus : `/AF` ne passe pas par `embfile_*`.
+        _drop_associated_files(doc)

@@ -30,10 +30,30 @@ RedactPDF is a local PDF redaction tool intended to produce a **new exported PDF
   + vector-graphics removal + sanitation of everything that carries text outside
   the page content stream: metadata and XMP, links, annotations, form widgets,
   embedded attachments, **bookmark titles, document JavaScript, `/OpenAction`,
-  `/AA` and the XFA packet**. Redaction cleans what is drawn; those objects carry
-  text nobody looks at and no geometric rule reaches. Measured before the last
+  `/AA` and the XFA packet**, plus six carriers added on 11 September 2026:
+  a page's `/Thumb`, `/PieceInfo` on the catalogue and on each page, `/Threads`,
+  `/AF` (associated files), `/PageLabels` and the display name of an optional
+  content group. Redaction cleans what is drawn; those objects carry text nobody
+  looks at and no geometric rule reaches. Measured before the last
   four were added: a rule for `Dupont` cleaned the page, returned 200, and left
   "Dossier Dupont - confidentiel" sitting in the navigation pane.
+- **`/Thumb` deserves its own line**, because it is the sharpest form of the
+  failure this tool exists to prevent. A page thumbnail is a picture of the page
+  taken before the redaction, and it has no placement in the content stream, so
+  the opaque-region check cannot see it: that check examines images that are
+  drawn. Measured on 11 September 2026, before the fix: page text gone, HTTP 200,
+  `audit: pass`, `coverage: complete`, and OCR read the target name back out of
+  the exported thumbnail word for word. `complete` is the damning part, since it
+  is the value that exists to say "everything was read".
+- `/AF` is the same attachment as `/Names/EmbeddedFiles` reached by a different
+  door, hung on the catalogue or on a page. `embfile_del` does not see it, so
+  the file used to come out intact; it now rides the same `remove_attachments`
+  option, because it is the same intent rather than a third setting to learn.
+- An optional content group is the one carrier not cut whole, deliberately. The
+  group itself is drawn, and the pipeline turns layers on so the rules can read
+  what they hold; what leaks is its `/Name`, a label shown in the layers panel
+  and read by nothing else. The label is replaced unconditionally, so sanitation
+  still never needs to know the target.
 - The carrier is dropped whole rather than searched for the target. That is
   blunter and safer: you cannot leak through an object that no longer exists,
   and it does not require sanitation to know the rules. Annotations are removed
