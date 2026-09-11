@@ -11,6 +11,7 @@ payload. They talk over exactly one endpoint, `POST /redact/apply`.
 - [Building a distribution](#building-a-distribution)
 - [CI](#ci)
 - [Serving it to more than one user](#serving-it-to-more-than-one-user)
+- [How this was built](#how-this-was-built)
 
 ---
 
@@ -357,3 +358,32 @@ bundle in `frontend/dist`) and serves it from a reverse proxy that also proxies
 Read [SECURITY.md → Production / Multi-user Deployment](SECURITY.md#production--multi-user-deployment)
 first and put the recommended protections in the proxy or the container. They
 are deliberately not implemented in the application.
+
+---
+
+## How this was built
+
+Part of this project was written with AI assistants. The design decisions, and
+the direction of the work, were made by the maintainer.
+
+In practice that meant a plan written before the code, a reason demanded for
+every choice and the choice refused when the reason did not hold, conclusions
+reopened after they looked settled, real documents thrown at the tool rather
+than only the ones it was built to pass, and a fair amount of overruling.
+
+The check for regions the rules could not read is a good example of the last
+one. The first proposal was to ask whether a page contains text at all. That was
+rejected, because it sees nothing on a hybrid page, a hard-coded header sitting
+above a scanned table. The criterion became geometric and per image instead,
+which is what it still is.
+
+Nothing in this documentation is asserted from reasoning alone: every figure
+comes from something that was actually run, and every limitation listed has a
+document that demonstrates it.
+
+What nobody can tell you is how many mistakes got through. That number is
+unknown, and unknowable from the inside. It is the reason the export is gated by
+an audit instead of by confidence in the engine, the reason the known limits are
+written down rather than implied, and the reason [USAGE.md](USAGE.md#check-the-output-yourself)
+shows you how to check the output with a library this project did not write. You
+are not asked to trust the maintainer, and you are not asked to trust the tools.
