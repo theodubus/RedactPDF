@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "blankout"
 # Source unique de vérité pour la version. `release.yml` vérifie que le tag
 # poussé vaut exactement "v" + cette valeur, et échoue sinon.
-version = "0.2.0"
+version = "0.2.1"
 requires-python = ">=3.10"
 license = "AGPL-3.0-only"
 license-files = ["LICENSE.md"]
