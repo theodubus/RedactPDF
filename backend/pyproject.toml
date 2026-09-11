@@ -1,7 +1,51 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
 [project]
-name = "redactpdf-backend"
-version = "0.1.0"
+name = "redactpdf"
+# Source unique de vérité pour la version. `release.yml` vérifie que le tag
+# poussé vaut exactement "v" + cette valeur, et échoue sinon.
+version = "0.2.0"
 requires-python = ">=3.10"
+license = "AGPL-3.0-only"
+license-files = ["LICENSE.md"]
+authors = [{ name = "theodubus" }]
+description = "Local PDF redaction that blocks the export when the audit still finds targeted content"
+keywords = ["pdf", "redaction", "privacy", "gdpr", "pii", "local-first"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Environment :: Web Environment",
+  "Intended Audience :: Legal Industry",
+  "Intended Audience :: End Users/Desktop",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Topic :: Security",
+  "Topic :: Text Processing :: General",
+]
+# Le README vit à la racine du dépôt, hors de la racine du paquet : setuptools
+# ne sait pas le référencer au-dessus d'elle, et ses liens relatifs ne
+# résoudraient de toute façon pas sur PyPI. D'où un texte court et autonome,
+# avec des liens absolus.
+readme = { content-type = "text/markdown", text = """
+# RedactPDF
+
+Local PDF redaction. Every export is audited against the rules that produced
+it; if targeted content survives in the output, the export is **blocked** and
+you get a structured report instead of a file.
+
+Runs entirely on your machine — no upload, no network calls, no telemetry.
+
+```
+pipx install redactpdf
+redactpdf
+```
+
+The app opens in your browser and stops a few seconds after you close the tab.
+
+Source, standalone binaries and the security model:
+<https://github.com/theodubus/RedactPDF>
+""" }
 # Pinned to the versions the test suite + CI are validated against.
 # Bump deliberately (especially pymupdf, which drives redaction behaviour),
 # then re-run `ruff check . && pytest`.
@@ -11,6 +55,15 @@ dependencies = [
   "pymupdf==1.26.7",
   "python-multipart==0.0.22",
   "phonenumbers==9.0.22",
+  # Moteur de motifs pour tout ce que l'utilisateur fournit : `re` peut partir
+  # en retour arriere catastrophique sans qu'on puisse l'interrompre, et il ne
+  # relache pas le GIL pendant le parcours. Voir redactpdf/regex_guard.py.
+  "regex==2026.9.3",
+  # Second moteur d'extraction pour l'audit. Dépendance d'exécution et non de
+  # test : relire la sortie avec la bibliothèque qui vient de l'écrire corrèle
+  # les angles morts du caviardage et ceux du contrôle. Pur Python, donc sans
+  # effet sur l'empaquetage figé.
+  "pypdf==6.6.2",
 ]
 
 [project.optional-dependencies]
@@ -18,14 +71,46 @@ dev = [
   "pytest==9.0.2",
   "httpx==0.28.1",
   "ruff==0.14.14",
+  "mypy==2.3.1",
+  # Types réels pour `regex`, pas une exception. C'est ce qui rend vérifiable la
+  # frontière du garde-fou ReDoS : sans eux, une signature pouvait annoncer
+  # `re.Pattern` sur un chemin qui doit rester sur le moteur `regex`, et rien ne
+  # le disait. La version suit celle de `regex` ci-dessus.
+  "types-regex==2026.9.3.20260903",
   "reportlab==4.4.9",
-  "pypdf==6.6.2",
+  # Tests à base de propriétés : voir tests/test_properties.py. Deux invariants
+  # y vivent dont l'espace d'entrée est Unicode entier, hors de portée d'exemples
+  # écrits à la main.
+  "hypothesis==6.167.1",
 ]
 # Kept out of `dev` on purpose: only the release build needs it, and CI installs
 # `.[dev]` on every run. Build with `python scripts/build_app.py`.
 packaging = [
   "pyinstaller==6.22.2",
 ]
+# Construction de la roue et de la sdist, par scripts/build_package.py.
+wheel = [
+  "build==1.3.0",
+]
+
+[project.scripts]
+redactpdf = "redactpdf.launch:run"
+
+[project.urls]
+Homepage = "https://github.com/theodubus/RedactPDF"
+Source = "https://github.com/theodubus/RedactPDF"
+Issues = "https://github.com/theodubus/RedactPDF/issues"
+Security = "https://github.com/theodubus/RedactPDF/blob/main/docs/SECURITY.md"
+
+[tool.setuptools]
+# Explicite : la découverte automatique embarquerait `tests`.
+packages = ["redactpdf"]
+
+[tool.setuptools.package-data]
+# L'UI construite, recopiée depuis frontend/dist par scripts/build_package.py.
+# Les modèles de langue, eux, sont versionnés : ce ne sont pas des produits de
+# construction, rien ne les met en place, ils sont simplement dans le paquet.
+redactpdf = ["_frontend/**", "_tessdata/*.traineddata", "_tessdata/*.md", "_tessdata/SHA256SUMS"]
 
 [tool.pytest.ini_options]
 markers = [
@@ -37,6 +122,21 @@ markers = [
 testpaths = ["tests"]
 pythonpath = ["."]
 addopts = "-q"
+
+[tool.mypy]
+# Le paquet seul, pas les tests : sur `tests/` le mode strict ne remonte que des
+# `dict` sans paramètres, du bruit sans rapport avec la justesse du caviardage.
+files = ["redactpdf"]
+strict = true
+python_version = "3.10"
+
+[[tool.mypy.overrides]]
+# PyMuPDF n'embarque ni stubs ni marqueur py.typed. Sans cette exception, mypy
+# refuse d'analyser les sept modules qui l'importent, ce qui masquerait tout le
+# reste. Conséquence assumée : ce qui vient de pymupdf arrive en `Any`, donc
+# c'est à nous d'annoter là où on en tire une hypothèse (voir _IMAGE_MODE_MAP).
+module = ["pymupdf.*", "fitz.*"]
+ignore_missing_imports = true
 
 [tool.ruff]
 line-length = 100

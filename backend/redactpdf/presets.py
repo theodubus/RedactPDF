@@ -7,8 +7,9 @@ from dataclasses import dataclass
 
 import phonenumbers
 
-from app.multiline_regex_engine import iter_regex_hits
-from app.redaction import RedactionRect
+from redactpdf.multiline_regex_engine import iter_regex_hits
+from redactpdf.redaction import RedactionRect
+from redactpdf.regex_guard import RegexBudget
 
 
 # For numbers without a leading '+' we need a region hint.
@@ -190,6 +191,7 @@ def find_redaction_rectangles_for_presets(
     presets: Sequence[str],
     *,
     pages: Sequence[int] | None = None,
+    budget: RegexBudget | None = None,
 ) -> list[RedactionRect]:
     """
     Presets engine (regex -> rectangles) with optional post-filters.
@@ -221,6 +223,7 @@ def find_redaction_rectangles_for_presets(
             case_sensitive=False,
             pages=pages,
             multiline=pdef.multiline,
+            budget=budget,
         )
 
         if pdef.post_filter is None:

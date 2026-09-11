@@ -534,3 +534,270 @@ body,
   padding: 14px;
 }
 
+
+/* --------------------------------------------------------------------------
+   Revue avant export
+   L'outil ne sait pas lire l'image, alors il la montre à quelqu'un qui sait.
+   Un bouton par élément, jamais une validation d'ensemble : une case
+   « tout confirmer » se coche sans regarder.
+   -------------------------------------------------------------------------- */
+
+.reviewOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+  padding: 24px;
+}
+
+/* Colonne : l'en-tête et les actions restent en place, seule la vignette défile.
+   Une version précédente laissait tout le panneau défiler ; sur un scan pleine
+   page la vignette faisait mille pixels de haut et poussait « J'ai vérifié »
+   hors de l'écran. Cacher le bouton n'est pas de la friction, c'est un bug. */
+.reviewPanel {
+  background: var(--panel, #fff);
+  color: inherit;
+  border-radius: 10px;
+  padding: 20px 24px;
+  max-width: 900px;
+  width: 100%;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+}
+
+.reviewItem {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+.reviewTitle {
+  font-weight: 600;
+  font-size: 1.05rem;
+  margin-bottom: 6px;
+}
+
+.reviewIntro {
+  margin: 0 0 12px;
+  opacity: 0.8;
+  font-size: 0.9rem;
+}
+
+.reviewCount {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.7;
+  font-size: 0.85rem;
+  margin-bottom: 10px;
+}
+
+.reviewItemLabel {
+  font-weight: 500;
+  margin-bottom: 8px;
+}
+
+/* Le cadre porte les surimpressions : elles sont positionnées en pourcentage de
+   l'image, donc elles suivent l'agrandissement sans un seul calcul. */
+.thumbFrame {
+  position: relative;
+  display: table;      /* se dimensionne sur l'image, et se centre */
+  margin: 0 auto;
+  max-width: 100%;
+  line-height: 0;
+}
+
+/* `width`/`height` en auto sous une double contrainte : le navigateur garde le
+   rapport intrinsèque de l'image. Une zone pleine page tient donc à l'écran d'un
+   coup, et une bande étroite reste rendue à la largeur du panneau. */
+.reviewThumb {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: 58vh;
+  border: 1px solid rgba(128, 128, 128, 0.4);
+  border-radius: 4px;
+  background: #fff;
+}
+
+/* Agrandi : plus de contrainte de hauteur, `.reviewItem` défile. On y perd la vue
+   d'ensemble, on y gagne de pouvoir lire un nom. Les deux sont nécessaires, d'où
+   la bascule plutôt qu'un compromis qui ne servirait ni l'un ni l'autre. */
+.reviewItemZoomed .reviewThumb {
+  max-height: none;
+  width: 100%;
+  max-width: none;
+}
+
+.reviewItemZoomed .thumbFrame {
+  width: 100%;
+}
+
+/* Ce qui est déjà traité. Trait plein pour une décision prise à la main, tireté
+   et d'une autre teinte pour une proposition automatique (OCR, plus tard) :
+   confondre les deux ferait lire une suggestion comme une garantie. */
+.coverBox {
+  position: absolute;
+  box-sizing: border-box;
+  background: rgba(28, 124, 74, 0.28);
+  border: 2px solid #1c7c4a;
+  pointer-events: none;
+}
+
+.coverBoxOcr {
+  background: rgba(184, 134, 11, 0.18);
+  border: 2px dashed #b8860b;
+}
+
+.thumbFailed {
+  padding: 24px;
+  text-align: center;
+  border: 1px dashed rgba(128, 128, 128, 0.5);
+  border-radius: 4px;
+  opacity: 0.7;
+}
+
+.reviewItemHint {
+  margin: 10px 0 0;
+  font-size: 0.88rem;
+  opacity: 0.85;
+}
+
+/* Le trait vert de la vignette : dire de quelle couleur on parle, sinon la
+   surimpression n'est qu'un aplat de plus. */
+.reviewCoverageHint {
+  margin: 6px 0 0;
+  font-size: 0.82rem;
+  opacity: 0.8;
+}
+
+.reviewCoverageHint::before {
+  content: "";
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 6px;
+  vertical-align: baseline;
+  background: rgba(28, 124, 74, 0.22);
+  border: 1px solid #1c7c4a;
+}
+
+/* Le tireté ambre des propositions. Sélecteur **doublé** à dessein : l'élément
+   porte les deux classes, donc à spécificité égale c'est l'ordre du fichier qui
+   tranchait, et la pastille des propositions ressortait verte comme celle des
+   rectangles. Une légende qui montre la mauvaise couleur fait lire une
+   suggestion comme une décision, ce que toute la mise en forme cherche à
+   éviter. Doubler la classe met la règle hors de portée d'un déplacement. */
+.reviewCoverageHint.reviewProposedHint::before {
+  background: rgba(184, 134, 11, 0.18);
+  border: 1px dashed #b8860b;
+}
+
+.sectionHint {
+  margin: 8px 0 0;
+  font-size: 0.82rem;
+  opacity: 0.75;
+}
+
+.reviewNav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 16px 0;
+  flex: 0 0 auto;
+}
+
+.reviewDot {
+  min-width: 30px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  border: 1px solid rgba(128, 128, 128, 0.5);
+  background: transparent;
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+
+.reviewDot.done {
+  border-color: #2e7d32;
+  color: #2e7d32;
+}
+
+.reviewDot.active {
+  outline: 2px solid currentColor;
+  outline-offset: 1px;
+}
+
+.reviewActions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  flex: 0 0 auto;
+}
+
+.reviewActions button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.checkRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.checkRowDisabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* L'avertissement ne défile pas : il est court, et il doit tenir d'un regard. */
+.ocrWarningPanel {
+  max-width: 560px;
+  display: block;
+}
+
+.ocrWarningPanel p {
+  margin: 10px 0;
+  line-height: 1.5;
+}
+
+/* Ce que l'export a changé sans qu'on l'ait demandé. Non bloquant : le fichier
+   est déjà téléchargé et il n'y a plus rien à décider, seulement à savoir. */
+.exportNotices {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border: 1px solid var(--warn-border, #d8b26a);
+  border-left-width: 3px;
+  border-radius: 6px;
+  background: var(--warn-bg, #fdf7e8);
+  font-size: 13px;
+  line-height: 1.45;
+}
+.exportNoticesHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.exportNotices ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+.exportNotices li + li {
+  margin-top: 6px;
+}
+.exportNoticesClose {
+  border: 0;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+  font-size: 12px;
+  text-decoration: underline;
+  color: inherit;
+  opacity: 0.75;
+}

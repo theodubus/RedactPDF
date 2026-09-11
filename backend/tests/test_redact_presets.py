@@ -8,7 +8,7 @@ import phonenumbers
 import pytest
 from fastapi.testclient import TestClient
 
-from app.main import app
+from redactpdf.main import app
 from tests.utils_pdf import extract_text
 
 client = TestClient(app)
@@ -23,8 +23,13 @@ def _digits_only(s: str) -> str:
     return re.sub(r"\D+", "", s)
 
 
+# Résolu depuis ce fichier, pas depuis le répertoire courant : la suite doit
+# passer quel que soit l'endroit d'où pytest est lancé.
+FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures" / "generated"
+
+
 def _load_fixture(name: str) -> bytes:
-    path = Path("tests/fixtures/generated") / name
+    path = FIXTURES_DIR / name
     return path.read_bytes()
 
 
@@ -32,7 +37,7 @@ def _post_apply_presets(pdf_bytes: bytes, *, presets: list[str], audit: dict | N
     payload = {
         "rects": [],
         "presets": {"presets": presets, "scope": {"pages": None}},
-        "options": {"apply_images": False, "apply_graphics": False},
+        "options": {"apply_graphics": False},
         "audit": audit,
     }
     files = {"file": ("input.pdf", pdf_bytes, "application/pdf")}

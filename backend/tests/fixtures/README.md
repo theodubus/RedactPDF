@@ -21,6 +21,14 @@ The fixtures cover common and problematic cases for PDF redaction:
 - metadata + annotation: non-empty PDF metadata and a link annotation (used for sanitize tests)
 - apply combined: name with punctuation + email containing the name
 - Ignore accents fixture ("Léo" vs "Leo")
+- rotated margin text: a vertical title and a vertical amount whose
+  decimals form a partial-word match (no vertical tightening, glyphs ordered
+  along the reading direction)
+- tight leading: two blocks at 9 pt, one at 3.5 mm of leading where the
+  vertical tightening is what saves the line below, one at 2.5 mm where it no
+  longer suffices. Every other fixture leaves at least 5 mm between lines, so
+  this is the only one that makes `_tighten_rect_vertical` do any work. Do not
+  widen its leading.
 
 They serve as a **contract**: tests rely on their exact content and structure.
 

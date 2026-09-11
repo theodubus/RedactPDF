@@ -30,6 +30,7 @@ import time
 from pathlib import Path
 
 import httpx
+import pymupdf
 from pypdf import PdfReader
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -233,6 +234,59 @@ def run_checks(client: httpx.Client) -> None:
             "multiline: matched across the line break",
             int(r.headers.get("x-redaction-regex-occurrences", "0")) >= 1,
             f"occurrences={r.headers.get('x-redaction-regex-occurrences')}",
+        )
+
+    check_bundled_ocr(client)
+
+
+def check_bundled_ocr(client: httpx.Client) -> None:
+    """Les modèles de langue voyagent-ils vraiment avec le paquet ?
+
+    C'est exactement ce que pytest ne peut pas voir : la suite tourne depuis le
+    dépôt, où les fichiers sont là par construction. Ici on interroge une roue
+    installée ou un binaire gelé, donc on vérifie l'empaquetage lui-même, qui est
+    la seule partie de cette fonction qui puisse casser en silence.
+
+    Un scan fabriqué à la volée plutôt qu'une fixture : le texte ne doit exister
+    qu'en pixels, et une fixture PDF porte toujours une couche texte.
+    """
+    cfg = client.get("/api/config", timeout=10.0).json()
+    if not check(
+        "OCR: language models ship with the app",
+        cfg.get("ocr_available") is True and {"fra", "eng"} <= set(cfg.get("ocr_languages") or []),
+        f"languages={cfg.get('ocr_languages')}",
+    ):
+        return
+
+    doc = pymupdf.open()
+    page = doc.new_page()
+    page.insert_text((60, 120), "Dossier de Bourdillon", fontsize=28)
+    pix = page.get_pixmap(dpi=200)
+    doc.close()
+    scanned = pymupdf.open()
+    dest = scanned.new_page()
+    dest.insert_image(dest.rect, pixmap=pix)
+    pdf = scanned.tobytes()
+    scanned.close()
+
+    resp = client.post(
+        "/api/redact/apply",
+        files={"file": ("scan.pdf", pdf, "application/pdf")},
+        data={
+            "payload": json.dumps(
+                {
+                    "searches": [{"query": "Bourdillon"}],
+                    "options": {**BASE_OPTIONS, "image_regions": "ignore", "ocr_proposals": True},
+                }
+            )
+        },
+        timeout=120.0,
+    )
+    if check("OCR: a scan-only word can be proposed", resp.status_code == 200, f"http={resp.status_code}"):
+        check(
+            "OCR: the proposal was actually applied",
+            int(resp.headers.get("x-redaction-ocr-proposals", "0")) >= 1,
+            f"proposals={resp.headers.get('x-redaction-ocr-proposals')}",
         )
 
 

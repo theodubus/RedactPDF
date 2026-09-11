@@ -6,7 +6,7 @@ from io import BytesIO
 
 import pymupdf
 
-from app.sanitize import sanitize_document
+from redactpdf.sanitize import sanitize_document
 
 
 @dataclass(frozen=True)
@@ -18,6 +18,15 @@ class RedactionRect:
     y0: float
     x1: float
     y1: float
+
+    # Vrai seulement quand le rectangle vient d'un texte écrit horizontalement.
+    # Seuls ces rectangles-là sont resserrés verticalement : pour un texte pivoté
+    # la hauteur EST la direction de lecture, et la resserrer coupe le début et la
+    # fin du mot. Le défaut est `False` : un producteur qui ne se prononce pas
+    # obtient un rectangle intact, c'est-à-dire qui caviarde plutôt plus que
+    # moins. Les rectangles tracés à la main gardent ce défaut — une intention
+    # explicite ne doit pas être modifiée en silence.
+    from_horizontal_text: bool = False
 
 
 def _tighten_rect_vertical(rect: pymupdf.Rect) -> pymupdf.Rect:
@@ -68,7 +77,11 @@ def _tighten_rect_vertical(rect: pymupdf.Rect) -> pymupdf.Rect:
 
 
 
-_IMAGE_MODE_MAP = {
+# Annoté explicitement : PyMuPDF ne publie pas de types, donc ces constantes
+# arrivent en `Any`. L'annotation dit ce qu'on attend d'elles, et un bump de
+# pymupdf qui changerait leur nature deviendrait une erreur de vérification
+# plutôt qu'un comportement silencieusement différent.
+_IMAGE_MODE_MAP: dict[str, int] = {
     "none": pymupdf.PDF_REDACT_IMAGE_NONE,
     "remove": pymupdf.PDF_REDACT_IMAGE_REMOVE,
     "pixels": pymupdf.PDF_REDACT_IMAGE_PIXELS,
@@ -92,6 +105,8 @@ def redact_pdf_by_rectangles(
     sanitize_metadata: bool = False,
     remove_annotations: bool = False,
     remove_attachments: bool = False,
+    remove_outline: bool = False,
+    remove_document_actions: bool = False,
 ) -> bytes:
     """
     Applique des redactions à partir d'une liste de rectangles.
@@ -106,6 +121,9 @@ def redact_pdf_by_rectangles(
     - sanitize_metadata=True   -> nettoyage métadonnées (Info dict + XMP si possible)
     - remove_annotations=True  -> suppression des annotations/liens/widgets
     - remove_attachments=True  -> suppression des fichiers embarqués
+    - remove_outline=True      -> suppression des signets
+    - remove_document_actions=True -> suppression du JavaScript, /OpenAction,
+      /AA et du paquet XFA
 
     Retourne le PDF redigé (bytes).
     """
@@ -120,7 +138,8 @@ def redact_pdf_by_rectangles(
             if rect.is_empty:
                 raise ValueError(f"Empty rectangle: {rect}")
 
-            rect = _tighten_rect_vertical(rect)
+            if r.from_horizontal_text:
+                rect = _tighten_rect_vertical(rect)
 
             by_page.setdefault(r.page, []).append(rect)
 
@@ -152,6 +171,8 @@ def redact_pdf_by_rectangles(
             sanitize_metadata=sanitize_metadata,
             remove_annotations=remove_annotations,
             remove_attachments=remove_attachments,
+            remove_outline=remove_outline,
+            remove_document_actions=remove_document_actions,
         )
 
         out = BytesIO()

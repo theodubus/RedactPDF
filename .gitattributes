@@ -7,3 +7,7 @@
 # CRLF -- which corrupts bytes that test_fixtures.py asserts by SHA-256.
 *.pdf binary
 *.png binary
+
+# Modèles Tesseract : binaires, et vérifiés par SHA-256 (voir _tessdata/SHA256SUMS).
+# Une conversion de fin de ligne les corromprait en silence.
+*.traineddata binary

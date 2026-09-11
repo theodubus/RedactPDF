@@ -23,6 +23,10 @@ __pycache__/
 .eggs/
 dist/
 build/
+# Copies mises en scène dans la racine du paquet par scripts/build_package.py :
+# setuptools ne sait pas référencer de fichiers au-dessus d'elle.
+backend/redactpdf/_frontend/
+backend/LICENSE.md
 
 # =========================
 # OS / IDE

@@ -250,7 +250,13 @@ export function RulesSection(props: {
         onDelete={deleteRule}
       />
 
-      <EditRuleModal t={t} rule={editingRule} onClose={closeEdit} onSave={saveEdit} />
+      <EditRuleModal
+        key={editingRule?.id ?? "closed"}
+        t={t}
+        rule={editingRule}
+        onClose={closeEdit}
+        onSave={saveEdit}
+      />
     </section>
   );
 }

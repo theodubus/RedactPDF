@@ -1,19 +1,21 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
-from app.main import app
+from redactpdf.main import app
 from tests.utils_pdf import inspect_pdf
+
+# Résolu depuis ce fichier, pas depuis le répertoire courant : la suite doit
+# passer quel que soit l'endroit d'où pytest est lancé.
+FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures" / "generated"
 
 
 def _read_fixture(name: str) -> bytes:
-    # À adapter si votre helper existe déjà / chemin différent
-    from pathlib import Path
-
-    return (Path("tests/fixtures/generated") / name).read_bytes()
+    return (FIXTURES_DIR / name).read_bytes()
 
 
 def _count_links_annots_widgets(pdf_bytes: bytes) -> tuple[int, int, int]:
@@ -45,7 +47,6 @@ def test_sanitize_metadata_and_annotations_via_regex_endpoint() -> None:
             }
         ],
         "options": {
-            "apply_images": False,
             "apply_graphics": False,
             "sanitize_metadata": True,
             "remove_annotations": True,

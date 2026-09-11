@@ -1,8 +1,110 @@
 export type AuditReport = unknown;
 
+/** Échec renvoyé par /redact/apply, avec le rapport d'audit quand il y en a un. */
+export class RedactApiError extends Error {
+  readonly status: number;
+  readonly report: AuditReport | null;
+
+  constructor(status: number, report: AuditReport | null) {
+    super("AUDIT_FAILED");
+    this.name = "RedactApiError";
+    this.status = status;
+    this.report = report;
+  }
+}
+
+/** Réglages serveur dont l'aperçu a besoin pour dire la même chose que le backend. */
+export type ServerConfig = {
+  defaultRegion: string;
+  /** Un tesseract système est-il installé ? Il n'est jamais embarqué. */
+  ocrAvailable: boolean;
+  ocrLanguages: string[];
+};
+
+/** Région par défaut du backend (`REDACT_DEFAULT_REGION`), FR sauf configuration. */
+export const FALLBACK_REGION = "FR";
+
+export async function fetchConfig(): Promise<ServerConfig> {
+  const resp = await fetch("/api/config");
+  if (!resp.ok) throw new Error(`config: HTTP ${resp.status}`);
+  const data = (await resp.json()) as {
+    default_region?: unknown;
+    ocr_available?: unknown;
+    ocr_languages?: unknown;
+  };
+  const region = typeof data.default_region === "string" ? data.default_region : FALLBACK_REGION;
+  return {
+    defaultRegion: region,
+    ocrAvailable: data.ocr_available === true,
+    ocrLanguages: Array.isArray(data.ocr_languages)
+      ? data.ocr_languages.filter((l): l is string => typeof l === "string")
+      : [],
+  };
+}
+
+/** Le corps d'un 400 « document chiffré », enveloppé ou non par FastAPI. */
+export function encryptedReason(body: unknown): "password_required" | "password_incorrect" | null {
+  if (typeof body !== "object" || body === null) return null;
+  const wrapped = (body as { detail?: unknown }).detail;
+  const detail = (typeof wrapped === "object" && wrapped !== null ? wrapped : body) as {
+    status?: unknown;
+    reason?: unknown;
+  };
+  if (detail.status !== "encrypted") return null;
+  return detail.reason === "password_incorrect" ? "password_incorrect" : "password_required";
+}
+
+/**
+ * Ce qu'il faut dire à l'utilisateur après un export **réussi**.
+ *
+ * Trois choses que le backend savait et que l'interface ne montrait pas, donc
+ * réservées de fait aux appelants de l'API :
+ *
+ *   signature   le document était signé, il ne l'est plus. Découvert autrement
+ *               chez le destinataire, une fois le contrat envoyé.
+ *   encryption  le document demandait un mot de passe, le résultat non.
+ *   coverage    « pass » ne veut pas dire la même chose selon que la machine a
+ *               tout lu, qu'un humain a acquitté une zone illisible, ou que
+ *               l'appelant a renoncé au contrôle.
+ *
+ * Fonction pure sur les en-têtes, sans DOM, pour la même raison que
+ * `reviewItems.ts` : c'est ce qui la rend testable contre les octets réels du
+ * serveur. Plusieurs pannes silencieuses sont venues d'un frontend testé contre
+ * une forme imaginée plutôt que mesurée.
+ */
+export type ExportNotice =
+  | "signature"
+  | "encryption"
+  | "coverageAcknowledged"
+  | "coverageSkipped";
+
+export function exportNotices(headers: Headers): ExportNotice[] {
+  const out: ExportNotice[] = [];
+  const count = (name: string) => Number(headers.get(name) ?? "0") || 0;
+
+  if (count("X-Redaction-Signatures-Removed") > 0) out.push("signature");
+  if (count("X-Redaction-Encryption-Removed") > 0) out.push("encryption");
+
+  const coverage = headers.get("X-Redaction-Coverage");
+  if (coverage === "acknowledged") out.push("coverageAcknowledged");
+  else if (coverage === "skipped") out.push("coverageSkipped");
+
+  return out;
+}
+
 export type PresetKey = "email" | "phone" | "credit_card";
 
 export type ImageMode = "none" | "remove" | "pixels";
+
+/**
+ * Que faire des zones que les règles textuelles n'ont pas pu lire.
+ *
+ * `review` est le défaut : le serveur rend un 409 portant les zones, l'interface
+ * les fait défiler, et l'export repart avec les acquittements. `block` refuse
+ * sans recours (mode non interactif : seule une règle géométrique déverrouille).
+ * `ignore` exporte sans regarder, et c'est un choix nommé, pas un repli.
+ */
+export type ImageRegionsMode = "review" | "block" | "ignore";
 
 export type RectInput = {
   page: number;
@@ -31,6 +133,8 @@ export type RuleInput =
 
 export type RedactSuccess = {
   pdfBlob: Blob;
+  /** Ce que l'export a changé sans qu'on l'ait demandé. Voir `exportNotices`. */
+  notices: ExportNotice[];
   headers: {
     auditStatus?: string;
     auditMatches?: string;
@@ -39,6 +143,9 @@ export type RedactSuccess = {
     occurrencesRegex?: string;
     occurrencesPresets?: string;
     occurrencesTotal?: string;
+
+    /** Nombre de champs de signature que portait le document d'entrée. Voir `ExportNotice`. */
+    signaturesRemoved?: string;
   };
 };
 
@@ -74,10 +181,18 @@ export async function redactApply(params: {
   rules: RuleInput[];
   presets: PresetKey[];
   imageMode?: ImageMode;
+  imageRegions?: ImageRegionsMode;
+  ocrProposals?: boolean;
   applyGraphics?: boolean;
   sanitizeMetadata?: boolean;
   removeAnnotations?: boolean;
   removeAttachments?: boolean;
+  // Acquittements des zones que le serveur a refusé de lire. Il recalcule les
+  // zones pour les vérifier : envoyer n'importe quoi ne débloque rien.
+  acknowledgedRegions?: { page: number; bbox: number[] }[];
+  acknowledgedFontPages?: number[];
+  /** Mot de passe d'ouverture, uniquement pour un document chiffré. */
+  password?: string;
 }): Promise<RedactSuccess> {
   const form = new FormData();
   form.append("file", params.file);
@@ -114,21 +229,32 @@ export async function redactApply(params: {
 
   const hasPresets = params.presets.length > 0;
 
+  // Une option non fournie est **omise**, jamais remplie ici. Le backend a ses
+  // propres défauts, tous du côté qui caviarde ; les redéfinir de ce côté-ci en
+  // ferait une seconde copie à faire dériver, et la version précédente penchait
+  // du mauvais côté : `image_mode` retombait sur "none" et les trois drapeaux
+  // d'assainissement sur `false`, c'est-à-dire l'inverse du défaut serveur.
+  const options: Record<string, unknown> = {};
+  if (params.imageMode !== undefined) options.image_mode = params.imageMode;
+  if (params.imageRegions !== undefined) options.image_regions = params.imageRegions;
+  if (params.ocrProposals !== undefined) options.ocr_proposals = params.ocrProposals;
+  if (params.applyGraphics !== undefined) options.apply_graphics = params.applyGraphics;
+  if (params.sanitizeMetadata !== undefined) options.sanitize_metadata = params.sanitizeMetadata;
+  if (params.removeAnnotations !== undefined) options.remove_annotations = params.removeAnnotations;
+  if (params.removeAttachments !== undefined) options.remove_attachments = params.removeAttachments;
+
   const payload = {
     rects: params.rects,
     full_page_rects: params.fullPageRects ?? [],
     searches,
     regexes,
     presets: hasPresets ? { presets: params.presets, scope: { pages: null as null } } : null,
-    options: {
-      image_mode: params.imageMode ?? "none",
-      apply_graphics: !!params.applyGraphics,
-      sanitize_metadata: !!params.sanitizeMetadata,
-      remove_annotations: !!params.removeAnnotations,
-      remove_attachments: !!params.removeAttachments,
-    },
+    options,
     // audit additionnel facultatif : on laisse null (audit_plan gère déjà search/regex/presets)
     audit: null,
+    acknowledged_regions: params.acknowledgedRegions ?? [],
+    acknowledged_font_pages: params.acknowledgedFontPages ?? [],
+    ...(params.password ? { password: params.password } : {}),
   };
 
   form.append("payload", JSON.stringify(payload));
@@ -137,16 +263,14 @@ export async function redactApply(params: {
 
   if (!resp.ok) {
     const report = await parseErrorJson(resp);
-    const err = new Error("AUDIT_FAILED");
-    (err as any).status = resp.status;
-    (err as any).report = report;
-    throw err;
+    throw new RedactApiError(resp.status, report);
   }
 
   const blob = await resp.blob();
 
   return {
     pdfBlob: blob,
+    notices: exportNotices(resp.headers),
     headers: {
       auditStatus: getHeader(resp.headers, "X-Redaction-Audit-Status"),
       auditMatches: getHeader(resp.headers, "X-Redaction-Audit-Matches"),
@@ -154,6 +278,7 @@ export async function redactApply(params: {
       occurrencesRegex: getHeader(resp.headers, "X-Redaction-Regex-Occurrences"),
       occurrencesPresets: getHeader(resp.headers, "X-Redaction-Presets-Occurrences"),
       occurrencesTotal: getHeader(resp.headers, "X-Redaction-Total-Occurrences"),
+      signaturesRemoved: getHeader(resp.headers, "X-Redaction-Signatures-Removed"),
     },
   };
 }

@@ -24,6 +24,17 @@ jobs:
   build:
     name: build (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+
+    # L'attestation de provenance lie le binaire au commit et au workflow qui
+    # l'ont produit. C'est la seule garantie vérifiable qu'on puisse offrir sans
+    # certificat de signature de code : elle ne fait pas taire SmartScreen, mais
+    # elle permet à qui le veut de prouver que le fichier téléchargé sort bien de
+    # ce dépôt, à ce commit.
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+
     strategy:
       fail-fast: false # one OS failing should not hide the other's result
       matrix:
@@ -39,13 +50,13 @@ jobs:
             asset: redactpdf-windows-x86_64.exe
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - uses: actions/setup-python@v7
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version: "3.11"
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: "20"
           cache: "npm"
@@ -72,26 +83,117 @@ jobs:
         shell: bash
         run: mv "${{ matrix.built }}" "dist/${{ matrix.asset }}"
 
-      - uses: actions/upload-artifact@v7
+      - name: Attest the binary's provenance
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
+        with:
+          subject-path: dist/${{ matrix.asset }}
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: ${{ matrix.asset }}
           path: dist/${{ matrix.asset }}
           if-no-files-found: error
 
+  wheel:
+    name: build the Python distributions
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.11"
+
+      # Le numéro de version vit dans backend/pyproject.toml, et lui seul. Un tag
+      # qui ne lui correspond pas publierait une version portant un autre nom que
+      # celui du dépôt : on s'arrête avant.
+      #
+      # Après setup-python, et pas avant : `tomllib` demande Python 3.11, et cette
+      # étape tournait sur le python préinstallé du runner, dont la version n'est
+      # pas la nôtre à choisir. Elle passait par chance.
+      - name: Check the tag matches the declared version
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          declared=$(python -c "import tomllib,pathlib; \
+            print(tomllib.loads(pathlib.Path('backend/pyproject.toml').read_text())['project']['version'])")
+          if [ "v$declared" != "${GITHUB_REF_NAME}" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} does not match backend/pyproject.toml version $declared"
+            exit 1
+          fi
+          echo "tag ${GITHUB_REF_NAME} matches version $declared"
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+        working-directory: frontend
+
+      - name: Install the build tooling
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e "./backend[dev,wheel]"
+
+      - name: Build the wheel and the sdist
+        run: python scripts/build_package.py
+
+      # Le critère de A2 : sur un environnement vierge, `pip install` la roue puis
+      # `redactpdf` doit ouvrir l'UI et caviarder un PDF. Le smoke test sait viser
+      # un exécutable arbitraire, donc le script console installé.
+      - name: Smoke test the installed wheel
+        run: |
+          python -m venv /tmp/wheelcheck
+          /tmp/wheelcheck/bin/pip install --quiet backend/dist/*.whl
+          python scripts/smoke_test_app.py --exe /tmp/wheelcheck/bin/redactpdf
+
+      - name: Attest the distributions' provenance
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
+        with:
+          subject-path: backend/dist/*
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: python-distributions
+          path: backend/dist/*
+          if-no-files-found: error
+
   release:
     name: draft release
-    needs: build
+    # `wheel` aussi : le téléchargement sans filtre récupère tous les artefacts du
+    # run, donc la roue et la sdist rejoignent la page de release. Sans cette
+    # dépendance, elles y seraient ou non selon qui finit le premier.
+    needs: [build, wheel]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
 
     steps:
       # gh resolves which repository to act on from the git remote.
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           path: artifacts
           merge-multiple: true
+
+      # Un binaire non signé qu'on demande d'exécuter sur des documents
+      # confidentiels doit au minimum être vérifiable. Les sommes sont calculées
+      # ici, sur les artefacts qui seront réellement attachés à la release.
+      - name: Checksum every asset
+        shell: bash
+        working-directory: artifacts
+        run: |
+          sha256sum * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
 
       # The table links straight to the assets: the download URL of a release
       # asset is predictable from the tag and the file name, so it can be written
@@ -123,6 +225,35 @@ jobs:
           RedactPDF runs entirely on your machine: no upload, no network calls,
           no telemetry.
 
+          ### With Python installed -- any OS, and the recommended path on macOS
+
+          ```
+          pipx install redactpdf
+          redactpdf
+          ```
+
+          ### Verify what you downloaded
+
+          Neither binary is signed with a paid code-signing certificate, so
+          verifying is on you -- and both commands below are one line.
+
+          Check the file matches what was built, using `SHA256SUMS.txt` from
+          this page:
+
+          ```
+          sha256sum --ignore-missing -c SHA256SUMS.txt
+          ```
+
+          Check it was really built by this repository, from this commit, by
+          GitHub's runners -- not by someone who re-uploaded a file with the
+          right name (needs the GitHub CLI):
+
+          ```
+          gh attestation verify redactpdf-linux-x86_64 --repo __REPO__
+          ```
+
+          The same works for the Windows executable, the wheel and the sdist.
+
           **Full changelog:** https://github.com/__REPO__/commits/__TAG__
           NOTES
 
@@ -139,3 +270,24 @@ jobs:
             --title "RedactPDF ${GITHUB_REF_NAME}" \
             --notes-file notes.md \
             artifacts/*
+
+  publish-pypi:
+    name: publish to PyPI
+    needs: wheel
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+
+    # Trusted Publishing : PyPI vérifie l'identité du workflow via OIDC. Le nom
+    # d'environnement ci-dessous doit correspondre à celui déclaré dans le
+    # publisher côté PyPI.
+    environment: pypi
+    permissions:
+      id-token: write
+
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: python-distributions
+          path: dist
+
+      - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2

@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from app.multiline_regex_engine import find_redaction_rectangles_by_regex
+from redactpdf.multiline_regex_engine import find_redaction_rectangles_by_regex
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures" / "generated"
 

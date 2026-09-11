@@ -352,6 +352,142 @@ def write_012_ignore_accents(path: Path) -> None:
     c.save()
 
 
+def write_013_rotated_margin_text(path: Path) -> None:
+    """
+    Fixture used to ensure rotated text is redacted whole.
+
+    Layout (mirrors what French payslips do):
+    - a vertical title in the left margin, letters spaced out
+    - a vertical version string ending in an isolated digit
+    - a vertical amount whose decimals are a partial-word match (",48")
+    - one ordinary horizontal line
+
+    Two traps, both specific to rotated text:
+    1. A rect built for rotated text must NOT be tightened vertically -- there
+       the height IS the reading direction, so shrinking it cuts the first and
+       last characters off the match.
+    2. Glyphs of a rotated line all share the same x0. Ordering them left to
+       right yields the reverse of the reading order, so a partial-word match
+       like the "48" of ",48" selects the wrong glyphs and leaves a digit behind.
+    """
+    c = _new_canvas(path)
+    _, h = A4
+
+    c.saveState()
+    c.translate(15 * mm, h - 200 * mm)
+    c.rotate(90)
+    c.setFont("Helvetica-Bold", 16)
+    for i, word in enumerate(["B U L L E T I N", "D E", "P A Y E"]):
+        c.drawString(i * 22, 0, word)
+    c.restoreState()
+
+    c.saveState()
+    c.translate(200 * mm, h - 120 * mm)
+    c.rotate(90)
+    c.setFont("Helvetica", 7)
+    c.drawString(0, 0, "PAY18E - V2.  - 2")
+    c.drawString(0, -9, "9")
+    c.restoreState()
+
+    c.saveState()
+    c.translate(190 * mm, h - 60 * mm)
+    c.rotate(90)
+    c.setFont("Helvetica", 7)
+    c.drawString(0, 0, "CCBPFRPPVER")
+    c.drawString(0, -9, ",48")
+    c.restoreState()
+
+    c.setFont("Helvetica", 9)
+    c.drawString(30 * mm, h - 40 * mm, "Net a payer 1766,96 EUR")
+
+    c.showPage()
+    c.save()
+
+
+def write_014_redos_bait(path: Path) -> None:
+    """
+    Fixture carrying bait for catastrophic backtracking.
+
+    A long unbroken run of one repeated character followed by a character that
+    breaks the match is what makes patterns like ``(a|a)+$`` or ``(a+)+$`` blow
+    up exponentially: every way of splitting the run has to be tried before the
+    engine can conclude.
+
+    The other fixtures cannot serve here -- their lines are short, and the
+    engine runs patterns line by line, which caps the damage on its own. The
+    audit is the exposed side: it scans the whole page text at once.
+
+    Nothing here is sensitive; the point is the shape, not the content.
+    """
+    c = _new_canvas(path)
+    _, h = A4
+    c.setFont("Helvetica", 11)
+    c.drawString(25 * mm, h - 30 * mm, "Fixture 014 — ReDoS bait")
+    c.setFont("Courier", 10)
+    c.drawString(25 * mm, h - 45 * mm, "a" * 40 + "b")
+    c.setFont("Helvetica", 10)
+    c.drawString(25 * mm, h - 60 * mm, "Texte non sensible : rien a caviarder ici.")
+    c.showPage()
+    c.save()
+
+
+def write_015_tight_leading(path: Path) -> None:
+    """
+    Interligne serré : la seule fixture qui fait réellement travailler
+    `_tighten_rect_vertical`.
+
+    La boîte de ligne rendue par l'extracteur est plus haute que les glyphes.
+    Quand les lignes sont largement espacées, un rectangle non resserré déborde
+    dans du blanc et personne ne le voit. Sous ~1,1 fois le corps, il déborde
+    sur la ligne suivante et l'emporte avec la cible.
+
+    Deux blocs, à 9 pt :
+
+    - **Bloc A, interligne 3,5 mm.** Le resserrement est porteur : sans lui,
+      `CONSERVER_A` disparaît avec la cible. C'est la protection de régression
+      qui manquait au mécanisme mis en cause par le bug des fiches de paie.
+    - **Bloc B, interligne 2,5 mm.** Sous le point de rupture : même resserré,
+      le rectangle mord sur `FRAGILE_B`. Documenté comme limite connue dans
+      docs/SECURITY.md, pas figé comme comportement correct.
+
+    Les autres fixtures du corpus n'ont jamais moins de 5 mm entre deux lignes,
+    donc le resserrement y est sans effet.
+    """
+    c = _new_canvas(path)
+    _, h = A4
+    c.setFont("Helvetica", 14)
+    c.drawString(25 * mm, h - 30 * mm, "Fixture 015 — tight leading")
+
+    # Bloc A : interligne 3,5 mm, le resserrement sauve la ligne suivante.
+    c.setFont("Helvetica", 10)
+    c.drawString(25 * mm, h - 45 * mm, "Bloc A - interligne 3,5 mm :")
+    c.setFont("Helvetica", 9)
+    top_a = h - 55 * mm
+    for i, line in enumerate(
+        [f"Ligne cible : {SECRET}", "CONSERVER_A doit rester entier", "CONSERVER_B aussi"]
+    ):
+        c.drawString(25 * mm, top_a - i * 3.5 * mm, line)
+
+    # Bloc B : interligne 2,5 mm, sous le point de rupture du resserrement.
+    c.setFont("Helvetica", 10)
+    c.drawString(25 * mm, h - 90 * mm, "Bloc B - interligne 2,5 mm :")
+    c.setFont("Helvetica", 9)
+    top_b = h - 100 * mm
+    for i, line in enumerate(
+        ["Ligne cible : CIBLE_SERREE", "FRAGILE_B est mange sous la limite", "FRAGILE_C ensuite"]
+    ):
+        c.drawString(25 * mm, top_b - i * 2.5 * mm, line)
+
+    c.setFont("Helvetica", 9)
+    c.drawString(
+        25 * mm,
+        20 * mm,
+        "Note: aucune autre fixture ne descend sous 5 mm entre deux lignes.",
+    )
+    c.showPage()
+    c.save()
+
+
 SPECS: list[FixtureSpec] = [
     FixtureSpec(
         filename="001_secret_text.pdf",
@@ -412,6 +548,21 @@ SPECS: list[FixtureSpec] = [
         filename="012_ignore_accents.pdf",
         writer=write_012_ignore_accents,
         description='Ignore accents fixture ("Léo" vs "Leo")',
+    ),
+    FixtureSpec(
+        filename="013_rotated_margin_text.pdf",
+        writer=write_013_rotated_margin_text,
+        description="Rotated margin text (no vertical tightening, reading-order glyph sort)",
+    ),
+    FixtureSpec(
+        filename="014_redos_bait.pdf",
+        writer=write_014_redos_bait,
+        description="Long repeated run that makes nested quantifiers backtrack exponentially",
+    ),
+    FixtureSpec(
+        filename="015_tight_leading.pdf",
+        writer=write_015_tight_leading,
+        description="Tight leading: the only fixture that exercises _tighten_rect_vertical",
     ),
 ]
 

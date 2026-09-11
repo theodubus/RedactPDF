@@ -1,12 +1,21 @@
-import React, { useCallback, useMemo, useRef, useState } from "react";
-import { useI18n } from "./i18n";
-import { redactApply } from "./api";
-import type { ImageMode, PresetKey, RuleInput } from "./api";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useI18n } from "./i18nContext";
+import { encryptedReason, fetchConfig, FALLBACK_REGION, redactApply, RedactApiError } from "./api";
+import { ReviewCarousel } from "./review/ReviewCarousel";
+import { useReviewDocument } from "./review/useReviewDocument";
+import { serverReviewItems, toAcknowledgements } from "./review/reviewItems";
+import type { Preview, ReviewItem } from "./review/reviewItems";
+import type { ExportNotice, ImageMode, ImageRegionsMode, PresetKey, RuleInput } from "./api";
 
 import { HeaderBar } from "./components/HeaderBar";
 import { RulesSection } from "./components/Rules/RulesSection";
 import { PresetsSection } from "./components/PresetsSection";
 import { ImageModeSection } from "./components/ImageModeSection";
+import { ImageRegionsSection } from "./components/ImageRegionsSection";
+import { OcrSection } from "./components/OcrSection";
+import { OcrWarningModal } from "./components/OcrWarningModal";
+import { PasswordModal } from "./components/PasswordModal";
+import { ExportNotices } from "./components/ExportNotices";
 import { ResultPanel } from "./components/ResultPanel";
 import { PdfViewer } from "./components/PdfViewer";
 
@@ -37,9 +46,49 @@ export default function App() {
   const [isDrawingRect, setIsDrawingRect] = useState(false);
   const [presets, setPresets] = useState<Record<PresetKey, boolean>>(EMPTY_PRESETS);
   const [imageMode, setImageMode] = useState<ImageMode>("pixels");
+  const [imageRegions, setImageRegions] = useState<ImageRegionsMode>("review");
+  // Jamais activé par défaut : la fonction ne porte aucune garantie, et un défaut
+  // se lit comme une recommandation.
+  const [ocrProposals, setOcrProposals] = useState(false);
+  const [ocrAvailable, setOcrAvailable] = useState(false);
+  const [ocrWarning, setOcrWarning] = useState(false);
+  // Mot de passe d'un document chiffré : gardé en mémoire le temps de la session
+  // de travail sur ce fichier, jamais persisté.
+  const [password, setPassword] = useState<string | null>(null);
+  const [passwordPrompt, setPasswordPrompt] = useState<null | { wrong: boolean }>(null);
+
+  // Revue avant export : uniquement ce que le moteur n'a pas su lire, connu après
+  // un 409. Les rectangles dessinés n'y défilent pas, ils s'y affichent comme
+  // déjà traité (voir `review/reviewItems.ts`).
+  const [review, setReview] = useState<{
+    items: ReviewItem[];
+    previews: Record<string, Preview>;
+  } | null>(null);
+  const reviewDoc = useReviewDocument(review ? file : null);
   const [isDragOver, setIsDragOver] = useState(false);
 
   const [submitting, setSubmitting] = useState(false);
+
+  // L'aperçu du preset téléphone valide les candidats comme le backend, ce qui
+  // suppose la même région par défaut. Tant qu'elle n'est pas connue on retient
+  // celle du backend : se tromper de région ferait mentir le surlignage.
+  const [defaultRegion, setDefaultRegion] = useState(FALLBACK_REGION);
+
+  useEffect(() => {
+    let active = true;
+    fetchConfig()
+      .then((cfg) => {
+        if (!active) return;
+        setDefaultRegion(cfg.defaultRegion);
+        setOcrAvailable(cfg.ocrAvailable);
+      })
+      .catch(() => {
+        // Le repli sur FALLBACK_REGION est déjà en place.
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
 
   const [errorInfo, setErrorInfo] = useState<{
@@ -48,11 +97,17 @@ export default function App() {
     rawMessage?: string;
   } | null>(null);
 
+  // Ce que l'export a changé sans qu'on l'ait demandé : signature détruite,
+  // chiffrement retiré, vérification incomplète. Le backend le sait depuis
+  // toujours, l'interface ne le montrait pas.
+  const [notices, setNotices] = useState<ExportNotice[]>([]);
+
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const nextRectangleNumberRef = useRef(1);
 
   const clearNotices = () => {
     setErrorInfo(null);
+    setNotices([]);
   };
 
   const selectedPresets = useMemo(() => {
@@ -232,7 +287,24 @@ export default function App() {
       return;
     }
 
+    // « Ignorer » plus les propositions : la seule combinaison qui rend un fichier
+    // d'apparence traitée sans que personne, humain ou audit, n'ait vérifié les
+    // images. On le dit tant que l'utilisateur peut encore changer d'avis.
+    if (ocrProposals && ocrAvailable && imageRegions === "ignore") {
+      setOcrWarning(true);
+      return;
+    }
+
+    void runExport();
+  };
+
+  const runExport = async (items?: ReviewItem[], passwordOverride?: string) => {
+    if (!file) return;
+
+    setErrorInfo(null);
     setSubmitting(true);
+
+    const acks = items ? toAcknowledgements(items) : undefined;
 
     try {
       const r = await redactApply({
@@ -242,19 +314,53 @@ export default function App() {
         rules: rulesForApi,
         presets: selectedPresets,
         imageMode,
+        imageRegions,
+        ocrProposals: ocrProposals && ocrAvailable,
         applyGraphics: imageMode !== "none",
         sanitizeMetadata: true,
         removeAnnotations: true,
         removeAttachments: true,
+        acknowledgedRegions: acks?.acknowledged_regions,
+        acknowledgedFontPages: acks?.acknowledged_font_pages,
+        password: passwordOverride ?? password ?? undefined,
       });
 
       downloadBlob(r.pdfBlob, "redacted.pdf");
+      setNotices(r.notices);
     } catch (err) {
-      setErrorInfo({
-        status: (err as any)?.status,
-        report: (err as any)?.report,
-        rawMessage: (err as any)?.message,
-      });
+      // 409 : rien n'a fui, mais une partie de la page échappait aux règles. En
+      // mode `review` ce n'est pas une erreur à afficher, c'est une revue à faire
+      // faire. En mode `block` c'en est une : le serveur y refuse les
+      // acquittements, ouvrir un carrousel promettrait un déblocage qui ne
+      // viendra pas, et seule une règle géométrique lève le refus.
+      // `items` non défini veut dire qu'on n'avait encore rien acquitté. Un second
+      // 409 sur une requête qui en portait déjà signale que les acquittements ne
+      // correspondent pas à ce que le serveur recalcule : le rouvrir bouclerait
+      // sans fin, mieux vaut montrer l'erreur.
+      // Chiffré : ce n'est pas une erreur à afficher mais une question à poser.
+      const encrypted = err instanceof RedactApiError ? encryptedReason(err.report) : null;
+      if (encrypted) {
+        setPasswordPrompt({ wrong: encrypted === "password_incorrect" });
+        return;
+      }
+
+      if (
+        err instanceof RedactApiError &&
+        err.status === 409 &&
+        !items &&
+        imageRegions === "review"
+      ) {
+        const server = serverReviewItems(err.report);
+        if (server.items.length > 0) {
+          setReview({ items: server.items, previews: server.previews });
+          return;
+        }
+      }
+      setErrorInfo(
+        err instanceof RedactApiError
+          ? { status: err.status, report: err.report, rawMessage: err.message }
+          : { rawMessage: err instanceof Error ? err.message : String(err) },
+      );
     } finally {
       setSubmitting(false);
     }
@@ -263,6 +369,45 @@ export default function App() {
   return (
     <div className="page pageLayout">
       <input ref={fileInputRef} type="file" accept="application/pdf" onChange={onPickFile} hidden />
+
+      {passwordPrompt ? (
+        <PasswordModal
+          t={t}
+          wrong={passwordPrompt.wrong}
+          onCancel={() => setPasswordPrompt(null)}
+          onSubmit={(pw) => {
+            setPassword(pw);
+            setPasswordPrompt(null);
+            void runExport(undefined, pw);
+          }}
+        />
+      ) : null}
+
+      {ocrWarning ? (
+        <OcrWarningModal
+          t={t}
+          onCancel={() => setOcrWarning(false)}
+          onConfirm={() => {
+            setOcrWarning(false);
+            void runExport();
+          }}
+        />
+      ) : null}
+
+      {review ? (
+        <ReviewCarousel
+          t={t}
+          doc={reviewDoc}
+          items={review.items}
+          previews={review.previews}
+          onCancel={() => setReview(null)}
+          onConfirmAll={() => {
+            const { items } = review;
+            setReview(null);
+            void runExport(items);
+          }}
+        />
+      ) : null}
 
       <HeaderBar
         lang={lang}
@@ -279,6 +424,7 @@ export default function App() {
               file={file}
               rules={rules}
               presetKeys={selectedPresets}
+              defaultRegion={defaultRegion}
               t={t}
               onSelectionChange={setPendingSelection}
               onCurrentPageChange={setCurrentPage}
@@ -333,6 +479,15 @@ export default function App() {
             <PresetsSection t={t} presets={presets} togglePreset={togglePreset} />
 
             <ImageModeSection t={t} mode={imageMode} setMode={setImageMode} />
+
+            <ImageRegionsSection t={t} mode={imageRegions} setMode={setImageRegions} />
+
+            <OcrSection
+              t={t}
+              available={ocrAvailable}
+              enabled={ocrProposals}
+              setEnabled={setOcrProposals}
+            />
           </div>
 
           <button className="button toolsSubmitButton" type="submit" disabled={submitting}>
@@ -340,6 +495,8 @@ export default function App() {
           </button>
         </aside>
       </form>
+
+      <ExportNotices t={t} notices={notices} onDismiss={() => setNotices([])} />
 
       {errorInfo ? (
         <div className="auditModalOverlay" onMouseDown={() => setErrorInfo(null)}>

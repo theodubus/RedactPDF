@@ -4,7 +4,7 @@ How to produce and validate the Windows executable, and what shipping it
 unsigned means for users.
 
 The hard parts of a Windows PyInstaller build are not the compilation, they are
-the failure modes that produce no output at all — a double-click that appears to
+the failure modes that produce no output at all: a double-click that appears to
 do nothing. Read the whole file before changing anything here, and change code
 only in response to an actual failure: the codebase is OS-agnostic by design, so
 a pre-emptive rewrite is far more likely to break Linux than to fix Windows.
@@ -21,7 +21,7 @@ PyInstaller 6.22.2):
   its processes exit on the close beacon.
 - Manual checks 1, 2, 5 and 6 below pass. Check 3, SmartScreen, was reproduced
   with a hand-attached Mark-of-the-Web: the prompt appears and *Run anyway*
-  starts the app — see "Shipping unsigned" for what that means for releases.
+  starts the app. See "Shipping unsigned" for what that means for releases.
   Defender, with real-time protection on, does not flag the file on the build
   machine.
 
@@ -31,7 +31,7 @@ machine other than the one that built it. Both are cloud- and
 machine-dependent, so the first release is itself the test.
 
 macOS is deliberately not built: no Mac is available to the project. Should that
-change, the `console=False` trap documented below applies there too — a windowed
+change, the `console=False` trap documented below applies there too: a windowed
 macOS build has the same missing standard streams.
 
 ## Setup
@@ -71,7 +71,7 @@ npm ci
 cd ..
 ```
 
-Sanity check before packaging anything — this must pass first:
+Sanity check before packaging anything. This must pass first:
 
 ```powershell
 cd backend
@@ -106,7 +106,7 @@ part of the validation.
 These need a human looking at a screen, which is why the first Windows build
 was done on a real install rather than in CI.
 
-1. **Double-click from Explorer.** Not from a terminal — that is a different
+1. **Double-click from Explorer.** Not from a terminal, which is a different
    working directory and a different console situation, and it is how the actual
    user will launch it. The browser should open on the app. The console-less
    start it relies on is now covered by the smoke test; the browser actually
@@ -150,7 +150,7 @@ Confirmed on 23 August 2026 with a hand-attached Mark-of-the-Web: the prompt
 appears, and *More info → Run anyway* starts the app normally.
 
 This is not a first-user-only annoyance. SmartScreen's reputation is keyed on the
-exact file hash for an unsigned binary, so it never really accumulates — and even
+exact file hash for an unsigned binary, so it never really accumulates, and even
 if it did, every new release is a new hash and starts from zero. Assume **every
 user, on every version**, gets "Windows protected your PC" and has to click
 through it. Chromium browsers may additionally warn at download time that the
@@ -169,7 +169,7 @@ Three ways out, in increasing cost:
   which is most of the practical friction.
 - **A managed signing service**, such as Azure Trusted Signing, which is
   substantially cheaper than a traditional certificate but has its own identity
-  verification requirements — check current eligibility before counting on it.
+  verification requirements. Check current eligibility before counting on it.
 
 Ready to paste into release notes, and already in the README:
 
@@ -197,23 +197,23 @@ that needs the files restored (delete them, then `git checkout -- "*.pdf"`).
 **Missing module at runtime, works fine in tests.** The classic PyInstaller
 failure: something imported by string is invisible to static analysis. The spec
 already collects `uvicorn` and `phonenumbers` submodules for this reason. Add
-the offending package the same way in `packaging/redactpdf.spec` — do not
+the offending package the same way in `packaging/redactpdf.spec`. Do not
 disable the collection that is already there.
 
 **The UI does not load but the API answers.** The bundled `frontend/dist` was
-not found. It is embedded as data and resolved by `backend/app/paths.py`; keep
+not found. It is embedded as data and resolved by `backend/redactpdf/paths.py`; keep
 the bundle-relative layout and never resolve it from `__file__`.
 
 **Nothing happens at all on launch.** Run it from PowerShell rather than by
 double-click to see whether anything is printed, and check item 2 above. If the
-error dialog does not appear either, the failure is before `launch.py` runs —
+error dialog does not appear either, the failure is before `launch.py` runs:
 build with `console=True` in the spec temporarily to see the traceback, then put
 it back.
 
 **Defender quarantines the file.** Options, in order of preference: switch the
 spec from one-file to one-directory (much lower false-positive rate, but ships a
 folder instead of a single file), get a code-signing certificate, or document an
-exclusion. This is a product decision — report it rather than deciding alone.
+exclusion. This is a product decision: report it rather than deciding alone.
 
 **Firewall prompt on first run.** The server binds `127.0.0.1` only, so a prompt
 should not appear; if it does, declining it is harmless since nothing needs to
@@ -225,7 +225,7 @@ be reachable from outside the machine.
   returns a PDF without passing the post-redaction audit. Packaging must not
   touch that pipeline. See [CLAUDE.md](../CLAUDE.md).
 - `pytest` and `ruff check .` in `backend/` must stay green. The Windows work
-  should not need to change anything under `backend/app/` except, at most,
+  should not need to change anything under `backend/redactpdf/` except, at most,
   `paths.py`.
 - Keep `launch.py` working on Linux: it is the same entry point for both the
   frozen app and people running from source. Guard anything Windows-specific
@@ -237,7 +237,7 @@ be reachable from outside the machine.
 Windows 11 Home 22631, Python 3.11.9, Node 22.23.2, npm 10.9.8, PyInstaller
 6.22.2. Result: `dist\redactpdf.exe`, 36.7 MB, starts in ~1 s, all 20 smoke
 checks green against both the source launcher and the frozen binary, `pytest`
-47/47 and `ruff check .` clean. Nothing under `backend/app/` changed, `paths.py`
+47/47 and `ruff check .` clean. Nothing under `backend/redactpdf/` changed, `paths.py`
 included, and neither CI workflow is affected.
 
 Three things were broken, in the order they surfaced.
@@ -246,7 +246,7 @@ Three things were broken, in the order they surfaced.
 `test_fixtures.py` was the only failure on the first `pytest` run. The committed
 blobs were fine; the checkout was not. `.gitattributes` said `* text=auto`, git's
 global `core.autocrlf` was `true`, and the ReportLab fixtures contain no NUL byte
-— so git classified all twelve as text and rewrote their LFs to CRLF on checkout
+so git classified all twelve as text and rewrote their LFs to CRLF on checkout
 (001: 1562 bytes in the blob, 1630 in the tree, exactly 68 injected CRs).
 `git status` stayed clean the whole time, because the conversion round-trips.
 Fix: mark `*.pdf` and `*.png` as `binary` in `.gitattributes`, then delete the
@@ -258,7 +258,7 @@ git had already detected them as binary.
 It looked for `dist/redactpdf`, and PyInstaller appends `.exe` on Windows. Fixed
 the same way `smoke_test_app.py` already did it, in `default_exe()`.
 
-**3. The frozen app could not start without a console — the double-click path.**
+**3. The frozen app could not start without a console: the double-click path.**
 The one that mattered. From the `MessageBoxW` dialog `launch.py` puts up for
 exactly this situation:
 
@@ -277,9 +277,9 @@ that dialog. Fix: `launch.py` passes `log_config=None` when the streams are
 missing; runs that do have streams are unchanged, on any OS.
 
 What made it slippery is that it only reproduces when the process genuinely has
-no standard handles. Launching the exe from PowerShell works — PowerShell hands
+no standard handles. Launching the exe from PowerShell works, because PowerShell hands
 its own handles to the child, and returns immediately rather than waiting, since
-a GUI-subsystem app does not block the prompt — and so does any run with stdout
+a GUI-subsystem app does not block the prompt, and so does any run with stdout
 redirected to a file. Both hide the bug. `scripts/smoke_test_app.py` now creates
 the condition deliberately on Windows, with `STARTF_USESTDHANDLES` and NULL
 handles: the "starts with no console (double-click path)" check.
@@ -293,6 +293,6 @@ flagged the executable across a dozen builds and runs on the build machine.
 Check 3, SmartScreen, was run with a hand-attached Mark-of-the-Web rather than a
 real download: the prompt appears as expected and *Run anyway* starts the app.
 What a real download would add is the reputation verdict itself, which is a cloud
-lookup on the released file — see "Shipping unsigned" above. Check 4, antivirus,
+lookup on the released file. See "Shipping unsigned" above. Check 4, antivirus,
 is only meaningful on a machine other than the one that built the file, so it
 stays open too.

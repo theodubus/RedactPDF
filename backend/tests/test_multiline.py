@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from app.main import app
+from redactpdf.main import app
 from tests.utils_pdf import extract_text
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures" / "generated"
@@ -88,7 +88,7 @@ def test_multiline_does_not_cross_columns_trap_fixture() -> None:
     page text where '\\s+' matches the column boundary newline, which would
     spuriously hit even though the engine correctly returned 0 rects.
     """
-    from app.multiline_regex_engine import find_redaction_rectangles_by_regex
+    from redactpdf.multiline_regex_engine import find_redaction_rectangles_by_regex
 
     pdf_in = _load_pdf("009_cross_column_phone_trap.pdf")
     rects = find_redaction_rectangles_by_regex(
