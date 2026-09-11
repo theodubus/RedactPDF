@@ -108,6 +108,25 @@ name is the single exception to "cut the carrier whole" and the exception is
 load-bearing: the group *is* drawn and `all_layers_visible` depends on it, so
 only the label is replaced, unconditionally, which keeps the rule that
 sanitation never needs to know the target.
+A second pass the same day added four more, all carried by **objects** rather
+than streams, which is why the existing cleanups missed them:
+`pipeline._strip_declared_text` cuts `/ActualText` inside marked-content
+*streams*, so a `/StructElem` carrying the same keys walked straight past it;
+`del_xml_metadata` only reaches the catalogue's XMP, so a page's own survived;
+`/Collection` and the property lists a `BDC` operator names were simply never
+looked at. `_strip_property_lists` empties the referenced object instead of
+removing the entry, so no `BDC` points at nothing, and it **skips `/OCG` and
+`/OCMD`** — those decide visibility and `all_layers_visible` depends on them;
+`test_an_optional_content_membership_keeps_its_type` fails if that guard goes.
+`_strip_structure_text` drops the keys rather than the tree, since tagging is
+what a screen reader uses and there is no reason to destroy accessibility to
+remove a label. Two entries were cleared as already covered rather than fixed
+(a signature field's `/AP`, and `/RichMedia`), and one is refused rather than
+cleaned: text painted through a shading pattern lands in the 409 review channel,
+which is the honest answer. **`/BaseFont` is deliberately left alone** — the
+repair breaks rendering for every document (the standard 14 names *are* the
+fonts) to protect against a naming nobody does on purpose; it is written up as
+limitation 7 in `docs/SECURITY.md` instead.
 `_drop_unused_xobjects` cuts every Form XObject that no `Do` operator invokes, on the page's own stream or on any other form's: such an object carries content that is in the file and that no reader draws, and measured on 10 September 2026 a name placed there gave zero rectangles, zero audit occurrences (neither extractor reads it) and HTTP 200 with the name still in the bytes. It has no option flag on purpose, since removing something provably never drawn cannot change how the document looks, and an option would only offer a way to keep a leak. The invoked-name sweep deliberately includes objects it is about to cut, so an unreachable form that invokes another keeps the second: over-keeping beats removing something visible. `signature_fields` reads `/AcroForm/Fields` on the **input** so the report can say what the export destroys: no redaction preserves a signature, since it covers bytes that get rewritten, and the only fixable part was the silence. The walk *does* break: `delete_annot` returns the next link in the chain, and after deleting an annotation that owns a popup that next entry is the popup, now detached, so PyMuPDF raises `Annot is not bound to a page` and the whole request 500s. A single sticky note triggers it, and the loop in question is the documented one. `_drain` therefore stops at the first dead handle rather than continuing — the chain is not trustworthy once a link has failed.
 - [heartbeat.py](backend/redactpdf/heartbeat.py) — liveness singleton; inert unless `launch.py` started a watchdog thread.
 

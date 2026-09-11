@@ -349,3 +349,154 @@ def test_catalog_and_page_carriers_do_not_survive_the_export() -> None:
     response = _redact(_document_with_catalog_carriers())
     assert response.status_code == 200
     assert not _anywhere_in(response.content, TARGET)
+
+
+# ---------------------------------------------------------------------------
+# Second lot du 11 sept. 2026 : fin de l'énumération, plus les entrées « à voir »
+# de l'inventaire. Quatre porteurs de plus, et deux soupçons levés.
+# ---------------------------------------------------------------------------
+
+
+def _content_xref(doc: pymupdf.Document, page: pymupdf.Page) -> int:
+    """`/Contents` est tantôt un flux, tantôt un tableau de flux."""
+    return int(page.get_contents()[0])
+
+
+def _resources_xref(doc: pymupdf.Document, page: pymupdf.Page) -> int:
+    """`/Resources` est souvent indirect, et `xref_set_key` ne traverse pas."""
+    kind, value = doc.xref_get_key(page.xref, "Resources")
+    if kind == "xref":
+        return int(value.split()[0])
+    new = doc.get_new_xref()
+    doc.update_object(new, value if kind == "dict" else "<<>>")
+    doc.xref_set_key(page.xref, "Resources", f"{new} 0 R")
+    return new
+
+
+def _document_with_object_carriers() -> bytes:
+    """La cible dans quatre porteurs portés par des objets, pas par des flux."""
+    doc = pymupdf.open()
+    page = doc.new_page(width=300, height=200)
+    page.insert_text((40, 100), "rien a voir", fontname="helv", fontsize=14)
+    catalog = doc.pdf_catalog()
+
+    # 1. liste de propriétés désignée par un opérateur BDC
+    prop = doc.get_new_xref()
+    doc.update_object(prop, f"<</Type/Note/Contents({TARGET})>>")
+    doc.xref_set_key(_resources_xref(doc, page), "Properties", f"<</MC0 {prop} 0 R>>")
+    content = _content_xref(doc, page)
+    doc.update_stream(content, b"/OC /MC0 BDC\n" + doc.xref_stream(content) + b"\nEMC")
+
+    # 2. arbre de structure balisé
+    element = doc.get_new_xref()
+    doc.update_object(
+        element,
+        f"<</Type/StructElem/S/P/Alt({TARGET})/ActualText({TARGET})/T({TARGET})>>",
+    )
+    root = doc.get_new_xref()
+    doc.update_object(root, f"<</Type/StructTreeRoot/K[{element} 0 R]>>")
+    doc.xref_set_key(catalog, "StructTreeRoot", f"{root} 0 R")
+
+    # 3. collection (portfolio)
+    collection = doc.get_new_xref()
+    doc.update_object(collection, f"<</Type/Collection/Schema<</F<</N({TARGET})>>>>>>")
+    doc.xref_set_key(catalog, "Collection", f"{collection} 0 R")
+
+    # 4. XMP accroché à la page et non au catalogue
+    meta = doc.get_new_xref()
+    doc.update_object(meta, "<</Type/Metadata/Subtype/XML>>")
+    doc.update_stream(meta, f"<dc:title>{TARGET}</dc:title>".encode(), new=True, compress=True)
+    doc.xref_set_key(page.xref, "Metadata", f"{meta} 0 R")
+
+    out: bytes = doc.tobytes()
+    doc.close()
+    return out
+
+
+@pytest.mark.integration
+def test_the_object_carriers_fixture_really_carries_the_target() -> None:
+    """Sans ce contrôle, le test suivant passerait sur un document vide."""
+    assert _anywhere_in(_document_with_object_carriers(), TARGET)
+
+
+@pytest.mark.integration
+def test_object_carriers_do_not_survive_the_export() -> None:
+    """Quatre porteurs que le nettoyage des flux n'atteint pas.
+
+    `pipeline._strip_declared_text` coupe `/ActualText` dans les *flux* de
+    contenu marqué ; l'arbre de structure porte les mêmes clés sur des
+    **objets**, et `del_xml_metadata` ne voit que le XMP du catalogue.
+    """
+    response = _redact(_document_with_object_carriers())
+    assert response.status_code == 200
+    assert not _anywhere_in(response.content, TARGET)
+
+
+@pytest.mark.integration
+def test_an_optional_content_membership_keeps_its_type() -> None:
+    """Le vidage des listes de propriétés ne doit pas toucher la visibilité.
+
+    Une entrée `/Properties` peut désigner un groupe de contenu optionnel : la
+    vider changerait ce qui s'affiche, et `all_layers_visible` en dépend. Ce
+    test échoue si la garde disparaît.
+    """
+    doc = pymupdf.open()
+    page = doc.new_page(width=300, height=200)
+    page.insert_text((40, 100), "rien a voir", fontname="helv", fontsize=14)
+    ocg = doc.add_ocg("calque")
+    doc.xref_set_key(_resources_xref(doc, page), "Properties", f"<</MC0 {ocg} 0 R>>")
+    pdf: bytes = doc.tobytes()
+    doc.close()
+
+    response = _redact(pdf)
+    assert response.status_code == 200
+
+    out = pymupdf.open(stream=response.content, filetype="pdf")
+    try:
+        kinds = [
+            out.xref_get_key(xref, "Type")[1]
+            for xref in range(1, out.xref_length())
+            if out.xref_get_key(xref, "Type")[0] == "name"
+        ]
+        assert "/OCG" in kinds
+    finally:
+        out.close()
+
+
+@pytest.mark.integration
+def test_a_signature_appearance_does_not_survive_the_export() -> None:
+    """Soupçon levé plutôt que correctif : l'apparence part avec l'annotation.
+
+    L'inventaire portait « apparence d'un champ de signature non couverte par le
+    retrait des annotations » en `A VOIR` depuis le 10 sept. Mesuré le 11 : elle
+    est couverte. Le test existe pour que ça le reste.
+    """
+    doc = pymupdf.open()
+    page = doc.new_page(width=300, height=200)
+    appearance = doc.get_new_xref()
+    doc.update_object(
+        appearance,
+        "<</Type/XObject/Subtype/Form/BBox[0 0 200 50]/Resources<</Font<</F1"
+        "<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>>>>>>>",
+    )
+    doc.update_stream(
+        appearance,
+        f"BT /F1 12 Tf 5 20 Td (Signe par {TARGET}) Tj ET".encode(),
+        new=True,
+        compress=True,
+    )
+    widget = doc.get_new_xref()
+    doc.update_object(
+        widget,
+        f"<</Type/Annot/Subtype/Widget/FT/Sig/T(sig1)/Rect[40 40 240 90]"
+        f"/AP<</N {appearance} 0 R>>/F 4>>",
+    )
+    doc.xref_set_key(page.xref, "Annots", f"[{widget} 0 R]")
+    doc.xref_set_key(doc.pdf_catalog(), "AcroForm", f"<</Fields[{widget} 0 R]/SigFlags 3>>")
+    pdf: bytes = doc.tobytes()
+    doc.close()
+
+    assert _anywhere_in(pdf, TARGET)
+    response = _redact(pdf)
+    assert response.status_code == 200
+    assert not _anywhere_in(response.content, TARGET)
