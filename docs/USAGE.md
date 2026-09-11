@@ -92,6 +92,11 @@ the ones that decide whether something gets missed.
   document JavaScript and the XFA packet. A bookmark reading "Dossier Dupont"
   used to survive a rule for `Dupont`. The file is written with `garbage=4`, so
   removed objects are physically absent rather than merely unreferenced.
+  Page thumbnails (`/Thumb`) go too, and a viewer simply draws its own from the
+  redacted page, as it already does for the many files that carry none. So do
+  private application data (`/PieceInfo`), article threads, associated files
+  (`/AF`), page label prefixes, and the display name of a layer. See
+  [SECURITY.md](SECURITY.md#current-guarantees-high-level) for what each one carried.
 - **Every rectangle is computed from the original file**, before anything is
   removed. Deriving them from a partly redacted document would let an early rule
   hide the text a later one needed to match.
