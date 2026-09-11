@@ -315,7 +315,7 @@ After publishing, install from PyPI itself and drive the result, rather than
 trusting the artifact that was uploaded:
 
 ```bash
-pipx install redactpdf && redactpdf
+pipx install blankout && blankout
 ```
 
 ---

@@ -527,8 +527,9 @@ no longer does, and the person exporting it should know that before they send it
 
 ### Content that is in the file but on no screen
 
-A PDF can carry text that no reader shows. Six forms were built on 10 September
-2026 and measured end to end; three were already handled and three were holes.
+A PDF can carry text that no reader shows, or shows differently from what it
+declares. Seven forms were built on 10 and 11 September 2026 and measured end to
+end; three were already handled and four were holes.
 
 | Form | Extracted? | Before the fix |
 |---|---|---|
@@ -538,6 +539,7 @@ A PDF can carry text that no reader shows. Six forms were built on 10 September
 | **Outside the crop box** | no | **survived, HTTP 200** |
 | **Outside the media box** | no | **survived, HTTP 200** |
 | **Form XObject no `Do` ever invokes** | no | **survived, HTTP 200** |
+| **A marked-content `/ActualText` that lies** | reads the lie | **survived, HTTP 200** |
 
 The first three were never at risk: extraction reports them, so a rule sees them
 whatever the screen shows. The last three are the "I could not have seen it, and
@@ -558,7 +560,25 @@ already-visible content by exactly 142 points. So the plan and the redaction bot
 run on the widened view, and the original geometry is restored on the way out.
 The exported file has the page size it came in with, and a test pins that.
 
-The third form has nothing to reveal: no widening makes it visible and no user
+The last one is different from all the others and worth its own paragraph. A
+marked-content operator may declare a text that differs from the glyphs actually
+drawn, and extraction returns the declaration. Measured: glyphs reading
+`BOURDILLON`, plainly visible on screen, under `/ActualText (XXXXXXXXXX)`. A rule
+for the name found **zero** occurrences. PyMuPDF returned the substitute, `pypdf`
+returned unreadable bytes, so **the two-engine audit had nothing to catch it
+with**: it does not hold two different blind spots here, it holds the same one
+twice. The reverse direction leaks too, a declaration carrying a name that
+nothing visible says, left in the stream after the glyphs are redacted.
+
+The carrier is cut rather than arbitrated between its two versions, which also
+removes the divergence between what the plan reads and what the audit re-reads:
+both see glyphs. What that costs was measured rather than assumed. Across 80 real
+documents, two carry `/ActualText`, both for typographic normalisation: `(ffi)`
+on a ligature and `<FEFF200B>` on a zero-width space. Neither declares different
+content, and the ligature case is already handled on the pattern side, where
+`escape_literal` matches `ffi` and the single glyph interchangeably.
+
+The Form XObject form has nothing to reveal: no widening makes it visible and no user
 could target it. The carrier is cut instead, the way an annotation is, and the
 sweep for invoked names is deliberately generous so a form invoked only by
 another unreachable form is kept. Over-keeping is recoverable; removing something

@@ -228,8 +228,8 @@ jobs:
           ### With Python installed -- any OS, and the recommended path on macOS
 
           ```
-          pipx install redactpdf
-          redactpdf
+          pipx install blankout
+          blankout
           ```
 
           ### Verify what you downloaded

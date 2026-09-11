@@ -5,7 +5,7 @@ image, a whole page, every phone number in the file) and get back a copy with
 that content removed from the document, not hidden under a black rectangle.
 
 Nothing is uploaded. No network calls, no account, no telemetry. Download a
-binary for Windows or Linux, or `pipx install redactpdf` on any machine that has
+binary for Windows or Linux, or `pipx install blankout` on any machine that has
 Python. Nothing else to install, text recognition for images included.
 
 <p align="center">
@@ -100,8 +100,8 @@ gh attestation verify redactpdf-linux-x86_64 --repo theodubus/RedactPDF
 ### With Python: any OS, and the recommended path on macOS
 
 ```bash
-pipx install redactpdf
-redactpdf
+pipx install blankout
+blankout
 ```
 
 Same app, same single command to run it. There is no macOS binary: a file
@@ -111,7 +111,7 @@ Sequoia clearing it takes a trip through System Settings and an admin password.
 Gatekeeper never applies. It also makes the install independent of the build
 machine's glibc, which is what constrains the Linux binary above.
 
-`uv tool install redactpdf` does the same job. Plain `pip install` works inside a
+`uv tool install blankout` does the same job. Plain `pip install` works inside a
 virtual environment you manage yourself, but into a system Python most current
 Linux distributions refuse it outright (PEP 668).
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
@@ -430,6 +431,74 @@ def _content_bbox(page: pymupdf.Page) -> pymupdf.Rect | None:
     return None if box.is_empty else box
 
 
+# Clés d'un dictionnaire de contenu marqué qui déclarent un texte à la place des
+# glyphes réellement dessinés. `/ActualText` remplace le texte pour l'extraction,
+# `/Alt` et `/E` le décrivent pour l'accessibilité.
+_DECLARED_TEXT_KEYS = ("ActualText", "Alt", "E")
+
+# `/Cle (chaine)` ou `/Cle <hex>`. Les parenthèses échappées font partie de la
+# chaîne, d'où le `\\.` : sans lui, un `\)` couperait le motif au mauvais endroit.
+_DECLARED_TEXT = re.compile(
+    rb"/(?:" + b"|".join(k.encode() for k in _DECLARED_TEXT_KEYS) + rb")\s*"
+    rb"(?:\((?:\\.|[^\\()])*\)|<[0-9A-Fa-f\s]*>)"
+)
+
+
+def _strip_declared_text(doc: pymupdf.Document) -> bool:
+    """Retire les textes déclarés qui se substituent aux glyphes à l'extraction.
+
+    Un opérateur de contenu marqué peut annoncer un texte différent de ce qui est
+    dessiné. Mesuré le 11 septembre 2026 : glyphes `DUPONT` parfaitement visibles
+    à l'écran, `/ActualText (XXXXXX)`, une règle `DUPONT` rend **zéro
+    occurrence** et l'export part en 200 avec le nom toujours là. PyMuPDF lit
+    `XXXXXX`, pypdf lit des octets illisibles : **les deux extracteurs partagent
+    l'angle mort**, donc l'audit à deux moteurs ne rattrape rien. Le sens inverse
+    fuit aussi, `/ActualText (DUPONT)` sur des glyphes anodins laissant la chaîne
+    dans le flux après caviardage.
+
+    On coupe le porteur plutôt que d'arbitrer entre les deux versions, dans
+    l'esprit de `sanitize.py`, et cela supprime du même coup la divergence entre
+    ce que lit le plan et ce que relit l'audit : les deux voient les glyphes.
+
+    Le coût est mesuré, pas supposé. Sur 80 documents réels, deux seulement en
+    portent, et pour de la normalisation typographique : `(ffi)` sur une ligature
+    et `<FEFF200B>` sur un espace de largeur nulle. Aucun ne déclare un contenu
+    *différent*, et le cas de la ligature est déjà couvert côté motif par
+    `audit.escape_literal`, qui apparie `ffi` et `ﬃ` indifféremment. Retirer la
+    déclaration ne nous fait donc rien perdre.
+    """
+    touched = False
+    for page in doc:
+        for xref in page.get_contents():
+            try:
+                stream = doc.xref_stream(xref)
+            except Exception:
+                continue
+            cleaned = _DECLARED_TEXT.sub(b"", stream)
+            if cleaned != stream:
+                try:
+                    doc.update_stream(xref, cleaned)
+                    touched = True
+                except Exception:
+                    pass
+        # Un dictionnaire de propriétés peut être indirect, désigné par son nom
+        # depuis `/Resources/Properties`. Le flux ne porte alors que le nom.
+        try:
+            kind, value = doc.xref_get_key(page.xref, "Resources/Properties")
+        except Exception:
+            continue
+        if kind != "dict":
+            continue
+        for ref in re.findall(r"/[^\s/]+\s+(\d+)\s+0\s+R", str(value)):
+            for key in _DECLARED_TEXT_KEYS:
+                try:
+                    if doc.xref_get_key(int(ref), key)[0] != "null":
+                        doc.xref_set_key(int(ref), key, "null")
+                        touched = True
+                except Exception:
+                    pass
+    return touched
+
 def unclipped_view(pdf_bytes: bytes) -> tuple[bytes, list[PageBoxes]]:
     """Le document sans fenêtre de rognage, et de quoi la remettre.
 
@@ -461,7 +530,11 @@ def unclipped_view(pdf_bytes: bytes) -> tuple[bytes, list[PageBoxes]]:
     doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")
     try:
         saved: list[PageBoxes] = []
-        touched = False
+        # Retiré ici plutôt qu'à l'enregistrement, parce que le plan doit lire les
+        # glyphes : cette vue alimente le plan, l'application et la sortie, donc
+        # les trois voient la même chose. Contrairement aux boîtes, ceci n'est
+        # **pas** restauré, le porteur étant précisément ce qu'on retire.
+        touched = _strip_declared_text(doc)
         for page in doc:
             entries: list[tuple[str, str]] = []
             for key in BOXES:

@@ -3,7 +3,7 @@ requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "redactpdf"
+name = "blankout"
 # Source unique de vérité pour la version. `release.yml` vérifie que le tag
 # poussé vaut exactement "v" + cette valeur, et échoue sinon.
 version = "0.2.0"
@@ -37,7 +37,7 @@ you get a structured report instead of a file.
 Runs entirely on your machine — no upload, no network calls, no telemetry.
 
 ```
-pipx install redactpdf
+pipx install blankout
 redactpdf
 ```
 
@@ -94,7 +94,14 @@ wheel = [
 ]
 
 [project.scripts]
+# Deux noms pour une seule commande, et c'est voulu. La distribution s'appelle
+# `blankout` parce que PyPI refuse `redactpdf` (trop proche d'un projet
+# existant), mais le binaire figé, les actifs de release et le smoke test
+# s'appellent `redactpdf` depuis toujours. Qui installe `blankout` tape
+# naturellement `blankout` ; qui vient du dépôt tape `redactpdf`. Les deux
+# marchent, personne n'a à connaître cette histoire.
 redactpdf = "redactpdf.launch:run"
+blankout = "redactpdf.launch:run"
 
 [project.urls]
 Homepage = "https://github.com/theodubus/RedactPDF"
