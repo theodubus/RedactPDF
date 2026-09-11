@@ -127,6 +127,21 @@ which is the honest answer. **`/BaseFont` is deliberately left alone** — the
 repair breaks rendering for every document (the standard 14 names *are* the
 fonts) to protect against a naming nobody does on purpose; it is written up as
 limitation 7 in `docs/SECURITY.md` instead.
+A third pass read `pikepdf`'s own sanitiser (a qpdf binding, fetched from PyPI;
+qpdf's and mutool's docs are unreachable from the work session and third-party
+repositories are out of scope). **Its list matches ours entry for entry** on
+`/Thumb`, `/PieceInfo`, `/AF`, `/Collection` and `/RichMedia`, which validates
+the method as much as the result, and it named three we had not tested:
+`/SpiderInfo`, the `/Names` subtrees, and named destinations. All three leaked.
+`/Names/EmbeddedFiles` and `/Names/JavaScript` are deliberately **not** cut
+there — they already have their own flags, and cutting them here would take from
+a caller what they explicitly chose to keep (`test_carriers_survive_when_the_caller_opts_out`
+guards that). Named destinations ride `remove_annotations` rather than nothing,
+because a named destination exists only to be pointed at by a link: when the
+links go it costs nothing, and when the caller keeps them, cutting it would
+leave a link pointing nowhere. Acrobat's full-text search index needs no code of
+its own, since it lives in `/PieceInfo`; a test pins that, so slicing
+`/PieceInfo` more finely one day cannot silently reopen it.
 `_drop_unused_xobjects` cuts every Form XObject that no `Do` operator invokes, on the page's own stream or on any other form's: such an object carries content that is in the file and that no reader draws, and measured on 10 September 2026 a name placed there gave zero rectangles, zero audit occurrences (neither extractor reads it) and HTTP 200 with the name still in the bytes. It has no option flag on purpose, since removing something provably never drawn cannot change how the document looks, and an option would only offer a way to keep a leak. The invoked-name sweep deliberately includes objects it is about to cut, so an unreachable form that invokes another keeps the second: over-keeping beats removing something visible. `signature_fields` reads `/AcroForm/Fields` on the **input** so the report can say what the export destroys: no redaction preserves a signature, since it covers bytes that get rewritten, and the only fixable part was the silence. The walk *does* break: `delete_annot` returns the next link in the chain, and after deleting an annotation that owns a popup that next entry is the popup, now detached, so PyMuPDF raises `Annot is not bound to a page` and the whole request 500s. A single sticky note triggers it, and the loop in question is the documented one. `_drain` therefore stops at the first dead handle rather than continuing — the chain is not trustworthy once a link has failed.
 - [heartbeat.py](backend/redactpdf/heartbeat.py) — liveness singleton; inert unless `launch.py` started a watchdog thread.
 
