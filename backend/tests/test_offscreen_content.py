@@ -240,3 +240,76 @@ def test_a_form_xobject_that_is_drawn_survives() -> None:
         assert "VISIBLE_XOBJ" in doc[0].get_text()
     finally:
         doc.close()
+
+
+def _declared_text(visible: str, declared: str) -> bytes:
+    """Des glyphes `visible`, un `/ActualText` qui annonce autre chose."""
+    doc = pymupdf.open()
+    page = doc.new_page()
+    page.insert_text((72, 60), "Texte normal de la page", fontname="helv", fontsize=11)
+    raw = doc.tobytes()
+    doc.close()
+
+    out = pymupdf.open(stream=raw, filetype="pdf")
+    contents = out[0].get_contents()[0]
+    out.update_stream(
+        contents,
+        out.xref_stream(contents)
+        + b"\n/Span << /ActualText ("
+        + declared.encode()
+        + b") >> BDC\nBT /Helv 14 Tf 72 400 Td ("
+        + visible.encode()
+        + b") Tj ET\nEMC\n",
+    )
+    data = out.tobytes()
+    out.close()
+    return data
+
+
+@pytest.mark.integration
+def test_a_lying_actual_text_does_not_hide_the_glyphs() -> None:
+    """Le dixième trou, et le premier où les **deux** extracteurs partagent l'angle mort.
+
+    Mesuré le 11 septembre 2026 : glyphes `BOURDILLON` parfaitement visibles à
+    l'écran, `/ActualText (XXXXXXXXXX)`. PyMuPDF lit `XXXXXXXXXX`, pypdf lit des
+    octets illisibles, donc une règle sur le nom rendait zéro occurrence et
+    l'export partait en 200 avec le nom toujours là. L'audit à deux moteurs ne
+    pouvait rien rattraper : il n'a pas deux angles morts différents ici, il a le
+    même deux fois.
+    """
+    pdf = _declared_text(TARGET, "X" * len(TARGET))
+    doc = pymupdf.open(stream=pdf, filetype="pdf")
+    fooled = TARGET not in doc[0].get_text()
+    doc.close()
+    assert fooled, "le piège doit tromper l'extraction"
+
+    resp = _apply(pdf)
+
+    assert resp.status_code == 200, resp.text[:200]
+    assert resp.headers["X-Redaction-Search-Occurrences"] == "1"
+    assert not _anywhere_in(resp.content, TARGET)
+
+
+@pytest.mark.integration
+def test_a_declared_text_carrying_data_is_cut() -> None:
+    """Le sens inverse : rien de visible ne porte le nom, la déclaration si.
+
+    Caviarder les glyphes laissait la chaîne dans le flux. On coupe le porteur,
+    comme pour une annotation.
+
+    Ce que couper coûte est mesuré ailleurs : sur 80 documents réels, deux
+    portent `/ActualText`, pour de la normalisation typographique (`(ffi)` sur
+    une ligature, `<FEFF200B>` sur un espace de largeur nulle). Le cas de la
+    ligature reste couvert côté motif, et son test vit dans
+    `test_hidden_text.py` sur une vraie police plutôt que sur un littéral de flux,
+    où `ﬃ` écrit en UTF-8 serait relu octet par octet en WinAnsi.
+    """
+    pdf = _declared_text("X" * len(TARGET), TARGET)
+    assert _anywhere_in(pdf, TARGET)
+
+    resp = _apply(pdf)
+
+    assert resp.status_code == 200, resp.text[:200]
+    # Rien de visible ne disait le nom, donc aucune occurrence à compter.
+    assert resp.headers["X-Redaction-Search-Occurrences"] == "0"
+    assert not _anywhere_in(resp.content, TARGET)
