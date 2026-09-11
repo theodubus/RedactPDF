@@ -104,6 +104,11 @@ pipx install blankout
 blankout
 ```
 
+The package is called `blankout` because the name that matches this repository
+was already too close to an existing one on PyPI. Installing it also puts
+`redactpdf` on your PATH, which is the same command under the name the
+downloadable binary carries; use whichever you remember.
+
 Same app, same single command to run it. There is no macOS binary: a file
 downloaded through a browser carries a quarantine attribute, and since macOS
 Sequoia clearing it takes a trip through System Settings and an admin password.
