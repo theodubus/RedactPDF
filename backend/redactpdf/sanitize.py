@@ -192,7 +192,10 @@ def _drop_acroform(doc: pymupdf.Document) -> None:
 # l'OCR relit « BOURDILLON » mot pour mot dans la vignette de sortie d'un export
 # réussi dont la page, elle, était propre.
 _PAGE_CARRIERS = ("Thumb", "PieceInfo")
-_CATALOG_CARRIERS = ("PieceInfo", "Threads")
+_CATALOG_CARRIERS = ("PieceInfo", "Threads", "Collection")
+_STRUCT_TEXT_KEYS = ("Alt", "ActualText", "T", "E")
+_PROPERTY_LIST_KEEP = ("/OCG", "/OCMD")
+_INDIRECT = re.compile(r"/([^\s/\[\]<>(){}]+)\s+(\d+)\s+\d+\s+R")
 
 
 def _drop_keys(doc: pymupdf.Document, xref: int, keys: tuple[str, ...]) -> None:
@@ -214,6 +217,80 @@ def _drop_associated_files(doc: pymupdf.Document) -> None:
     _drop_keys(doc, doc.pdf_catalog(), ("AF",))
     for page in doc:
         _drop_keys(doc, page.xref, ("AF",))
+
+
+def _strip_structure_text(doc: pymupdf.Document) -> None:
+    """
+    `pipeline._strip_declared_text` coupe `/ActualText` et consorts dans les
+    *flux* de contenu marqué. L'arbre de structure balisé porte les mêmes clés
+    sur des **objets**, hors de portée de ce nettoyage : mesuré le 11 sept. 2026,
+    un `/StructElem` avec `/Alt`, `/ActualText` et `/T` ressortait intact d'un
+    export en 200.
+
+    On retire les clés plutôt que l'arbre : le balisage sert aux lecteurs
+    d'écran, et rien ne justifie de détruire l'accessibilité d'un document pour
+    en retirer une étiquette. Le balayage porte sur tous les xrefs plutôt que sur
+    une descente depuis `/StructTreeRoot`, ce qui attrape aussi un élément que
+    plus rien ne référence.
+    """
+    for xref in range(1, doc.xref_length()):
+        try:
+            kind, value = doc.xref_get_key(xref, "Type")
+        except Exception:
+            continue
+        if kind != "name" or value != "/StructElem":
+            continue
+        _drop_keys(doc, xref, _STRUCT_TEXT_KEYS)
+
+
+def _strip_property_lists(doc: pymupdf.Document) -> None:
+    """
+    `/Resources/Properties` associe un nom à une liste de propriétés qu'un
+    opérateur `BDC` désigne. Son contenu est libre, donc il porte ce que le
+    producteur veut : mesuré, un dictionnaire portant la cible ressortait d'un
+    export en 200.
+
+    On vide l'objet désigné au lieu de retirer l'entrée, pour qu'aucun `BDC` ne
+    pointe dans le vide. **Sauf** si c'est un groupe de contenu optionnel ou une
+    appartenance à un groupe : ceux-là décident de la visibilité, les vider
+    changerait ce qui s'affiche, et `pipeline.all_layers_visible` en dépend.
+    """
+    for page in doc:
+        try:
+            kind, value = doc.xref_get_key(page.xref, "Resources")
+        except Exception:
+            continue
+        res = int(value.split()[0]) if kind == "xref" else page.xref
+        try:
+            kind, value = doc.xref_get_key(res, "Properties")
+        except Exception:
+            continue
+        if kind == "xref":
+            try:
+                value = doc.xref_object(int(value.split()[0]), compressed=False)
+            except Exception:
+                continue
+        elif kind != "dict":
+            continue
+        for _, target in _INDIRECT.findall(value or ""):
+            xref = int(target)
+            try:
+                kind_t, value_t = doc.xref_get_key(xref, "Type")
+            except Exception:
+                continue
+            if kind_t == "name" and value_t in _PROPERTY_LIST_KEEP:
+                continue
+            try:
+                doc.update_object(xref, "<<>>")
+            except Exception:
+                pass
+
+
+def _drop_object_metadata(doc: pymupdf.Document) -> None:
+    """`del_xml_metadata` ne retire que le XMP du catalogue. Une page peut porter
+    le sien, et il ressortait intact."""
+    for page in doc:
+        _drop_keys(doc, page.xref, ("Metadata",))
 
 
 def _drop_page_labels(doc: pymupdf.Document) -> None:
@@ -324,6 +401,7 @@ def sanitize_document(
 
         _drop_page_labels(doc)
         _neutralise_ocg_names(doc)
+        _drop_object_metadata(doc)
 
     if remove_annotations:
         for pno in range(doc.page_count):
@@ -365,6 +443,8 @@ def sanitize_document(
         _drop_unused_xobjects(doc, page)
         _drop_keys(doc, page.xref, _PAGE_CARRIERS)
     _drop_keys(doc, doc.pdf_catalog(), _CATALOG_CARRIERS)
+    _strip_structure_text(doc)
+    _strip_property_lists(doc)
 
     if remove_outline:
         try:

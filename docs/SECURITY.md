@@ -30,10 +30,12 @@ RedactPDF is a local PDF redaction tool intended to produce a **new exported PDF
   + vector-graphics removal + sanitation of everything that carries text outside
   the page content stream: metadata and XMP, links, annotations, form widgets,
   embedded attachments, **bookmark titles, document JavaScript, `/OpenAction`,
-  `/AA` and the XFA packet**, plus six carriers added on 11 September 2026:
+  `/AA` and the XFA packet**, plus ten carriers added on 11 September 2026:
   a page's `/Thumb`, `/PieceInfo` on the catalogue and on each page, `/Threads`,
-  `/AF` (associated files), `/PageLabels` and the display name of an optional
-  content group. Redaction cleans what is drawn; those objects carry text nobody
+  `/AF` (associated files), `/PageLabels`, the display name of an optional
+  content group, the text keys of a tagged structure element (`/Alt`,
+  `/ActualText`, `/T`, `/E`), the property lists a `BDC` operator names,
+  `/Collection`, and XMP hung on a page rather than on the catalogue. Redaction cleans what is drawn; those objects carry text nobody
   looks at and no geometric rule reaches. Measured before the last
   four were added: a rule for `Dupont` cleaned the page, returned 200, and left
   "Dossier Dupont - confidentiel" sitting in the navigation pane.
@@ -723,6 +725,23 @@ continue to follow the user's chosen image mode on the same page.
      carries a `signatures` block (count, field names, and the reason) and the
      response an `X-Redaction-Signatures-Removed` header. The UI does not surface
      it yet, since a successful export currently has no notification area.
+
+7. **A font name is not cleaned, and that is a decision rather than an oversight**
+   - A `/BaseFont` entry names the typeface a page asks for. Nothing stops a
+     producer from naming a font after a person, and if it does, the name comes
+     out of the export intact: measured on 11 September 2026, HTTP 200,
+     `audit: pass`, the string still in the file.
+   - It is not fixed because the fix is worse than the leak. For the standard 14
+     faces the name *is* the font, so `/Helvetica` renamed is a page that no
+     longer renders; for an embedded font the name is what a reader matches
+     against the font program, so renaming risks silent substitution. The repair
+     would break every document to protect against a naming nobody does on
+     purpose, which is the opposite trade from the rest of this file.
+   - Every other carrier in this document is dropped because dropping it changes
+     nothing a reader sees. This one is kept because removing it would. If you
+     need a name gone from a file whose fonts are named after people, that file
+     needs a different tool, and this page is where we say so rather than let you
+     find out.
 
 ## Operational Recommendations
 
