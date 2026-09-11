@@ -1,8 +1,9 @@
 # <img src="frontend/public/logo.png" alt="RedactPDF" width="40" align="center" /> RedactPDF
 
 **Redact PDFs on your own machine.** Mark what has to go (a passage of text, an
-image, a whole page, every phone number in the file) and get back a copy with
-that content removed from the document, not hidden under a black rectangle.
+image, a whole page, the phone numbers a detector picks out) and get back a copy
+with that content removed from the document, not hidden under a black
+rectangle.
 
 Nothing is uploaded. No network calls, no account, no telemetry. Download a
 binary for Windows or Linux, or `pipx install blankout` on any machine that has
