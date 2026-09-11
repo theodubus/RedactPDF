@@ -318,6 +318,13 @@ trusting the artifact that was uploaded:
 pipx install blankout && blankout
 ```
 
+The distribution is named `blankout` and the package, the frozen binary and the
+release assets are all named `redactpdf`. That is not drift: PyPI refused
+`redactpdf` as too close to an existing project, and only `[project] name` had to
+move, since the distribution name, the import name and the command name are three
+independent things. The wheel installs **two** console scripts pointing at the
+same entry point, so neither name surprises anyone.
+
 ---
 
 ## CI
