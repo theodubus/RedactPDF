@@ -34,14 +34,19 @@ Local PDF redaction. Every export is audited against the rules that produced
 it; if targeted content survives in the output, the export is **blocked** and
 you get a structured report instead of a file.
 
-Runs entirely on your machine — no upload, no network calls, no telemetry.
+Runs entirely on your machine: no upload, no network calls, no telemetry.
 
 ```
 pipx install blankout
-redactpdf
+blankout
 ```
 
 The app opens in your browser and stops a few seconds after you close the tab.
+
+The package is called `blankout` because the name matching the project was
+already too close to an existing one on PyPI. Installing it also puts
+`redactpdf` on your PATH, the same command under the name the downloadable
+binary carries.
 
 Source, standalone binaries and the security model:
 <https://github.com/theodubus/RedactPDF>
