@@ -9,8 +9,8 @@ binary for Windows or Linux, or `pipx install blankout` on any machine that has
 Python. Nothing else to install, text recognition for images included.
 
 <p align="center">
-  <video src="https://github.com/user-attachments/assets/6b3baa14-75d3-45cb-883f-b8b7e1ef72cb" controls width="820">
-    <a href="https://github.com/user-attachments/assets/6b3baa14-75d3-45cb-883f-b8b7e1ef72cb">▶ Watch the demo</a>
+  <video src="https://github.com/user-attachments/assets/ed428820-007c-41aa-a997-3029f787eae3" controls width="820">
+    <a href="https://github.com/user-attachments/assets/ed428820-007c-41aa-a997-3029f787eae3">▶ Watch the demo</a>
   </video>
 </p>
 
